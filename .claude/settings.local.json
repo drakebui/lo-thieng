@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs cat *)",
+      "Bash(xargs -I{} sh -c 'sed -n \"7p\" \"{}\" | grep -q \".\" && echo \"{}:7: $\\(sed -n \"7p\" \"{}\"\\)\"')",
+      "Bash(xxd /Users/minhchau/lo-thieng-demo-2/data/EnemyDatabase.gd)",
+      "Bash(python3 *)"
+    ]
+  }
+}

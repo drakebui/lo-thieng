@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://c6forgephase2"]
+
+[ext_resource type="Script" path="res://scripts/forge/forge_phase2_ui.gd" id="1"]
+
+[node name="ForgePhase2" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")

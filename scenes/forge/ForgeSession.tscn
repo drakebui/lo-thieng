@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://csh0oys3oqmqj"]
+
+[ext_resource type="Script" path="res://scripts/forge/forge_session_ui.gd" id="1"]
+
+[node name="ForgeSession" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")
