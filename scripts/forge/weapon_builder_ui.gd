@@ -105,6 +105,7 @@ func _ready() -> void:
 	vbox.add_theme_constant_override("separation", 28)
 	root_margin.add_child(vbox)
 
+	vbox.add_child(_build_back_row())
 	vbox.add_child(_build_title())
 
 	var body := HBoxContainer.new()
@@ -123,6 +124,21 @@ func _ready() -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 # TITLE
 # ══════════════════════════════════════════════════════════════════════════════
+
+func _build_back_row() -> Control:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_BEGIN
+	row.custom_minimum_size.y = 54
+
+	var back_btn := Button.new()
+	back_btn.text = "[ Quay về Xưởng  (Esc) ]"
+	back_btn.add_theme_font_size_override("font_size", 28)
+	back_btn.custom_minimum_size = Vector2(300, 52)
+	back_btn.pressed.connect(_go_to_hub)
+	row.add_child(back_btn)
+
+	return row
+
 
 func _build_title() -> Control:
 	var vb := VBoxContainer.new()
@@ -494,8 +510,16 @@ func _on_forge_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/forge/ForgeSession.tscn")
 
 
+func _go_to_hub() -> void:
+	SceneManager.go_to("res://scenes/main/WorkshopHub.tscn")
+
+
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or event.echo or not event.pressed:
 		return
-	if event.keycode == KEY_ENTER and _selected_idx >= 0:
-		_on_forge_pressed()
+	match event.keycode:
+		KEY_ENTER:
+			if _selected_idx >= 0:
+				_on_forge_pressed()
+		KEY_ESCAPE:
+			_go_to_hub()

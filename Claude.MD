@@ -72,6 +72,7 @@
 2. Nếu tính năng KHÔNG có trong GDD → cảnh báo trước khi code
 3. Ưu tiên giải pháp đơn giản nhất trước
 4. Break thành steps nhỏ, làm từng phần
+5. **BẮT BUỘC cuối mỗi session:** cập nhật NOTES.md theo đúng template (session number tăng dần, ngày hiện tại). Ghi đủ 6 mục: Task đã làm / Files tạo mới / Files đã sửa / Vấn đề gặp phải / Chưa làm được / Cần Engineering Lead chú ý. KHÔNG được kết thúc session mà không cập nhật NOTES.md.
 
 ## Ngôn ngữ
 - Comment trong code: tiếng Việt

@@ -1,11 +1,9 @@
 extends Node2D
 
 # Layout: động theo viewport (chuẩn 1920×1080 → 30×17 tile, tile 64px)
-# Tường dày 1 tile, sàn chơi (COLS-2)×(ROWS-2) tile bên trong
+# Tường dày 1 tile, sàn chơi (_cols-2)×(_rows-2) tile bên trong
 
 const TILE := 64
-var COLS: int
-var ROWS: int
 
 const COLOR_WALL           := Color(0.24, 0.16, 0.09)   # tường gỗ thẫm
 const COLOR_WAINSCOT       := Color(0.34, 0.22, 0.11)   # ốp gỗ chân tường
@@ -29,91 +27,54 @@ const COLOR_DOOR_FRAME     := Color(0.38, 0.24, 0.10)   # khung cửa
 const COLOR_PLANT_POT      := Color(0.64, 0.38, 0.18)   # chậu gốm
 const COLOR_PLANT_LEAF     := Color(0.24, 0.54, 0.22)   # lá
 const COLOR_PLANT_LEAF_D   := Color(0.17, 0.38, 0.15)   # lá tối
-
-# x gốc của 3 kệ — tính trong _init_layout()
-var SHELF_SX: Array[int]
-
-# Vị trí "trước mặt" mỗi kệ để kiểm tra proximity với player
-var SHELF_INTERACT_POS: Array[Vector2]
 const INTERACT_RANGE: float = 130.0   # px — khoảng cách tối đa để tương tác kệ
 
-var _player:    CharacterBody2D
-var _shop_mgr:  ShopManager
-var _neg_ui:    NegotiationUI
+var _cols: int
+var _rows: int
+var _shelf_sx: Array[int]  # x gốc của 3 kệ — tính trong _init_layout()
+var _shelf_interact_pos: Array[Vector2]  # vị trí trước mặt mỗi kệ
 
-# instance_id → CustomerAI node
-var _customers:          Dictionary = {}
-# Hàng đợi negotiation: Array[int] — instance_id của các khách đang chờ ở quầy
-var _neg_queue:          Array      = []
-var _active_neg_id:      int        = -1   # -1 = không có negotiation đang chạy
-var _active_neg_weapon:  Dictionary = {}   # vũ khí đang trong giao dịch hiện tại
-var _reserved_weapons:   Array      = []   # vũ khí bị khóa — NPC khác không lấy được
+var _player: CharacterBody2D
+var _shop_mgr: ShopManager
+var _neg_ui: NegotiationUI
 
-# Shelf display slots: 6 entries (3 kệ × 2 hàng)
-var _shelf_slots:        Array       = []   # {weapon, icon: Polygon2D|null}
-var _inventory_panel:    InventoryPanel
-var _near_shelf_idx:     int         = -1   # kệ player đang đứng gần (-1 = không có)
-var _shelf_hint_popups:  Array       = []    # Node2D popup cho mỗi kệ
+var _customers: Dictionary = {}  # instance_id → CustomerAI node
+var _neg_queue: Array = []  # instance_id của các khách đang chờ ở quầy
+var _active_neg_id: int = -1
+var _active_neg_weapon: Dictionary = {}
+var _reserved_weapons: Array = []  # vũ khí bị khóa — NPC khác không lấy được
 
-# Mỗi ngày chỉ mở 1 lần — true sau khi phiên kết thúc
+var _shelf_slots: Array = []  # {weapon, icon: Polygon2D|null}
+var _inventory_panel: InventoryPanel
+var _near_shelf_idx: int = -1
+var _shelf_hint_popups: Array = []  # Node2D popup cho mỗi kệ
+var _empty_inventory_hint: Node2D
+
 var _shop_session_done: bool = false
 
-# Shop HUD — nút mở cửa + trạng thái kệ
-var _shop_hud_layer:  CanvasLayer
-var _btn_open_shop:   Button
-var _lbl_shelf_info:  Label
-
-# Kho vũ khí demo — thay bằng GameManager.inventory khi có.
-# Tags (blank_id, suffix, phase2_prefix, element) được ShopManager dùng để tính trọng số spawn.
-const MOCK_INVENTORY: Array = [
-	{
-		"weapon_name":   "Kiệt Tác Kiếm Đơn · Thiêu Đốt",
-		"blank_id":      "kiem_don",      # hiep_khach, thich_khach prefer
-		"phase2_prefix": "kiet_tac",
-		"suffix":        "thieu_dot",
-		"element":       "hoa",           # hiep_khach prefer "hoa"
-		"atk": 16, "def_stat": 0, "magic": 4, "speed": 8,
-		"rarity_tier": 3, "durability": 50, "durability_max": 50,
-	},
-	{
-		"weapon_name":   "Tốt Búa Chiến · Sấm Sét",
-		"blank_id":      "bua_chien",     # thu_ve, vo_tang, nong_dan prefer
-		"phase2_prefix": "tot",           # thu_ve, nong_dan, thuong_nhan prefer "tot"
-		"suffix":        "sam_set",       # dao_si prefer "sam_set"
-		"element":       "set",
-		"atk": 18, "def_stat": 3, "magic": 0, "speed": 4,
-		"rarity_tier": 2, "durability": 50, "durability_max": 50,
-	},
-	{
-		"weapon_name":   "Thường Gậy Phép · Băng Giá",
-		"blank_id":      "gay_phep",      # dao_si prefer
-		"phase2_prefix": "thuong",        # thuong_nhan, nong_dan prefer "thuong"
-		"suffix":        "bang_gia",      # thich_khach prefer "bang_gia"
-		"element":       "bang",
-		"atk": 5, "def_stat": 0, "magic": 12, "speed": 5,
-		"rarity_tier": 1, "durability": 50, "durability_max": 50,
-	},
-]
+var _shop_hud_layer: CanvasLayer
+var _btn_open_shop: Button
+var _lbl_shelf_info: Label
 
 
 func _init_layout() -> void:
 	var vp := get_viewport_rect().size
-	COLS = ceili(vp.x / float(TILE))   # 30 @ 1920
-	ROWS = ceili(vp.y / float(TILE))   # 17 @ 1080
-	# Kệ hàng: 3 cột, chia đều trong vùng sàn (TILE..TILE*(COLS-1))
+	_cols = ceili(vp.x / float(TILE))   # 30 @ 1920
+	_rows = ceili(vp.y / float(TILE))   # 17 @ 1080
+	# Kệ hàng: 3 cột, chia đều trong vùng sàn (TILE..TILE*(_cols-1))
 	# Khoảng cách giữa các kệ: TILE*4 → sx[i] = TILE*(2 + i*4) + TILE = TILE*(3 + i*4)
-	# Với COLS=30: sx[0]=TILE*3=192, sx[1]=TILE*7=448, sx[2]=TILE*11=704 — giữ tỉ lệ
-	# Scale lên 1920: sx[i] = round(TILE * (3 + i*4) * COLS / 16.0)
-	SHELF_SX = [
-		int(round(TILE * 3  * COLS / 16.0)),
-		int(round(TILE * 7  * COLS / 16.0)),
-		int(round(TILE * 11 * COLS / 16.0)),
+	# Với _cols=30: sx[0]=TILE*3=192, sx[1]=TILE*7=448, sx[2]=TILE*11=704.
+	# Scale lên 1920: sx[i] = round(TILE * (3 + i*4) * _cols / 16.0)
+	_shelf_sx = [
+		int(round(TILE * 3 * _cols / 16.0)),
+		int(round(TILE * 7 * _cols / 16.0)),
+		int(round(TILE * 11 * _cols / 16.0)),
 	]
 	# Kệ nằm ở y=TILE, cao 2 tile → phía dưới kệ là y=TILE*3
-	SHELF_INTERACT_POS = [
-		Vector2(SHELF_SX[0] + TILE, float(TILE * 3)),
-		Vector2(SHELF_SX[1] + TILE, float(TILE * 3)),
-		Vector2(SHELF_SX[2] + TILE, float(TILE * 3)),
+	_shelf_interact_pos = [
+		Vector2(_shelf_sx[0] + TILE, float(TILE * 3)),
+		Vector2(_shelf_sx[1] + TILE, float(TILE * 3)),
+		Vector2(_shelf_sx[2] + TILE, float(TILE * 3)),
 	]
 
 
@@ -149,7 +110,7 @@ func _update_shelf_proximity() -> void:
 	var closest: int        = -1
 	var closest_dist: float = INTERACT_RANGE
 	for i: int in 3:
-		var d: float = _player.position.distance_to(SHELF_INTERACT_POS[i])
+		var d: float = _player.position.distance_to(_shelf_interact_pos[i])
 		if d < closest_dist:
 			closest_dist = d
 			closest = i
@@ -168,11 +129,11 @@ func _update_shelf_proximity() -> void:
 # ── Visuals ───────────────────────────────────────────────────────────────────
 
 func _build_visuals() -> void:
-	var inner_w := TILE * (COLS - 2)
-	var inner_h := TILE * (ROWS - 2)
+	var inner_w := TILE * (_cols - 2)
+	var inner_h := TILE * (_rows - 2)
 
 	# ── Tường gỗ ─────────────────────────────────────────────────────────────
-	_poly(Rect2(0, 0, TILE * COLS, TILE * ROWS), COLOR_WALL)
+	_poly(Rect2(0, 0, TILE * _cols, TILE * _rows), COLOR_WALL)
 
 	# ── Sàn gỗ ───────────────────────────────────────────────────────────────
 	_poly(Rect2(TILE, TILE, inner_w, inner_h), COLOR_FLOOR)
@@ -181,10 +142,10 @@ func _build_visuals() -> void:
 		_poly(Rect2(TILE + 4, TILE + 36 + i * 40, inner_w - 8, 2), COLOR_FLOOR_PLANK)
 
 	# ── Thảm trang trí trung tâm ─────────────────────────────────────────────
-	var rx := TILE * (COLS / 4)
-	var ry := TILE * (ROWS / 4 + 1)
-	var rw := TILE * (COLS / 2)
-	var rh := TILE * (ROWS / 4)
+	var rx := TILE * (_cols / 4)
+	var ry := TILE * (_rows / 4 + 1)
+	var rw := TILE * (_cols / 2)
+	var rh := TILE * (_rows / 4)
 	_poly(Rect2(rx,     ry,     rw,      rh),      COLOR_RUG)
 	_poly(Rect2(rx + 8, ry + 8, rw - 16, rh - 16), COLOR_RUG_INNER)
 	_poly(Rect2(rx,           ry,           rw, 10), COLOR_RUG_BORDER)
@@ -197,7 +158,7 @@ func _build_visuals() -> void:
 	_poly(Rect2(rx + rw - 20, ry + rh - 20, 20, 20), COLOR_RUG_BORDER)
 
 	# ── Cửa sổ trong tường hậu — chia đều 3 vị trí ──────────────────────────
-	for wci: int in [COLS / 4, COLS / 2, COLS * 3 / 4]:
+	for wci: int in [_cols / 4, _cols / 2, _cols * 3 / 4]:
 		var wc := TILE * wci
 		_poly(Rect2(wc - 38, 6,  76, 50), COLOR_WIN_FRAME)
 		_poly(Rect2(wc - 32, 10, 64, 38), COLOR_WIN_GLASS)
@@ -207,9 +168,9 @@ func _build_visuals() -> void:
 	# Ốp gỗ chân tường hậu
 	_poly(Rect2(TILE, TILE - 12, inner_w, 12), COLOR_WAINSCOT)
 
-	# ── 3 kệ hàng (dùng SHELF_SX đã tính sẵn) ───────────────────────────────
+	# ── 3 kệ hàng (dùng _shelf_sx đã tính sẵn) ───────────────────────────────
 	for i: int in 3:
-		var sx: int = SHELF_SX[i]
+		var sx: int = _shelf_sx[i]
 		var sy: int = TILE
 		_poly(Rect2(sx - 6, sy, TILE * 2 + 12, TILE * 2), COLOR_SHELF_BACK)
 		_poly(Rect2(sx, sy, TILE * 2, TILE * 2), COLOR_SHELF)
@@ -219,9 +180,9 @@ func _build_visuals() -> void:
 		_poly(Rect2(sx - 4, sy + TILE * 2 - 10, TILE * 2 + 8, 10), COLOR_SHELF_SURFACE)
 
 	# ── Quầy bán hàng ─────────────────────────────────────────────────────────
-	var cx: int = TILE * (COLS * 5 / 16)
-	var cy: int = TILE * (ROWS - 3)
-	var cw: int = TILE * (COLS * 6 / 16)
+	var cx: int = TILE * (_cols * 5 / 16)
+	var cy: int = TILE * (_rows - 3)
+	var cw: int = TILE * (_cols * 6 / 16)
 	var ch: int = TILE * 2
 	_poly(Rect2(cx - 8, cy + 20, cw + 16, ch - 20), COLOR_COUNTER)
 	_poly(Rect2(cx, cy + 22, cw, ch - 26), COLOR_COUNTER_FACE)
@@ -233,7 +194,7 @@ func _build_visuals() -> void:
 	_poly(Rect2(cx + cw - 52, cy + 3, 36, 14), Color(0.78, 0.28, 0.22))
 
 	# ── Cửa ra vào (tường phải) ───────────────────────────────────────────────
-	var door_x := TILE * (COLS - 1)
+	var door_x := TILE * (_cols - 1)
 	var door_y := TILE * 5
 	_poly(Rect2(door_x - 8, door_y, 8 + TILE, TILE * 2), COLOR_DOOR_FRAME)
 	_poly(Rect2(door_x, door_y, TILE, TILE * 2), COLOR_DOOR)
@@ -245,35 +206,35 @@ func _build_visuals() -> void:
 	_poly(Rect2(door_x + 8,  door_y + 68,  6, 16), Color(0.80, 0.68, 0.22))
 
 	# ── Chậu cây trang trí ───────────────────────────────────────────────────
-	_draw_plant(float(TILE + 16),                     float(TILE * (ROWS - 2) + 6))
-	_draw_plant(float(TILE * (COLS - 2)) + 12.0,      float(TILE * (ROWS - 2) + 6))
+	_draw_plant(float(TILE + 16), float(TILE * (_rows - 2) + 6))
+	_draw_plant(float(TILE * (_cols - 2)) + 12.0, float(TILE * (_rows - 2) + 6))
 
 	# ── Chân tường (baseboard) ────────────────────────────────────────────────
-	_poly(Rect2(TILE,                    TILE * (ROWS - 1) - 8, inner_w,     8), COLOR_WAINSCOT)
+	_poly(Rect2(TILE, TILE * (_rows - 1) - 8, inner_w, 8), COLOR_WAINSCOT)
 	_poly(Rect2(TILE,                    TILE,                  8, inner_h),     COLOR_WAINSCOT)
-	_poly(Rect2(TILE * (COLS - 1) - 8,  TILE,                  8, TILE * 4), COLOR_WAINSCOT)
-	_poly(Rect2(TILE * (COLS - 1) - 8,  TILE * 7,              8, TILE * 4), COLOR_WAINSCOT)
+	_poly(Rect2(TILE * (_cols - 1) - 8, TILE, 8, TILE * 4), COLOR_WAINSCOT)
+	_poly(Rect2(TILE * (_cols - 1) - 8, TILE * 7, 8, TILE * 4), COLOR_WAINSCOT)
 
 
 # ── Collision ─────────────────────────────────────────────────────────────────
 
 func _build_collision_walls() -> void:
-	_wall(Rect2(0, 0, TILE * COLS, TILE))                             # trên
-	_wall(Rect2(0, TILE * (ROWS - 1), TILE * COLS, TILE))            # dưới
-	_wall(Rect2(0, 0, TILE, TILE * ROWS))                             # trái
+	_wall(Rect2(0, 0, TILE * _cols, TILE))                             # trên
+	_wall(Rect2(0, TILE * (_rows - 1), TILE * _cols, TILE))            # dưới
+	_wall(Rect2(0, 0, TILE, TILE * _rows))                             # trái
 	# Tường phải — 2 đoạn, chừa cửa (tile row 5-7, cao 2 tile)
-	_wall(Rect2(TILE * (COLS - 1), 0,       TILE, TILE * 5))
-	_wall(Rect2(TILE * (COLS - 1), TILE * 7, TILE, TILE * (ROWS - 7)))
+	_wall(Rect2(TILE * (_cols - 1), 0, TILE, TILE * 5))
+	_wall(Rect2(TILE * (_cols - 1), TILE * 7, TILE, TILE * (_rows - 7)))
 
 
 func _build_furniture() -> void:
-	# Collision cho 3 kệ hàng — dùng SHELF_SX đã tính sẵn
+	# Collision cho 3 kệ hàng — dùng _shelf_sx đã tính sẵn
 	for i: int in 3:
-		_wall(Rect2(SHELF_SX[i], TILE, TILE * 2, TILE * 2))
+		_wall(Rect2(_shelf_sx[i], TILE, TILE * 2, TILE * 2))
 	# Collision quầy bán hàng — khớp với vị trí trong _build_visuals
-	var cx := TILE * (COLS * 5 / 16)
-	var cy := TILE * (ROWS - 3)
-	var cw := TILE * (COLS * 6 / 16)
+	var cx := TILE * (_cols * 5 / 16)
+	var cy := TILE * (_rows - 3)
+	var cw := TILE * (_cols * 6 / 16)
 	_wall(Rect2(cx, cy, cw, TILE * 2))
 
 
@@ -281,7 +242,7 @@ func _build_furniture() -> void:
 
 func _spawn_player() -> void:
 	_player = load("res://scripts/shop/player_shop.gd").new()
-	_player.position = Vector2(TILE * (COLS / 2), TILE * (ROWS / 2))
+	_player.position = Vector2(TILE * (_cols / 2), TILE * (_rows / 2))
 	add_child(_player)
 
 
@@ -291,8 +252,8 @@ func _setup_camera() -> void:
 	cam.position_smoothing_speed   = 6.0
 	cam.limit_left   = 0
 	cam.limit_top    = 0
-	cam.limit_right  = TILE * COLS
-	cam.limit_bottom = TILE * ROWS
+	cam.limit_right  = TILE * _cols
+	cam.limit_bottom = TILE * _rows
 	_player.add_child(cam)
 
 
@@ -489,12 +450,13 @@ func _on_deal_accepted(weapon: Dictionary, gold: int) -> void:
 	_try_next_negotiation()
 
 
-func _on_trade_accepted(weapon: Dictionary, _trade_offer: Dictionary) -> void:
+func _on_trade_accepted(weapon: Dictionary, trade_offer: Dictionary) -> void:
 	var id := _active_neg_id
 	_active_neg_id = -1
 	_reserved_weapons.erase(_active_neg_weapon)
 	_active_neg_weapon = {}
 	_remove_weapon_from_shelf(weapon)
+	InventorySystem.add_trade_offer(trade_offer)
 	_shop_mgr.complete_sale(id, 0)
 	if _customers.has(id):
 		(_customers[id] as CustomerAI).dismiss_served()
@@ -559,12 +521,13 @@ func _build_shelf_system() -> void:
 	for _i: int in 6:
 		_shelf_slots.append({"weapon": {}, "icon": null})
 	_build_shelf_hints()
+	_build_empty_inventory_hint()
 	_build_inventory_panel()
 
 
 func _build_shelf_hints() -> void:
 	for i: int in 3:
-		var cx: float = SHELF_SX[i] + 64.0
+		var cx: float = _shelf_sx[i] + 64.0
 		var py: float = TILE - 30.0   # nổi ngay trên đỉnh kệ (trong vùng tường)
 
 		var hint_node := Node2D.new()
@@ -603,6 +566,50 @@ func _build_shelf_hints() -> void:
 		_shelf_hint_popups.append(hint_node)
 
 
+func _build_empty_inventory_hint() -> void:
+	_empty_inventory_hint = Node2D.new()
+	_empty_inventory_hint.visible = false
+	_empty_inventory_hint.z_index = 6
+	add_child(_empty_inventory_hint)
+
+	var bg := Polygon2D.new()
+	bg.name = "Background"
+	bg.polygon = PackedVector2Array([
+		Vector2(-142, -4), Vector2(142, -4),
+		Vector2(142, 30),  Vector2(-142, 30),
+	])
+	bg.color = Color(0.05, 0.03, 0.01, 0.88)
+	_empty_inventory_hint.add_child(bg)
+
+	var border := Polygon2D.new()
+	border.name = "Border"
+	border.polygon = PackedVector2Array([
+		Vector2(-142, -4), Vector2(142, -4),
+		Vector2(142, 0),   Vector2(-142, 0),
+	])
+	border.color = Color(0.90, 0.35, 0.25, 0.95)
+	_empty_inventory_hint.add_child(border)
+
+	var lbl := Label.new()
+	lbl.text = "Chưa có vũ khí — hãy rèn trước!"
+	lbl.position = Vector2(-140, 1)
+	lbl.size = Vector2(280, 26)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 18)
+	lbl.add_theme_color_override("font_color", Color(0.98, 0.78, 0.62))
+	_empty_inventory_hint.add_child(lbl)
+
+
+func _show_empty_inventory_hint(shelf_idx: int) -> void:
+	if _empty_inventory_hint == null:
+		return
+	var cx: float = _shelf_sx[shelf_idx] + 64.0
+	_empty_inventory_hint.position = Vector2(cx, TILE + 76.0)
+	_empty_inventory_hint.modulate.a = 0.0
+	_empty_inventory_hint.visible = true
+	create_tween().tween_property(_empty_inventory_hint, "modulate:a", 1.0, 0.18)
+
+
 func _build_inventory_panel() -> void:
 	_inventory_panel = InventoryPanel.new()
 	add_child(_inventory_panel)
@@ -620,9 +627,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _shop_session_done or (_shop_mgr != null and _shop_mgr.is_open):
 		return
-	if (_inventory_panel != null and _inventory_panel.visible) or (_neg_ui != null and _neg_ui.visible):
+	var inventory_open := _inventory_panel != null and _inventory_panel.visible
+	var negotiation_open := _neg_ui != null and _neg_ui.visible
+	if inventory_open or negotiation_open:
 		return
-	_inventory_panel.open_shop(_get_inventory(), _near_shelf_idx, _shelf_slots)
+	var inv := _get_inventory()
+	if inv.is_empty():
+		_show_empty_inventory_hint(_near_shelf_idx)
+		get_viewport().set_input_as_handled()
+		return
+	_empty_inventory_hint.visible = false
+	_inventory_panel.open_shop(inv, _near_shelf_idx, _shelf_slots)
 	get_viewport().set_input_as_handled()
 
 
@@ -649,7 +664,7 @@ func _apply_slot_weapon(slot_idx: int, weapon: Dictionary) -> void:
 		var row: int = slot_idx % 2
 		# Tâm của mỗi hàng kệ trong world-space
 		# Hàng trên: y≈93 (giữa vùng 64-123), Hàng dưới: y≈162 (giữa vùng 133-192)
-		var icon_pos := Vector2(SHELF_SX[sh] + 64, 93 + row * 69)
+		var icon_pos := Vector2(_shelf_sx[sh] + 64, 93 + row * 69)
 
 		var icon := Polygon2D.new()
 		icon.polygon = PackedVector2Array([
@@ -663,8 +678,7 @@ func _apply_slot_weapon(slot_idx: int, weapon: Dictionary) -> void:
 
 
 func _get_inventory() -> Array:
-	var inv := InventorySystem.get_weapons()
-	return inv if not inv.is_empty() else MOCK_INVENTORY
+	return InventorySystem.get_weapons()
 
 
 func _get_display_inventory() -> Array:

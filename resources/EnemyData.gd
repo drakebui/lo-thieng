@@ -13,6 +13,7 @@ extends Resource
 @export var color:      Color  = Color(0.55, 0.25, 0.12)
 @export var region:     String = ""
 @export var crit_rate:  float  = 0.15  # tỉ lệ ra đòn chí mạng (giảm bởi player crit_resist)
+@export var loot_items: Array[Dictionary] = [] # Mỗi phần tử: { "item_id": String, "chance": float }
 
 # Chuyển EnemyData sang Dictionary để dùng với EnemyCombatUnit.from_template()
 func to_template() -> Dictionary:
@@ -27,4 +28,5 @@ func to_template() -> Dictionary:
 		"color":     color,
 		"drop_gold": drop_gold,
 		"crit_rate": crit_rate,
+		"loot_items": loot_items,
 	}

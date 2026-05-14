@@ -4,14 +4,8 @@
 #
 # Không chứa UI. Emit signals để combat_scene.gd cập nhật hiển thị.
 # API công khai: start_combat() và submit_player_action()
-extends Node
 class_name CombatManager
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STATE MACHINE
-# ══════════════════════════════════════════════════════════════════════════════
-
-enum CombatState { IDLE, PLAYER_TURN, ENEMY_TURN, RESOLVE, ENDED }
+extends Node
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SIGNALS — combat_scene.gd lắng nghe để cập nhật UI
@@ -24,6 +18,12 @@ signal action_logged(message: String)
 signal combatant_updated(is_player: bool)
 signal hit_landed(target_is_player: bool, damage: int, is_crit: bool)
 signal combat_ended(result: String, reward_data: Dictionary)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STATE MACHINE
+# ══════════════════════════════════════════════════════════════════════════════
+
+enum CombatState { IDLE, PLAYER_TURN, ENEMY_TURN, RESOLVE, ENDED }
 
 # Khoảng dừng giữa action player và action enemy (giây)
 const ACTION_DELAY := 0.65
@@ -111,13 +111,13 @@ const ENEMY_TEMPLATES: Dictionary = {
 # STATE
 # ══════════════════════════════════════════════════════════════════════════════
 
+var player: Combatant      = null
+var enemy:  EnemyCombatUnit = null
+
 var _state:          CombatState = CombatState.IDLE
 var _round_num:      int         = 0
 var _enemy_intent:   Dictionary  = {}
 var _pending_action: Dictionary  = {}
-
-var player: Combatant      = null
-var enemy:  EnemyCombatUnit = null
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -191,31 +191,39 @@ func _enter_enemy_turn() -> void:
 
 	var player_faster:    bool = player.speed >= enemy.speed
 	var enemy_defending: bool = _enemy_intent.get("type", "") == "defend"
+	var can_continue := true
 
 	# Khi enemy đang phòng thủ, luôn cho enemy hành động trước (bất kể speed)
 	# để DEF bonus có hiệu lực ngay khi player tấn công trong cùng lượt.
 	if player_faster and not enemy_defending:
 		# Player đánh trước
 		_do_player_action(_pending_action)
-		if _check_end(): return
-		await get_tree().create_timer(ACTION_DELAY).timeout
-		if _state != CombatState.ENEMY_TURN: return
-		_do_enemy_action()
+		can_continue = not _check_end()
+		if can_continue:
+			await get_tree().create_timer(ACTION_DELAY).timeout
+			can_continue = _state == CombatState.ENEMY_TURN
+		if can_continue:
+			_do_enemy_action()
 	else:
 		# Enemy hành động trước (do chậm hơn player, hoặc đang phòng thủ)
 		_do_enemy_action()
-		if _check_end(): return
-		await get_tree().create_timer(ACTION_DELAY).timeout
-		if _state != CombatState.ENEMY_TURN: return
-		_do_player_action(_pending_action)
+		can_continue = not _check_end()
+		if can_continue:
+			await get_tree().create_timer(ACTION_DELAY).timeout
+			can_continue = _state == CombatState.ENEMY_TURN
+		if can_continue:
+			_do_player_action(_pending_action)
 
-	if _check_end(): return
+	if can_continue:
+		can_continue = not _check_end()
 
 	# Delay nhỏ trước khi chuyển sang RESOLVE để player đọc log
-	await get_tree().create_timer(ACTION_DELAY * 0.6).timeout
-	if _state != CombatState.ENEMY_TURN: return
+	if can_continue:
+		await get_tree().create_timer(ACTION_DELAY * 0.6).timeout
+		can_continue = _state == CombatState.ENEMY_TURN
 
-	_go_to(CombatState.RESOLVE)
+	if can_continue:
+		_go_to(CombatState.RESOLVE)
 
 
 # ─── RESOLVE ─────────────────────────────────────────────────────────────────

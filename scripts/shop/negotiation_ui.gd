@@ -12,6 +12,8 @@ signal deal_accepted(weapon: Dictionary, gold: int)
 signal trade_accepted(weapon: Dictionary, trade_offer: Dictionary)
 signal deal_declined()
 
+enum Phase { SELECT, PRICE }
+
 # ══════════════════════════════════════════════════════════════════════════════
 # LAYOUT — toạ độ tuyệt đối trong không gian root 1024×768
 # ══════════════════════════════════════════════════════════════════════════════
@@ -207,11 +209,16 @@ const TRADE_RATES: Dictionary = {
 }
 
 const TRADE_OFFER_POOL: Array = [
-	{"type": "material", "name": "Quặng Sắt",            "amount": 15},
-	{"type": "material", "name": "Than Hầm Mỏ",          "amount": 10},
-	{"type": "material", "name": "Da Thú Rừng",          "amount": 8},
-	{"type": "material", "name": "Đá Lửa Núi Lửa",      "amount": 6},
-	{"type": "material", "name": "Tinh Thể Băng",        "amount": 5},
+	{"type": "material", "item_id": "sat_tho", "name": "Quặng Sắt", "amount": 15},
+	{"type": "material", "item_id": "quang_than", "name": "Than Hầm Mỏ", "amount": 10},
+	{"type": "material", "item_id": "da_thu", "name": "Da Thú Rừng", "amount": 8},
+	{"type": "material", "item_id": "da_hoa_son", "name": "Đá Lửa Núi Lửa", "amount": 6},
+	{
+		"type": "material",
+		"item_id": "linh_luc_bang_2",
+		"name": "Tinh Thể Băng",
+		"amount": 5,
+	},
 	{"type": "item",     "name": "Kiếm Cổ Đại",          "rarity": 4},
 	{"type": "item",     "name": "Đoản Đao Huyền Thoại", "rarity": 5},
 	{"type": "item",     "name": "Búa Thần Cổ",          "rarity": 5},
@@ -231,9 +238,6 @@ const TRADE_INTRO_LINES: Dictionary = {
 # ══════════════════════════════════════════════════════════════════════════════
 # STATE
 # ══════════════════════════════════════════════════════════════════════════════
-
-enum Phase { SELECT, PRICE }
-
 var _phase:          Phase      = Phase.SELECT
 var _customer:       Dictionary = {}
 var _weapons:        Array      = []
@@ -653,7 +657,10 @@ func _on_weapon_selected(weapon: Dictionary) -> void:
 	_update_negotiate_info()
 
 
-func _layout_p2_buttons(has_trade: bool, show_propose: bool = true, show_threat: bool = false) -> void:
+func _layout_p2_buttons(
+		has_trade: bool,
+		show_propose: bool = true,
+		show_threat: bool = false) -> void:
 	var bx := _bx + 2
 	var y  := _by + 2 + 464
 	var h  := 52
@@ -825,8 +832,7 @@ func _on_threaten() -> void:
 			close_ui()
 			deal_declined.emit()
 			return
-		else:
-			_lbl_npc_speech.text = fail_line
+		_lbl_npc_speech.text = fail_line
 
 	# Trừ uy tín (luôn xảy ra dù thành công hay thất bại)
 	_show_rep_loss(rep_loss)
@@ -895,16 +901,27 @@ func _weapon_value(w: Dictionary) -> int:
 # Hệ số × giá trị vũ khí → giá tối đa NPC class đó sẵn sàng trả.
 # Class giàu (ve_binh, dao_si) trả cao hơn giá trị; class nghèo (nong_dan) trả thấp hơn.
 func _get_class_max_factor(ctype: String) -> float:
+	var factor: float
 	match ctype:
-		"ve_binh":     return randf_range(1.35, 1.50)   # ngân khố hoàng gia
-		"dao_si":      return randf_range(1.25, 1.40)   # giàu, cần hàng hiếm
-		"thich_khach": return randf_range(1.20, 1.35)   # tiền nhiều, ít kiên nhẫn
-		"vo_tang":     return randf_range(1.15, 1.30)
-		"hiep_khach":  return randf_range(1.10, 1.25)
-		"thu_ve":      return randf_range(1.05, 1.20)
-		"thuong_nhan": return randf_range(0.95, 1.10)   # cần lời, không trả cao
-		"nong_dan":    return randf_range(0.80, 0.95)   # tiền ít, trả dưới giá trị
-		_:             return randf_range(1.00, 1.15)
+		"ve_binh":
+			factor = randf_range(1.35, 1.50)   # ngân khố hoàng gia
+		"dao_si":
+			factor = randf_range(1.25, 1.40)   # giàu, cần hàng hiếm
+		"thich_khach":
+			factor = randf_range(1.20, 1.35)   # tiền nhiều, ít kiên nhẫn
+		"vo_tang":
+			factor = randf_range(1.15, 1.30)
+		"hiep_khach":
+			factor = randf_range(1.10, 1.25)
+		"thu_ve":
+			factor = randf_range(1.05, 1.20)
+		"thuong_nhan":
+			factor = randf_range(0.95, 1.10)   # cần lời, không trả cao
+		"nong_dan":
+			factor = randf_range(0.80, 0.95)   # tiền ít, trả dưới giá trị
+		_:
+			factor = randf_range(1.00, 1.15)
+	return factor
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -4,6 +4,7 @@ extends Control
 
 const HP_BAR_W := 500.0
 const HP_BAR_H := 48.0
+const _ENEMY_CYCLE: Array[String] = ["soi", "nguoi_da", "ma_rung"]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NODES
@@ -44,11 +45,11 @@ var _log_label:      Label
 var _result_overlay: Control
 var _result_title:   Label
 var _result_body:    Label
+var _retry_btn:      Button
 var _return_btn:     Button   # nút quay lại exploration (hiển thị khi từ vùng đất)
 
-# Cycle qua 3 enemy để test đủ 3 archetype AI
-const _ENEMY_CYCLE: Array[String] = ["soi", "nguoi_da", "ma_rung"]
 var _enemy_cycle_idx: int = 0
+var _active_enemy_key: String = ""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -354,18 +355,11 @@ func _build_result_overlay() -> Control:
 	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	btn_row.add_theme_constant_override("separation", 32)
 
-	var inv_btn := Button.new()
-	inv_btn.text = "[ Về Kho  (I) ]"
-	inv_btn.add_theme_font_size_override("font_size", 52)
-	inv_btn.pressed.connect(func() -> void:
-		get_tree().change_scene_to_file("res://scenes/ui/InventoryScene.tscn"))
-	btn_row.add_child(inv_btn)
-
-	var retry := Button.new()
-	retry.text = "[ Đánh lại  (R) ]"
-	retry.add_theme_font_size_override("font_size", 52)
-	retry.pressed.connect(_on_retry)
-	btn_row.add_child(retry)
+	_retry_btn = Button.new()
+	_retry_btn.text = "[ Đánh lại  (R) ]"
+	_retry_btn.add_theme_font_size_override("font_size", 52)
+	_retry_btn.pressed.connect(_on_retry)
+	btn_row.add_child(_retry_btn)
 
 	_return_btn = Button.new()
 	_return_btn.text = "[ Quay lại Khám Phá ]"
@@ -386,6 +380,7 @@ func _build_result_overlay() -> Control:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _setup_mock_combat(enemy_key: String) -> void:
+	_active_enemy_key = enemy_key
 	var p: PlayerCombatUnit
 	if GameManager.has_any_equipped():
 		p = PlayerCombatUnit.new()
@@ -404,18 +399,7 @@ func _setup_mock_combat(enemy_key: String) -> void:
 	else:
 		var ed: EnemyData = EnemyDatabase.get_enemy(enemy_key)
 		if ed != null:
-			tmpl = {
-				"name":      ed.enemy_name,
-				"archetype": ed.archetype,
-				"hp":        ed.hp,
-				"atk":       ed.atk,
-				"def_stat":  ed.def_stat,
-				"magic":     ed.magic,
-				"speed":     ed.speed,
-				"color":     ed.color,
-				"drop_gold": ed.drop_gold,
-				"crit_rate": ed.crit_rate,
-			}
+			tmpl = ed.to_template()
 		else:
 			tmpl = CombatManager.ENEMY_TEMPLATES["soi"]  # fallback
 
@@ -499,22 +483,107 @@ func _on_combat_ended(result: String, data: Dictionary) -> void:
 	match result:
 		"win":
 			var gold: int = data.get("gold", 30)
+			var dropped_loot: Array[Dictionary] = _roll_enemy_loot(_active_enemy_key)
+			_store_exploration_win(dropped_loot)
 			_result_title.text = "CHIẾN THẮNG"
 			_result_title.add_theme_color_override("font_color", Color(0.95, 0.86, 0.2))
-			_result_body.text  = "Nhận được %d G\nNhấn R để đánh lại" % gold
+			_result_body.text = _loot_result_body(gold, dropped_loot)
+			_retry_btn.visible = false
 		"lose":
+			_prepare_exploration_return()
 			_result_title.text = "THẤT BẠI"
 			_result_title.add_theme_color_override("font_color", Color(0.82, 0.22, 0.18))
 			_result_body.text  = "Mất 30% vàng mang theo\nNhấn R để thử lại"
+			_retry_btn.visible = true
 		"run":
+			var stamina_spent: int = GameManager.consume_flee_stamina(1)
+			_prepare_exploration_return()
 			_result_title.text = "BỎ CHẠY"
 			_result_title.add_theme_color_override("font_color", Color(0.72, 0.72, 0.72))
-			_result_body.text  = "Bạn đã rời khỏi trận.\nNhấn R để đánh lại"
+			var stamina_line: String = ""
+			if stamina_spent > 0:
+				stamina_line = "\nTốn %d thể lực" % stamina_spent
+			_result_body.text  = "Bạn đã rời khỏi trận.%s\nNhấn R để đánh lại" % stamina_line
+			_retry_btn.visible = true
 	# Hiện nút quay lại nếu đến từ exploration
 	if not GameManager.post_combat_return.is_empty():
 		_return_btn.visible = true
 
 	_result_overlay.visible = true
+
+
+func _roll_enemy_loot(enemy_key: String) -> Array[Dictionary]:
+	var enemy_data: EnemyData = EnemyDatabase.get_enemy(enemy_key)
+	if enemy_data == null:
+		return []
+
+	var dropped_loot: Array[Dictionary] = []
+	for entry in enemy_data.loot_items:
+		var item_id: String = entry.get("item_id", "")
+		var chance: float = entry.get("chance", 0.0)
+		if item_id.is_empty():
+			continue
+		if randf() < chance:
+			dropped_loot.append({"item_id": item_id})
+	return dropped_loot
+
+
+func _store_exploration_win(dropped_loot: Array[Dictionary]) -> void:
+	if GameManager.post_combat_return.is_empty():
+		return
+	var state: Dictionary = GameManager.exploration_state
+	if state.is_empty():
+		return
+
+	var pending_loot: Array = state.get("pending_loot", [])
+	for loot in dropped_loot:
+		if not _add_loot_to_hand(loot):
+			pending_loot.append(loot)
+	state["pending_loot"] = pending_loot
+	state["pending_combat_enemy_idx"] = -1
+	state["enemy_spawn_seed"] = int(Time.get_ticks_usec())
+	GameManager.exploration_state = state
+
+
+func _prepare_exploration_return() -> void:
+	if GameManager.post_combat_return.is_empty():
+		return
+	var state: Dictionary = GameManager.exploration_state
+	if state.is_empty():
+		return
+	state["pending_combat_enemy_idx"] = -1
+	state["enemy_spawn_seed"] = int(Time.get_ticks_usec())
+	GameManager.exploration_state = state
+
+
+func _add_loot_to_hand(loot: Dictionary) -> bool:
+	var item_id: String = loot.get("item_id", "")
+	var item: ItemData = ItemDatabase.get_item(item_id)
+	if item == null:
+		return true
+	var hand_item: Dictionary = {
+		"item_id": item.item_id,
+		"item_name": item.item_name,
+		"rarity": item.rarity,
+		"base_value": item.base_value,
+		"item_type": item.item_type,
+	}
+	hand_item.merge(item.effect_data)
+	return GameManager.add_to_hand(hand_item)
+
+
+func _loot_result_body(gold: int, dropped_loot: Array[Dictionary]) -> String:
+	var item_names: Array[String] = []
+	for loot in dropped_loot:
+		var item_id: String = loot.get("item_id", "")
+		var item: ItemData = ItemDatabase.get_item(item_id)
+		if item != null:
+			item_names.append(item.item_name)
+
+	var items_text: String = "Không có"
+	if not item_names.is_empty():
+		items_text = ", ".join(item_names)
+	return "Chiến lợi phẩm nhận được:\nVàng: %d G\nVật phẩm: %s" % [gold, items_text]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -550,13 +619,14 @@ func _input(event: InputEvent) -> void:
 		KEY_3: _on_action_btn_pressed(2)
 		KEY_4: _on_action_btn_pressed(3)
 		KEY_W: _on_action_btn_pressed(4)
-		KEY_I:
-			if _result_overlay.visible:
-				get_tree().change_scene_to_file("res://scenes/ui/InventoryScene.tscn")
-		KEY_R: _on_retry()
+		KEY_R:
+			if _retry_btn.visible:
+				_on_retry()
 
 
 func _on_retry() -> void:
+	if _result_overlay.visible and not _retry_btn.visible:
+		return
 	_return_btn.visible = false
 	_enemy_cycle_idx = (_enemy_cycle_idx + 1) % _ENEMY_CYCLE.size()
 	_setup_mock_combat(_ENEMY_CYCLE[_enemy_cycle_idx])

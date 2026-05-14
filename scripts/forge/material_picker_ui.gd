@@ -36,6 +36,7 @@ var _bg:          ColorRect
 var _title_ctrl:  Control
 var _grid_scroll: ScrollContainer
 var _btn_wrap:    CenterContainer
+var _back_btn:    Button
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -45,13 +46,21 @@ var _btn_wrap:    CenterContainer
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	var raw := ItemDatabase.get_items_by_type(ItemData.ItemType.MATERIAL)
-	for item in raw:
-		_materials.append(item)
+	var raw_hand: Array[Dictionary] = InventorySystem.get_materials()
+	for mat_dict in raw_hand:
+		var item_data: ItemData = ItemDatabase.get_item(mat_dict.get("item_id", ""))
+		if item_data != null:
+			_materials.append(item_data)
 
 	_bg = ColorRect.new()
 	_bg.color = Color(0.08, 0.07, 0.05)
 	add_child(_bg)
+
+	_back_btn = Button.new()
+	_back_btn.text = "[ Quay về Xưởng  (Esc) ]"
+	_back_btn.add_theme_font_size_override("font_size", 28)
+	_back_btn.pressed.connect(_go_to_hub)
+	add_child(_back_btn)
 
 	_title_ctrl = _build_title()
 	add_child(_title_ctrl)
@@ -103,6 +112,9 @@ func _do_layout() -> void:
 
 	_bg.position = Vector2.ZERO
 	_bg.size     = Vector2(w, h)
+
+	_back_btn.position = Vector2(32, 28)
+	_back_btn.size = Vector2(300, 52)
 
 	_title_ctrl.position = Vector2(LM, TITLE_T)
 	_title_ctrl.size     = Vector2(w - LM * 2, TITLE_H)
@@ -159,6 +171,18 @@ func _build_grid() -> ScrollContainer:
 	grid.add_theme_constant_override("h_separation", 14)
 	grid.add_theme_constant_override("v_separation", 14)
 	_grid_scroll.add_child(grid)
+
+	if _materials.is_empty():
+		var empty_lbl := Label.new()
+		empty_lbl.text = "Kho vật liệu trống — hãy đi khám phá trước!"
+		empty_lbl.add_theme_font_size_override("font_size", 40)
+		empty_lbl.add_theme_color_override("font_color", Color(0.82, 0.74, 0.55))
+		empty_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		empty_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty_lbl.custom_minimum_size = Vector2(760, 220)
+		grid.add_child(empty_lbl)
+		return _grid_scroll
 
 	for i in _materials.size():
 		var panel := _build_grid_item(i)
@@ -467,8 +491,16 @@ func _on_next_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/forge/WeaponBuilder.tscn")
 
 
+func _go_to_hub() -> void:
+	SceneManager.go_to("res://scenes/main/WorkshopHub.tscn")
+
+
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or event.echo or not event.pressed:
 		return
-	if event.keycode == KEY_ENTER and _selected_idx >= 0:
-		_on_next_pressed()
+	match event.keycode:
+		KEY_ENTER:
+			if _selected_idx >= 0:
+				_on_next_pressed()
+		KEY_ESCAPE:
+			_go_to_hub()

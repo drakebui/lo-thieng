@@ -1,5 +1,5 @@
-extends Node
 class_name ShopManager
+extends Node
 
 # Quản lý phiên bán hàng buổi chiều:
 # - Timer 10 phút thực
@@ -186,6 +186,8 @@ func complete_sale(instance_id: int, gold: int) -> void:
 		return
 	_gold_earned      += gold
 	_customers_served += 1
+	if gold > 0:
+		GameManager.add_gold(gold)
 	EventBus.customer_served.emit(c.get("type", ""), gold)
 	_remove_customer(c, "sale")
 

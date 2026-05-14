@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "find /Users/minhchau/lo-thieng-demo-2/NOTES.md -mmin -30 | grep -q . || echo \"> ⚠️ SESSION KẾT THÚC KHÔNG CÓ BÁO CÁO — $(date '+%Y-%m-%d %H:%M')\" >> /Users/minhchau/lo-thieng-demo-2/NOTES.md",
+            "statusMessage": "Kiểm tra báo cáo session..."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -58,6 +58,7 @@ static func _e(
 	e.speed        = speed
 	e.drop_gold    = gold
 	e.color        = color
+	e.loot_items   = _loot_for_region(region)
 	# Crit rate mặc định theo archetype; có thể override riêng nếu cần
 	match archetype:
 		"aggressive": e.crit_rate = 0.25
@@ -66,6 +67,42 @@ static func _e(
 		"boss":       e.crit_rate = 0.30
 		_:            e.crit_rate = 0.15
 	_register(e)
+
+
+static func _loot_for_region(region: String) -> Array[Dictionary]:
+	var loot: Array[Dictionary] = []
+	match region:
+		"DongMay":
+			loot.append({"item_id": "sat_tho", "chance": 0.65})
+			loot.append({"item_id": "da_thu", "chance": 0.50})
+			loot.append({"item_id": "dong_co_kho", "chance": 0.35})
+			loot.append({"item_id": "bac_manh", "chance": 0.20})
+		"RungTramHon":
+			loot.append({"item_id": "nhua_linh", "chance": 0.65})
+			loot.append({"item_id": "go_co_thu", "chance": 0.45})
+			loot.append({"item_id": "pha_le_rung", "chance": 0.35})
+			loot.append({"item_id": "la_hon", "chance": 0.15})
+		"NuiThanDo":
+			loot.append({"item_id": "quang_than", "chance": 0.65})
+			loot.append({"item_id": "da_hoa_son", "chance": 0.40})
+			loot.append({"item_id": "thep_hoa_son", "chance": 0.30})
+			loot.append({"item_id": "mithril_tho", "chance": 0.12})
+		"BaiCat":
+			loot.append({"item_id": "cat_thieng", "chance": 0.65})
+			loot.append({"item_id": "xuong_ca", "chance": 0.45})
+			loot.append({"item_id": "ho_phach", "chance": 0.30})
+			loot.append({"item_id": "da_vang", "chance": 0.12})
+		"ThanhNgoc":
+			loot.append({"item_id": "da_ngoc", "chance": 0.65})
+			loot.append({"item_id": "thep_trang", "chance": 0.40})
+			loot.append({"item_id": "soi_vang", "chance": 0.30})
+			loot.append({"item_id": "ngoc_tho", "chance": 0.12})
+		"LangTo":
+			loot.append({"item_id": "tro_lo_to", "chance": 0.55})
+			loot.append({"item_id": "go_to_nghe", "chance": 0.40})
+			loot.append({"item_id": "di_thach", "chance": 0.18})
+			loot.append({"item_id": "manh_thieng", "chance": 0.10})
+	return loot
 
 
 # ═══════════════════════════════════════════════════════════

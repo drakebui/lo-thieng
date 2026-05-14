@@ -25,20 +25,6 @@ const C_HINT      := Color(1.00, 0.92, 0.52)
 const C_HUD_BAR   := Color(0.07, 0.04, 0.02, 0.90)
 const C_HUD_TEXT  := Color(0.94, 0.84, 0.65)
 
-# Vị trí các zone — tính động theo viewport trong _init_layout()
-var COLS: int
-var ROWS: int
-var FORGE_CENTER: Vector2
-var FORGE_SIZE:   Vector2
-var BED_CENTER:   Vector2
-var BED_SIZE:     Vector2
-var DOOR_CENTER_Y: float
-var DOOR_HALF_H:   float
-var EXIT_CENTER:  Vector2
-var EXIT_SIZE:    Vector2
-var SHOP_CENTER:  Vector2
-var SHOP_SIZE:    Vector2
-
 # Scene path
 const PATH_FORGE := "res://scenes/forge/MaterialPicker.tscn"
 const PATH_SHOP  := "res://scenes/shop/ShopScene.tscn"
@@ -48,6 +34,20 @@ const ZONE_FORGE := "forge"
 const ZONE_BED   := "bed"
 const ZONE_EXIT  := "exit"
 const ZONE_SHOP  := "shop"
+
+# Vị trí các zone — tính động theo viewport trong _init_layout()
+var cols: int
+var rows: int
+var forge_center: Vector2
+var forge_size:   Vector2
+var bed_center:   Vector2
+var bed_size:     Vector2
+var door_center_y: float
+var door_half_h:   float
+var exit_center:  Vector2
+var exit_size:    Vector2
+var shop_center:  Vector2
+var shop_size:    Vector2
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STATE
@@ -71,21 +71,27 @@ var _day_summary:   CanvasLayer   # lazy-load
 
 func _init_layout() -> void:
 	var vp := get_viewport_rect().size
-	COLS          = ceili(vp.x / float(TILE))        # 30 @ 1920
-	ROWS          = ceili(vp.y / float(TILE))        # 17 @ 1080
-	FORGE_CENTER  = Vector2(TILE * 3,           TILE * 3)
-	FORGE_SIZE    = Vector2(TILE * 5,           TILE * 4)
-	BED_CENTER    = Vector2(vp.x - TILE * 3,   TILE * 3)
-	BED_SIZE      = Vector2(TILE * 4,           TILE * 4)
-	DOOR_CENTER_Y = vp.y * 0.5
-	DOOR_HALF_H   = float(TILE * 2)
-	EXIT_CENTER   = Vector2(TILE * 0.5,         DOOR_CENTER_Y)
-	EXIT_SIZE     = Vector2(float(TILE),         DOOR_HALF_H * 2.0)
-	SHOP_CENTER   = Vector2(vp.x - TILE * 0.5,  DOOR_CENTER_Y)
-	SHOP_SIZE     = Vector2(float(TILE),         DOOR_HALF_H * 2.0)
+	cols          = ceili(vp.x / float(TILE))        # 30 @ 1920
+	rows          = ceili(vp.y / float(TILE))        # 17 @ 1080
+	forge_center  = Vector2(TILE * 3,           TILE * 3)
+	forge_size    = Vector2(TILE * 5,           TILE * 4)
+	bed_center    = Vector2(vp.x - TILE * 3,   TILE * 3)
+	bed_size      = Vector2(TILE * 4,           TILE * 4)
+	door_center_y = vp.y * 0.5
+	door_half_h   = float(TILE * 2)
+	exit_center   = Vector2(TILE * 0.5,         door_center_y)
+	exit_size     = Vector2(float(TILE),         door_half_h * 2.0)
+	shop_center   = Vector2(vp.x - TILE * 0.5,  door_center_y)
+	shop_size     = Vector2(float(TILE),         door_half_h * 2.0)
 
 
 func _ready() -> void:
+	if not GameManager.save_restored:
+		if SaveSystem.has_save():
+			var data := SaveSystem.load_game()
+			GameManager.restore_from_save(data)
+		else:
+			GameManager.save_restored = true
 	_init_layout()
 	_build_room()
 	_build_player()
@@ -93,6 +99,10 @@ func _ready() -> void:
 	_build_hud()
 	_connect_signals()
 	_refresh_hud()
+	if not GameManager.pending_day_summary_stats.is_empty():
+		var stats := GameManager.pending_day_summary_stats.duplicate()
+		GameManager.pending_day_summary_stats = {}
+		_open_day_summary(stats)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -112,24 +122,24 @@ func _build_room() -> void:
 	# Nền tường
 	var bg := ColorRect.new()
 	bg.position = Vector2.ZERO
-	bg.size     = Vector2(TILE * COLS, TILE * ROWS)
+	bg.size     = Vector2(TILE * cols, TILE * rows)
 	bg.color    = C_WALL
 	add_child(bg)
 
 	# Sàn gỗ
 	var floor_bg := ColorRect.new()
 	floor_bg.position = Vector2(TILE, TILE)
-	floor_bg.size     = Vector2(TILE * (COLS - 2), TILE * (ROWS - 2))
+	floor_bg.size     = Vector2(TILE * (cols - 2), TILE * (rows - 2))
 	floor_bg.color    = C_FLOOR
 	add_child(floor_bg)
 
 	# Vân sàn xen kẽ
-	for r: int in range(ROWS - 2):
+	for r: int in range(rows - 2):
 		if r % 2 == 0:
 			continue
 		var plank := ColorRect.new()
 		plank.position = Vector2(TILE, TILE + r * TILE)
-		plank.size     = Vector2(TILE * (COLS - 2), TILE)
+		plank.size     = Vector2(TILE * (cols - 2), TILE)
 		plank.color    = C_FLOOR_ALT
 		add_child(plank)
 
@@ -147,10 +157,10 @@ func _build_wall_collision() -> void:
 	add_child(sb)
 
 	var rw       := float(TILE)
-	var full_w   := float(TILE * COLS)
-	var full_h   := float(TILE * ROWS)
-	var door_top := DOOR_CENTER_Y - DOOR_HALF_H
-	var door_bot := DOOR_CENTER_Y + DOOR_HALF_H
+	var full_w   := float(TILE * cols)
+	var full_h   := float(TILE * rows)
+	var door_top := door_center_y - door_half_h
+	var door_bot := door_center_y + door_half_h
 
 	# tường trên + dưới (full width)
 	_wall_seg(sb, Vector2(0, 0),              Vector2(full_w, rw))
@@ -178,42 +188,42 @@ func _wall_seg(parent: StaticBody2D, pos: Vector2, sz: Vector2) -> void:
 
 func _build_forge_visual() -> void:
 	var bg := ColorRect.new()
-	bg.position = FORGE_CENTER - FORGE_SIZE * 0.5
-	bg.size     = FORGE_SIZE
+	bg.position = forge_center - forge_size * 0.5
+	bg.size     = forge_size
 	bg.color    = C_FORGE_BG
 	add_child(bg)
 
 	var fire := ColorRect.new()
-	fire.position = FORGE_CENTER + Vector2(-28, 16)
+	fire.position = forge_center + Vector2(-28, 16)
 	fire.size     = Vector2(56, 56)
 	fire.color    = C_FORGE_FRE
 	add_child(fire)
 
-	_zone_label("Lò Rèn", FORGE_CENTER + Vector2(-30, -80), C_LABEL_FRG)
+	_zone_label("Lò Rèn", forge_center + Vector2(-30, -80), C_LABEL_FRG)
 
 
 func _build_bed_visual() -> void:
 	var bg := ColorRect.new()
-	bg.position = BED_CENTER - BED_SIZE * 0.5
-	bg.size     = BED_SIZE
+	bg.position = bed_center - bed_size * 0.5
+	bg.size     = bed_size
 	bg.color    = C_BED_BG
 	add_child(bg)
 
-	_zone_label("Nghỉ Ngơi", BED_CENTER + Vector2(-42, -80), C_LABEL_BED)
+	_zone_label("Nghỉ Ngơi", bed_center + Vector2(-42, -80), C_LABEL_BED)
 
 
 func _build_door_visual(is_left: bool) -> void:
-	var x := 0.0 if is_left else float(TILE * (COLS - 1))
+	var x := 0.0 if is_left else float(TILE * (cols - 1))
 	var dr := ColorRect.new()
-	dr.position = Vector2(x, DOOR_CENTER_Y - DOOR_HALF_H)
-	dr.size     = Vector2(TILE, DOOR_HALF_H * 2)
+	dr.position = Vector2(x, door_center_y - door_half_h)
+	dr.size     = Vector2(TILE, door_half_h * 2)
 	dr.color    = C_DOOR
 	add_child(dr)
 
 	var caption := "Khám Phá" if is_left else "Tiệm"
 	var lbl := Label.new()
 	lbl.text                = caption
-	lbl.position            = Vector2(x + 4, DOOR_CENTER_Y - 12)
+	lbl.position            = Vector2(x + 4, door_center_y - 12)
 	lbl.size                = Vector2(TILE - 8, 24)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.add_theme_font_size_override("font_size", 13)
@@ -237,7 +247,7 @@ func _zone_label(text: String, pos: Vector2, col: Color) -> void:
 func _build_player() -> void:
 	var scr: GDScript = load("res://scripts/shop/player_shop.gd")
 	_player          = scr.new() as CharacterBody2D
-	_player.position = Vector2(TILE * COLS * 0.5, TILE * ROWS * 0.5)
+	_player.position = Vector2(TILE * cols * 0.5, TILE * rows * 0.5)
 	add_child(_player)
 
 
@@ -246,10 +256,10 @@ func _build_player() -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _build_zones() -> void:
-	_make_zone(ZONE_FORGE, FORGE_CENTER, FORGE_SIZE)
-	_make_zone(ZONE_BED,   BED_CENTER,   BED_SIZE)
-	_make_zone(ZONE_EXIT,  EXIT_CENTER,  EXIT_SIZE)
-	_make_zone(ZONE_SHOP,  SHOP_CENTER,  SHOP_SIZE)
+	_make_zone(ZONE_FORGE, forge_center, forge_size)
+	_make_zone(ZONE_BED,   bed_center,   bed_size)
+	_make_zone(ZONE_EXIT,  exit_center,  exit_size)
+	_make_zone(ZONE_SHOP,  shop_center,  shop_size)
 
 
 func _make_zone(id: String, center: Vector2, sz: Vector2) -> void:
@@ -317,7 +327,10 @@ func _hud_label(parent: Node, pos: Vector2) -> Label:
 func _refresh_hud() -> void:
 	_lbl_day.text     = "Ngày %d" % GameManager.current_day
 	_lbl_phase.text   = _phase_name(GameManager.current_phase)
-	_lbl_stamina.text = "Thể lực  %d / %d" % [GameManager.travel_stamina, GameManager.max_travel_stamina]
+	_lbl_stamina.text = "Thể lực  %d / %d" % [
+		GameManager.travel_stamina,
+		GameManager.max_travel_stamina,
+	]
 	_lbl_gold.text    = "Vàng  %d G" % GameManager.gold
 
 
@@ -339,6 +352,7 @@ func _connect_signals() -> void:
 	GameManager.travel_stamina_changed.connect(func(_c: int, _m: int) -> void: _refresh_hud())
 	GameManager.phase_changed.connect(func(_p: GameManager.GamePhase) -> void: _refresh_hud())
 	GameManager.day_changed.connect(func(_d: int) -> void: _refresh_hud())
+	EventBus.shop_closed.connect(_on_shop_closed_for_summary)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -404,6 +418,11 @@ func _go_sleep() -> void:
 	_open_day_summary()
 
 
+func _on_shop_closed_for_summary(stats: Dictionary) -> void:
+	GameManager.pending_day_summary_stats = {}
+	_open_day_summary(stats)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # OVERLAYS — lazy-load, implement đầy đủ ở bước sau
 # ══════════════════════════════════════════════════════════════════════════════
@@ -422,9 +441,9 @@ func _on_region_chosen(region_id: String) -> void:
 	SceneManager.go_to("res://scenes/regions/ExplorationScene.tscn")
 
 
-func _open_day_summary() -> void:
+func _open_day_summary(stats: Dictionary = {}) -> void:
 	if _day_summary == null:
 		var scr: GDScript = load("res://scripts/ui/day_summary_ui.gd")
 		_day_summary = scr.new() as CanvasLayer
 		add_child(_day_summary)
-	_day_summary.visible = true
+	(_day_summary as DaySummaryUI).show_summary(stats)

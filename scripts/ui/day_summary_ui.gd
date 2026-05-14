@@ -1,13 +1,30 @@
 # scripts/ui/day_summary_ui.gd
 # Overlay tổng kết cuối ngày: vàng kiếm được, ngày tiếp theo, lưu game
-# Stub — implement đầy đủ ở bước Phase 4
 class_name DaySummaryUI
 extends CanvasLayer
+
+const PATH_WORKSHOP := "res://scenes/main/WorkshopHub.tscn"
+
+var _title: Label
+var _gold_lbl: Label
+var _sold_lbl: Label
+var _session_stats: Dictionary = {}
 
 func _ready() -> void:
 	layer   = 16
 	visible = false
 	_build_placeholder()
+
+
+func _process(_delta: float) -> void:
+	if visible:
+		_refresh_summary()
+
+
+func show_summary(stats: Dictionary = {}) -> void:
+	_session_stats = stats.duplicate()
+	visible = true
+	_refresh_summary()
 
 
 func _build_placeholder() -> void:
@@ -22,42 +39,80 @@ func _build_placeholder() -> void:
 	root.add_child(bg)
 
 	var panel := ColorRect.new()
-	panel.position = Vector2(312, 200)
-	panel.size     = Vector2(400, 280)
+	panel.size = Vector2(460, 300)
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.position = -panel.size * 0.5
 	panel.color    = Color(0.14, 0.09, 0.04)
 	root.add_child(panel)
 
-	var title := Label.new()
-	title.text                = "Kết Thúc Ngày"
-	title.position            = Vector2(312, 220)
-	title.size                = Vector2(400, 40)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 28)
-	title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.28))
-	root.add_child(title)
+	_title = Label.new()
+	_title.position            = Vector2(0, 24)
+	_title.size                = Vector2(460, 42)
+	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title.add_theme_font_size_override("font_size", 28)
+	_title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.28))
+	panel.add_child(_title)
 
-	var day_lbl := Label.new()
-	day_lbl.text                = "Ngày %d kết thúc." % GameManager.current_day
-	day_lbl.position            = Vector2(312, 276)
-	day_lbl.size                = Vector2(400, 28)
-	day_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	day_lbl.add_theme_font_size_override("font_size", 20)
-	day_lbl.add_theme_color_override("font_color", Color(0.90, 0.82, 0.65))
-	root.add_child(day_lbl)
+	_gold_lbl = Label.new()
+	_gold_lbl.position = Vector2(48, 96)
+	_gold_lbl.size = Vector2(364, 32)
+	_gold_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_gold_lbl.add_theme_font_size_override("font_size", 22)
+	_gold_lbl.add_theme_color_override("font_color", Color(0.90, 0.82, 0.65))
+	panel.add_child(_gold_lbl)
+
+	_sold_lbl = Label.new()
+	_sold_lbl.position = Vector2(48, 138)
+	_sold_lbl.size = Vector2(364, 32)
+	_sold_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sold_lbl.add_theme_font_size_override("font_size", 22)
+	_sold_lbl.add_theme_color_override("font_color", Color(0.90, 0.82, 0.65))
+	panel.add_child(_sold_lbl)
 
 	var next_btn := Button.new()
 	next_btn.text     = "Sang Ngày Mới"
-	next_btn.position = Vector2(362, 400)
+	next_btn.position = Vector2(80, 216)
 	next_btn.size     = Vector2(300, 52)
 	next_btn.add_theme_font_size_override("font_size", 22)
 	next_btn.pressed.connect(_on_next_day)
-	root.add_child(next_btn)
+	panel.add_child(next_btn)
+
+	_refresh_summary()
 
 
 func _on_next_day() -> void:
 	GameManager.advance_day()
 	GameManager.clear_hand()
+	GameManager.pending_day_summary_stats = {}
+	_save_game()
 	visible = false
+	SceneManager.go_to(PATH_WORKSHOP)
+
+
+func _save_game() -> void:
+	var state := {
+		"day": GameManager.current_day,
+		"gold": GameManager.gold,
+		"reputation": GameManager.reputation,
+		"smithing_mastery": GameManager.smithing_mastery,
+		"artifact_count": GameManager.artifact_count,
+		"travel_stamina": GameManager.travel_stamina,
+		"unlocked_regions": GameManager.unlocked_regions,
+		"forged_weapons": GameManager.forged_weapons,
+		"equipped_weapons": GameManager.equipped_weapons,
+		"day_start_gold": GameManager.day_start_gold,
+	}
+	SaveSystem.save_game(state)
+
+
+func _refresh_summary() -> void:
+	if _title == null:
+		return
+	_title.text = "Kết Thúc Ngày %d" % GameManager.current_day
+	var earned_today := GameManager.gold - GameManager.day_start_gold
+	_gold_lbl.text = "Vàng kiếm được: %d G" % earned_today
+	var sold_count: int = _session_stats.get("customers_served", 0)
+	_sold_lbl.text = "Vũ khí đã bán: %d" % sold_count
 
 
 func _unhandled_input(event: InputEvent) -> void:

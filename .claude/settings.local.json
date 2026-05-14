@@ -4,7 +4,10 @@
       "Bash(xargs cat *)",
       "Bash(xargs -I{} sh -c 'sed -n \"7p\" \"{}\" | grep -q \".\" && echo \"{}:7: $\\(sed -n \"7p\" \"{}\"\\)\"')",
       "Bash(xxd /Users/minhchau/lo-thieng-demo-2/data/EnemyDatabase.gd)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Skill(update-config)",
+      "Bash(bash -c 'find /Users/minhchau/lo-thieng-demo-2/NOTES.md -mmin -30 | grep -q . || echo \"> ⚠️ SESSION KẾT THÚC KHÔNG CÓ BÁO CÁO — $\\(date \\\\\"+%Y-%m-%d %H:%M\\\\\"\\)\" >> /Users/minhchau/lo-thieng-demo-2/NOTES.md')",
+      "Bash(echo \"Exit code: $?\")"
     ]
   }
 }

@@ -79,6 +79,8 @@ func _refresh_weapon_list() -> void:
 	for child in vbox.get_children():
 		child.queue_free()
 
+	vbox.add_child(_build_equipped_summary())
+
 	var all_weapons := InventorySystem.get_weapons()
 	if all_weapons.is_empty():
 		var empty_lbl := Label.new()
@@ -112,13 +114,26 @@ func _build_weapon_card(fd: Dictionary, cw: Dictionary) -> PanelContainer:
 	col.add_theme_constant_override("separation", 10)
 	inner.add_child(col)
 
-	# Tên vũ khí
+	# Tên vũ khí và nút trang bị
+	var header_row := HBoxContainer.new()
+	header_row.add_theme_constant_override("separation", 16)
+	col.add_child(header_row)
+
 	var name_lbl := Label.new()
 	name_lbl.text = cw.get("weapon_name", "???")
 	name_lbl.add_theme_font_size_override("font_size", 52)
 	name_lbl.add_theme_color_override("font_color", r_color)
 	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	col.add_child(name_lbl)
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_row.add_child(name_lbl)
+
+	var equip_btn := Button.new()
+	equip_btn.text = _get_equip_button_text(cw)
+	equip_btn.disabled = _get_equipped_slot(cw) != -1
+	equip_btn.add_theme_font_size_override("font_size", 34)
+	equip_btn.custom_minimum_size = Vector2(220, 64)
+	equip_btn.pressed.connect(_on_equip_pressed.bind(cw))
+	header_row.add_child(equip_btn)
 
 	# Rarity
 	var rarity_lbl := Label.new()
@@ -144,8 +159,12 @@ func _build_weapon_card(fd: Dictionary, cw: Dictionary) -> PanelContainer:
 	# Skills
 	var s1: Dictionary = cw.get("skill1", {})
 	var s2: Dictionary = cw.get("skill2", {})
-	var s1_text: String = "%s [%dSTA]" % [s1.get("name", "—"), s1.get("stamina_cost", 0)] if not s1.is_empty() else "—"
-	var s2_text: String = "%s [%dSTA]" % [s2.get("name", "—"), s2.get("stamina_cost", 0)] if not s2.is_empty() else "—"
+	var s1_text := "—"
+	if not s1.is_empty():
+		s1_text = "%s [%dSTA]" % [s1.get("name", "—"), s1.get("stamina_cost", 0)]
+	var s2_text := "—"
+	if not s2.is_empty():
+		s2_text = "%s [%dSTA]" % [s2.get("name", "—"), s2.get("stamina_cost", 0)]
 	var skill_lbl := Label.new()
 	skill_lbl.text = "Skill 1: %s   |   Skill 2: %s" % [s1_text, s2_text]
 	skill_lbl.add_theme_font_size_override("font_size", 36)
@@ -169,6 +188,71 @@ func _build_weapon_card(fd: Dictionary, cw: Dictionary) -> PanelContainer:
 	col.add_child(meta_lbl)
 
 	return panel
+
+
+func _build_equipped_summary() -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_apply_card_style(panel, Color(0.95, 0.82, 0.5))
+
+	var inner := MarginContainer.new()
+	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		inner.add_theme_constant_override(side, 18)
+	panel.add_child(inner)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 8)
+	inner.add_child(col)
+
+	var title := Label.new()
+	title.text = "ĐANG TRANG BỊ"
+	title.add_theme_font_size_override("font_size", 34)
+	title.add_theme_color_override("font_color", Color(0.95, 0.82, 0.5))
+	col.add_child(title)
+
+	for i in GameManager.equipped_weapons.size():
+		var weapon: Dictionary = GameManager.equipped_weapons[i]
+		var slot_lbl := Label.new()
+		slot_lbl.text = "Ô %d: %s" % [i + 1, _get_equipped_name(weapon)]
+		slot_lbl.add_theme_font_size_override("font_size", 32)
+		slot_lbl.add_theme_color_override("font_color", Color(0.72, 0.70, 0.62))
+		col.add_child(slot_lbl)
+
+	return panel
+
+
+func _on_equip_pressed(weapon: Dictionary) -> void:
+	if _get_equipped_slot(weapon) != -1:
+		return
+	GameManager.equip_to_slot(_get_next_equip_slot(), weapon)
+	_refresh_weapon_list()
+
+
+func _get_next_equip_slot() -> int:
+	for i in GameManager.equipped_weapons.size():
+		if GameManager.equipped_weapons[i].is_empty():
+			return i
+	return 0
+
+
+func _get_equip_button_text(weapon: Dictionary) -> String:
+	var slot := _get_equipped_slot(weapon)
+	if slot != -1:
+		return "Ô %d" % (slot + 1)
+	return "Trang Bị"
+
+
+func _get_equipped_slot(weapon: Dictionary) -> int:
+	for i in GameManager.equipped_weapons.size():
+		if GameManager.equipped_weapons[i] == weapon:
+			return i
+	return -1
+
+
+func _get_equipped_name(weapon: Dictionary) -> String:
+	if weapon.is_empty():
+		return "( Trống )"
+	return weapon.get("weapon_name", "???")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

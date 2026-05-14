@@ -2,6 +2,8 @@
 # Phase 1 (Nung) → Phase 2 (Rèn Búa) → Phase 3 (Tôi Luyện) → Weapon Card
 extends Control
 
+enum Phase { P1, P2, P3_PICK, P3_ANIM, RESULT }
+
 const _FORGE1_SCRIPT := preload("res://scripts/forge/forge_system.gd")
 const _FORGE2_SCRIPT := preload("res://scripts/forge/forge_phase2.gd")
 const _FORGE3_SCRIPT := preload("res://scripts/forge/forge_phase3.gd")
@@ -28,7 +30,6 @@ const PHASE1_TIER_NAMES := {
 
 # ─── State ────────────────────────────────────────────────────────────────────
 
-enum Phase { P1, P2, P3_PICK, P3_ANIM, RESULT }
 var _current_phase := Phase.P1
 var _p1_tier:   String = ""
 var _p2_prefix: String = ""
@@ -128,6 +129,7 @@ func _ready() -> void:
 	add_child(_p3_pick_root)
 	add_child(_p3_anim_root)
 	add_child(_result_root)
+	add_child(_build_global_back_button())
 
 	_go_to_phase1()
 
@@ -135,6 +137,16 @@ func _ready() -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 # PHASE INDICATOR
 # ══════════════════════════════════════════════════════════════════════════════
+
+func _build_global_back_button() -> Button:
+	var back_btn := Button.new()
+	back_btn.text = "[ Quay về Xưởng  (Esc) ]"
+	back_btn.add_theme_font_size_override("font_size", 28)
+	back_btn.position = Vector2(32, 28)
+	back_btn.size = Vector2(300, 52)
+	back_btn.pressed.connect(_go_to_hub)
+	return back_btn
+
 
 func _build_indicator() -> void:
 	var bar := HBoxContainer.new()
@@ -734,13 +746,6 @@ func _build_result_ui() -> Control:
 	_save_btn.pressed.connect(_on_save_pressed)
 	btn_row.add_child(_save_btn)
 
-	var inv_btn := Button.new()
-	inv_btn.text = "🎒  VÀO KHO  (I)"
-	inv_btn.add_theme_font_size_override("font_size", 52)
-	inv_btn.custom_minimum_size = Vector2(440, 88)
-	inv_btn.pressed.connect(_on_inventory_pressed)
-	btn_row.add_child(inv_btn)
-
 	var retry := Button.new()
 	retry.text = "[ Rèn mới  (R) ]"
 	retry.add_theme_font_size_override("font_size", 52)
@@ -787,15 +792,11 @@ func _input(event: InputEvent) -> void:
 		KEY_S:
 			if _current_phase == Phase.RESULT:
 				_on_save_pressed()
-		KEY_I:
-			if _current_phase == Phase.RESULT:
-				_on_inventory_pressed()
 		KEY_R:
 			if _current_phase == Phase.RESULT:
 				_on_retry_pressed()
 		KEY_ESCAPE:
-			if _current_phase == Phase.RESULT:
-				_go_to_hub()
+			_go_to_hub()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -845,6 +846,12 @@ func _on_save_pressed() -> void:
 			weapon[key] = _forge_result[key]
 	InventorySystem.add_weapon(weapon)
 	EventBus.weapon_forged.emit(weapon)
+	var mat_id: String = GameManager.selected_material.get("id", "")
+	if not mat_id.is_empty():
+		for mat in InventorySystem.get_materials():
+			if mat.get("item_id", "") == mat_id:
+				InventorySystem.remove_material(mat)
+				break
 
 
 func _rarity_label(rarity: int) -> String:
@@ -853,12 +860,6 @@ func _rarity_label(rarity: int) -> String:
 		2: return "[★★☆ Hiếm]"
 		3: return "[★★★ Cực Hiếm]"
 	return ""
-
-
-func _on_inventory_pressed() -> void:
-	if _p3_tween:
-		_p3_tween.kill()
-	get_tree().change_scene_to_file("res://scenes/ui/InventoryScene.tscn")
 
 
 func _on_retry_pressed() -> void:
