@@ -1,0 +1,126 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1"]
+
+[node name="HUD" type="CanvasLayer"]
+layer = 10
+script = ExtResource("1")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TopBar" type="PanelContainer" parent="VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="DaySlot" type="HBoxContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+
+[node name="Icon" type="TextureRect" parent="VBoxContainer/TopBar/HBoxContainer/DaySlot"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="_lbl_day" type="Label" parent="VBoxContainer/TopBar/HBoxContainer/DaySlot"]
+layout_mode = 2
+text = "Ngày 0"
+
+[node name="PhaseSlot" type="HBoxContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+
+[node name="Icon" type="TextureRect" parent="VBoxContainer/TopBar/HBoxContainer/PhaseSlot"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="_lbl_phase" type="Label" parent="VBoxContainer/TopBar/HBoxContainer/PhaseSlot"]
+layout_mode = 2
+text = "Sáng"
+
+[node name="VSeparator" type="VSeparator" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+
+[node name="GoldSlot" type="HBoxContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+
+[node name="Icon" type="TextureRect" parent="VBoxContainer/TopBar/HBoxContainer/GoldSlot"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="_lbl_gold" type="Label" parent="VBoxContainer/TopBar/HBoxContainer/GoldSlot"]
+layout_mode = 2
+text = "0 G"
+
+[node name="RepSlot" type="HBoxContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+
+[node name="Icon" type="TextureRect" parent="VBoxContainer/TopBar/HBoxContainer/RepSlot"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="_lbl_rep" type="Label" parent="VBoxContainer/TopBar/HBoxContainer/RepSlot"]
+layout_mode = 2
+text = "Tiếng tăm: 0"
+
+[node name="StaminaSlot" type="HBoxContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+
+[node name="Icon" type="TextureRect" parent="VBoxContainer/TopBar/HBoxContainer/StaminaSlot"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="_lbl_stamina" type="Label" parent="VBoxContainer/TopBar/HBoxContainer/StaminaSlot"]
+layout_mode = 2
+text = "0/0"
+
+[node name="VSeparator2" type="VSeparator" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+
+[node name="DebtSlot" type="HBoxContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+
+[node name="Icon" type="TextureRect" parent="VBoxContainer/TopBar/HBoxContainer/DebtSlot"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="_lbl_debt" type="Label" parent="VBoxContainer/TopBar/HBoxContainer/DebtSlot"]
+layout_mode = 2
+
+[node name="VSeparator3" type="VSeparator" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+
+[node name="_btn_guide_book" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+text = "Guide Book"
+
+[node name="Spacer" type="Control" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HintBar" type="PanelContainer" parent="VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 36)
+
+[node name="_lbl_hint" type="Label" parent="VBoxContainer/HintBar"]
+layout_mode = 2
+horizontal_alignment = 1

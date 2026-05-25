@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="DebtCheckpoint" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/DebtCheckpoint.gd" id="1_o4r2w"]
+
+[resource]
+script = ExtResource("1_o4r2w")
+id = "c2_dan_duong"
+title = "Tiền dẫn đường vào rừng"
+agent_id = "tay_sai_rung"
+amount_gold = 8000
+trigger_day = 5
+deadline_day = 12
+penalty_gold = 800
+late_days_before_harass = 3
+on_time_reward = {}
+agent_name = "Tay Sai Rừng"
+agent_description = "Người thu nợ lần thứ hai. Lạnh lùng, ít lời hơn — đáng sợ hơn NTN."
+agent_quote = "Rừng Trăm Hồn không phải của bà chủ... nhưng đường vào thì có."
+is_paid = false
+is_late = false
+has_notified = false

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="NPCData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/NPCData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+npc_id = "ve_binh"
+npc_name = "Vệ Binh Hoàng Gia"
+budget_range = Vector2i(1200, 2500)
+budget_min = 1200
+budget_max = 2500
+patience = 2
+preferred_weapon_tags = Array[String](["giao_dai", "khien_dong", "kiet_tac"])
+disliked_weapon_tags = Array[String](["curse_nang", "phan_chu"])
+preferred_tags = Array[String](["giao_dai", "khien_dong", "kiet_tac"])
+disliked_tags = Array[String](["curse_nang", "phan_chu"])
+walk_speed = 90.0
+min_day = 2
+min_weapon_rarity = 1

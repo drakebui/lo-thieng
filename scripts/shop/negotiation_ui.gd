@@ -1,31 +1,21 @@
-# negotiation_ui.gd
-# Recettear-style trading — bán trong suốt, thấy shop phía sau
-# Chân dung chủ tiệm BÊN TRÁI · Panel trung tâm · Chân dung NPC BÊN PHẢI
+# gdlint: disable=max-file-lines
 class_name NegotiationUI
 extends CanvasLayer
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SIGNALS
-# ══════════════════════════════════════════════════════════════════════════════
 
 signal deal_accepted(weapon: Dictionary, gold: int)
 signal trade_accepted(weapon: Dictionary, trade_offer: Dictionary)
 signal deal_declined()
-
 enum Phase { SELECT, PRICE }
+enum Mood { NEUTRAL, HAPPY, THINKING, ANNOYED, ANGRY }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# LAYOUT — toạ độ tuyệt đối trong không gian root 1024×768
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Panel outer = 744×526 (inner 740×522 + 2px border mỗi cạnh)
-# Vị trí tính động trong _build_ui() dựa trên viewport thực (_bx, _by)
-const PPW := 116; const PPH := 196   # kích thước khung chân dung
+const PPW := 128; const PPH := 190    # kích thước khung chân dung trong dialog
+const PANEL_W := 940
+const PANEL_H := 620
+const PRICE_TRACK_W := 500
+const PRICE_ZONE_H := 10
+const PRICE_VISIBLE_PAD_MIN := 80.0
+const PRICE_VISIBLE_PAD_RATIO := 0.45
 const PROPOSALS_MAX := 3              # tối đa số lần player đề xuất giá
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PALETTE
-# ══════════════════════════════════════════════════════════════════════════════
 
 const C_OVR   := Color(0.05, 0.03, 0.01, 0.80)
 const C_FRAME := Color(0.72, 0.54, 0.24)
@@ -45,19 +35,18 @@ const C_ACC   := Color(0.16, 0.40, 0.18)
 const C_ACCH  := Color(0.24, 0.54, 0.28)
 const C_REJ   := Color(0.42, 0.12, 0.12)
 const C_REJH  := Color(0.58, 0.18, 0.18)
+const C_ZONE_SAFE := Color(0.46, 0.47, 0.42)
+const C_ZONE_DEAL := Color(0.30, 0.66, 0.28)
 const C_THRT  := Color(0.48, 0.22, 0.06)   # nút đe dọa
 const C_THRTH := Color(0.66, 0.32, 0.10)
 const C_SKIN  := Color(0.82, 0.66, 0.50)
 const C_SHOP  := Color(0.28, 0.42, 0.62)
 const C_APRON := Color(0.56, 0.34, 0.14)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# AVATAR COLORS
-# ══════════════════════════════════════════════════════════════════════════════
-
 const CUST_COLORS: Dictionary = {
 	"hiep_khach":  Color(0.20, 0.45, 0.72),
 	"thu_ve":      Color(0.48, 0.50, 0.56),
+	"tho_san":     Color(0.30, 0.48, 0.24),
 	"vo_tang":     Color(0.72, 0.62, 0.22),
 	"thich_khach": Color(0.48, 0.22, 0.58),
 	"dao_si":      Color(0.22, 0.60, 0.58),
@@ -66,24 +55,22 @@ const CUST_COLORS: Dictionary = {
 	"ve_binh":     Color(0.28, 0.34, 0.60),
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# DIALOGUE TABLES
-# ══════════════════════════════════════════════════════════════════════════════
-
 const DIALOGUES: Dictionary = {
 	"hiep_khach":  "Tôi cần một thanh kiếm tốt cho hành trình dài...",
 	"thu_ve":      "Cần thứ gì đủ nặng để giữ tuyến đầu.",
+	"tho_san":     "Tôi cần thứ nhẹ, chắc, không vướng tay khi băng đồng.",
 	"vo_tang":     "Không cần hoa mỹ — dùng được là đủ.",
 	"thich_khach": "...Thứ gì đó nhanh. Đừng hỏi để làm gì.",
 	"dao_si":      "Huyền lực quan trọng hơn vật lý.",
 	"thuong_nhan": "Tôi mua để bán lại — giá phải hợp lý.",
-	"nong_dan":    "Cái gì bền không? Tiền không nhiều.",
+	"nong_dan":    "Dao làm vườn thôi. Không cần gì đặc biệt. Bao nhiêu?",
 	"ve_binh":     "Tiêu chuẩn hoàng gia. Chất lượng trên hết.",
 }
 
 const NPC_OFFER_LINES: Dictionary = {
 	"hiep_khach":  "Tôi trả %dG thôi — đủ xài trên đường rồi.",
 	"thu_ve":      "%dG. Không hơn, quân đội không có ngân sách dư.",
+	"tho_san":     "%dG. Đi săn còn phải giữ tiền mua dây cung.",
 	"vo_tang":     "Mức giá hợp lý với tôi là %dG.",
 	"thich_khach": "%dG. Đừng hỏi thêm.",
 	"dao_si":      "Huyền lực đáng %dG, không hơn.",
@@ -95,6 +82,7 @@ const NPC_OFFER_LINES: Dictionary = {
 const HAGGLE_COUNTER_LINES: Dictionary = {
 	"hiep_khach":  "Đắt vậy sao! Tôi chỉ có thể trả tối đa %dG thôi.",
 	"thu_ve":      "Vượt ngân sách. Tối đa của tôi là %dG.",
+	"tho_san":     "%dG là mức tôi gánh được. Cao hơn thì khó.",
 	"vo_tang":     "Không hợp lý. Tôi chỉ trả %dG, không hơn.",
 	"thich_khach": "...%dG. Cuối cùng đấy.",
 	"dao_si":      "Giá quá cao. Tôi chỉ có thể trả %dG.",
@@ -106,57 +94,92 @@ const HAGGLE_COUNTER_LINES: Dictionary = {
 const HAGGLE_TOO_HIGH_LINES: Dictionary = {
 	"hiep_khach":  "Quá đắt! Thôi tôi đi chỗ khác.",
 	"thu_ve":      "Không nằm trong ngân sách. Rút lui.",
+	"tho_san":     "Giá đó mua dây bẫy cả mùa còn hơn. Tôi đi.",
 	"vo_tang":     "Không hợp lý. Tôi đi.",
 	"thich_khach": "Không. Tạm biệt.",
 	"dao_si":      "Quá đắt, không xứng huyền lực. Tôi đi.",
 	"thuong_nhan": "Không lời được. Tôi qua chỗ khác.",
-	"nong_dan":    "Tôi không đủ tiền... xin lỗi bác.",
+	"nong_dan":    "Thôi... đắt quá. Để lần khác vậy.",
 	"ve_binh":     "Không đạt tiêu chuẩn ngân sách hoàng gia.",
 }
 
 const ACCEPT_LINES: Dictionary = {
 	"hiep_khach":  "Được rồi! Hàng tốt, giá hợp lý. Cảm ơn!",
 	"thu_ve":      "Hợp lý. Giao dịch thành công.",
+	"tho_san":     "Được. Nhẹ tay đấy. Tôi lấy.",
 	"vo_tang":     "Tốt. Tôi sẽ dùng nó xứng đáng.",
 	"thich_khach": "...Ổn. Đây tiền.",
 	"dao_si":      "Tuyệt! Huyền lực trong đây rất mạnh.",
 	"thuong_nhan": "Giá phải chăng, tôi lấy.",
-	"nong_dan":    "Cảm ơn bác thợ! Vợ tôi sẽ vui lắm.",
+	"nong_dan":    "Ôi. Tay cầm... ấm lạ. Như vừa ra lò vậy. Lần sau mình lại. Cảm ơn nha.",
 	"ve_binh":     "Giao dịch hoàn tất. Hoàng gia hài lòng.",
 }
 
 const DECLINE_LINES: Dictionary = {
 	"hiep_khach":  "Thôi vậy... Có lẽ lần sau.",
 	"thu_ve":      "Không đủ tiêu chuẩn. Tôi đi chỗ khác.",
+	"tho_san":     "Không hợp chuyến săn này. Để lần khác.",
 	"vo_tang":     "Không hợp ý. Cảm ơn vẫn vậy.",
 	"thich_khach": "Không. Tạm biệt.",
 	"dao_si":      "Tiếc. Lần sau nhé.",
 	"thuong_nhan": "Giá quá cao, không lời được.",
-	"nong_dan":    "Quá đắt với tôi. Xin lỗi bác.",
+	"nong_dan":    "Thôi... đắt quá. Để lần khác vậy.",
 	"ve_binh":     "Không đạt chuẩn. Rút lui.",
 }
 
-# Bực bội nhưng chưa bỏ đi — patience còn > 0 sau khi bị giá quá cao
 const HAGGLE_FRUSTRATED_LINES: Dictionary = {
 	"hiep_khach":  "Giá cao quá! Nhưng... tôi vẫn muốn thứ này. Xem lại đi.",
 	"thu_ve":      "Vượt ngân sách rồi. Cố hạ xuống không?",
+	"tho_san":     "Hàng ổn, nhưng giá này làm tôi hụt tiền đi đường.",
 	"vo_tang":     "Không hợp lý. Tôi còn chờ thêm một chút.",
 	"thich_khach": "...Đắt quá. Lần cuối đấy.",
 	"dao_si":      "Huyền lực không đáng giá thế. Thử lại đi.",
 	"thuong_nhan": "Tôi không lời được. Bớt xuống không?",
-	"nong_dan":    "Trời ơi... bác cố thêm được không?",
+	"nong_dan":    "Tôi chỉ cần đồ dùng được thôi... bác bớt thêm được không?",
 	"ve_binh":     "Vượt ngân sách hoàng gia. Hạ xuống đi.",
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# THREATEN SYSTEM
-# ══════════════════════════════════════════════════════════════════════════════
+const WALKIN_LINES: Dictionary = {
+	"hiep_khach":  "Ồ, tiệm rèn mới à. Xem thử có gì không...",
+	"thu_ve":      "(nhìn quanh) Vũ khí ở đây trông... được đây.",
+	"tho_san":     "Có món nào nhẹ để mang qua đồng không?",
+	"vo_tang":     "Nam mô... Ta cần đồ tốt cho tu hành.",
+	"thich_khach": "...",
+	"dao_si":      "Huyền khí ở đây khá thuần. Đáng xem.",
+	"thuong_nhan": "(nhẩm tính) Tiệm mới, chắc giá chưa ổn định...",
+	"nong_dan":    "Ơ... mở cửa rồi hả? Tưởng chỗ này bỏ mãi.",
+	"ve_binh":     "Kiểm tra hàng hóa theo lệnh hoàng gia.",
+}
 
-# Xác suất nút đe dọa xuất hiện theo class (0 = không bao giờ)
+const BROWSE_LINES: Dictionary = {
+	"hiep_khach":  "Hmm... loại này nhẹ tay quá. Cần thứ gì đó chắc hơn...",
+	"thu_ve":      "Trọng lượng ổn. Cân bằng ra sao nhỉ?",
+	"tho_san":     "Cán này không vướng áo. Lưỡi cũng không quá nặng.",
+	"vo_tang":     "Thô nhưng có hồn. Ta thích thế này.",
+	"thich_khach": "...(nghiêng đầu xem lưỡi kiếm)",
+	"dao_si":      "Nguyên tố hỏa trong này còn mạnh. Tốt.",
+	"thuong_nhan": "Chất lượng này bán lại được khoảng... hmm.",
+	"nong_dan":    "Tay cầm này... ấm lạ. Như vừa ra lò vậy.",
+	"ve_binh":     "Kiểm tra: lưỡi sắc, cán chắc. Đạt tiêu chuẩn cơ bản.",
+}
+
+const THINKING_LINES: Dictionary = {
+	"hiep_khach":  "Để ta tính... hành trình còn dài, cần giữ tiền dự phòng...",
+	"thu_ve":      "Ngân sách hạn chế... nhưng thiếu vũ khí cũng không được...",
+	"tho_san":     "Một chuyến săn lời không nhiều... phải tính kỹ.",
+	"vo_tang":     "Từ bi hỷ xả... nhưng tiền cũng phải tính...",
+	"thich_khach": "...",
+	"dao_si":      "Huyền lực của nó và mức giá... cần cân nhắc.",
+	"thuong_nhan": "Giá mua, giá bán, lợi nhuận... hmm.",
+	"nong_dan":    "Tôi còn phải chừa tiền sửa cái cuốc gãy nữa...",
+	"ve_binh":     "Tham chiếu bảng giá hoàng gia... xử lý...",
+}
+
 const THREAT_APPEAR_RATE: Dictionary = {
 	"nong_dan":    0.70,
 	"thuong_nhan": 0.55,
 	"hiep_khach":  0.30,
+	"tho_san":     0.25,
 	"vo_tang":     0.20,
 	"dao_si":      0.15,
 	"thu_ve":      0.05,
@@ -164,11 +187,11 @@ const THREAT_APPEAR_RATE: Dictionary = {
 	"ve_binh":     0.0,   # vệ binh hoàng gia — liên lụy pháp lý
 }
 
-# Xác suất đe dọa thành công theo class
 const THREAT_SUCCESS_RATE: Dictionary = {
 	"nong_dan":    0.85,
 	"thuong_nhan": 0.68,
 	"hiep_khach":  0.38,
+	"tho_san":     0.32,
 	"vo_tang":     0.28,
 	"dao_si":      0.22,
 	"thu_ve":      0.08,
@@ -179,6 +202,7 @@ const THREAT_SUCCESS_RATE: Dictionary = {
 const THREAT_SUCCESS_LINES: Dictionary = {
 	"hiep_khach":  "...(nghiến răng) Lần này thôi. Đừng tưởng ta sợ mi.",
 	"thu_ve":      "...(căng thẳng) Lần này bỏ qua. Nhưng đừng thử lại.",
+	"tho_san":     "...Được. Nhưng tôi nhớ mặt người ép giá rất lâu.",
 	"vo_tang":     "Ta không muốn gây thêm nghiệp... thôi được.",
 	"thich_khach": "...",
 	"dao_si":      "...(thở dài) Duyên phận vậy rồi.",
@@ -190,6 +214,7 @@ const THREAT_SUCCESS_LINES: Dictionary = {
 const THREAT_FAIL_LINES: Dictionary = {
 	"hiep_khach":  "(rút kiếm) Mi muốn thử sức với ta?! Tôi đi!",
 	"thu_ve":      "(đặt tay lên đao) Tên thợ rèn. Mi vừa phạm sai lầm.",
+	"tho_san":     "(lùi lại) Tôi săn thú, không chịu bị dọa trong tiệm.",
 	"vo_tang":     "(tấn công tư thế) Ngươi dám?! Ta không mua nữa.",
 	"thich_khach": "...",
 	"dao_si":      "(mắt lóe sáng) Trò con nít. Tôi đi.",
@@ -203,7 +228,7 @@ const THREAT_FAIL_LINES: Dictionary = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 const TRADE_RATES: Dictionary = {
-	"hiep_khach": 0.10, "thu_ve":      0.10, "vo_tang":    0.15,
+	"hiep_khach": 0.10, "thu_ve":      0.10, "tho_san":    0.12, "vo_tang":    0.15,
 	"thich_khach": 0.20, "dao_si":     0.25, "thuong_nhan": 0.35,
 	"nong_dan":   0.05, "ve_binh":     0.10,
 }
@@ -227,6 +252,7 @@ const TRADE_OFFER_POOL: Array = [
 const TRADE_INTRO_LINES: Dictionary = {
 	"hiep_khach":  "À... thật ra tôi có thứ này muốn đổi. Chịu không?",
 	"thu_ve":      "Quân đội cấp cho tôi vật này. Đổi hàng được không?",
+	"tho_san":     "Tôi có ít vật liệu săn được. Đổi thay tiền được chứ?",
 	"vo_tang":     "Tôi nhặt được thứ này. Đổi lấy vũ khí nhé?",
 	"thich_khach": "...Tôi có thứ đáng giá hơn tiền. Muốn đổi không?",
 	"dao_si":      "Tôi có nguyên liệu huyền bí. Trao đổi nhé?",
@@ -235,9 +261,6 @@ const TRADE_INTRO_LINES: Dictionary = {
 	"ve_binh":     "Kho cũ hoàng gia có vật phẩm muốn trao đổi.",
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STATE
-# ══════════════════════════════════════════════════════════════════════════════
 var _phase:          Phase      = Phase.SELECT
 var _customer:       Dictionary = {}
 var _weapons:        Array      = []
@@ -255,35 +278,32 @@ var _hint_max:       int        = 0   # cận trên gợi ý hiển thị
 var _threat_available: bool     = false  # nút đe dọa có xuất hiện lượt này không
 var _threat_used:      bool     = false  # đã dùng chưa (1 lần/giao dịch)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# NODE REFS
-# ══════════════════════════════════════════════════════════════════════════════
-
 var _root:           Control
 
-# Gốc panel — tính động từ viewport, dùng trong layout và buttons
 var _bx:             int = 0   # outer border left x
 var _by:             int = 0   # outer border top y
 
-# Chân dung
 var _rport_body:     ColorRect
 var _rport_name:     Label
+var _mood_overlay:   ColorRect
+var _patience_bar:   ColorRect
 
-# Header + dialogue (luôn hiển thị)
 var _lbl_hdr:        Label
 var _lbl_npc_speech: Label
 
-# Phase 1
 var _weapon_box:     VBoxContainer
 var _btn_no_sale:    Button
 
-# Phase 2
 var _p2_root:            Control
 var _lbl_wpn_name:       Label
 var _lbl_wpn_stats:      Label
 var _lbl_negotiate_info: Label   # "Lượt còn: X/3 · Kiên nhẫn: ●●○"
 var _lbl_npc_offer:      Label
-var _price_input:    LineEdit
+var _price_slider:       HSlider
+var _lbl_price_display:  Label
+var _zone_low_rect:      ColorRect
+var _zone_good_rect:     ColorRect
+var _zone_high_rect:     ColorRect
 var _lbl_hint:       Label    # gợi ý khoảng giá hợp lý
 var _trade_section:  Control
 var _lbl_trade_desc: Label
@@ -292,22 +312,18 @@ var _btn_propose:    Button
 var _btn_threaten:   Button
 var _btn_trade:      Button
 var _btn_decline_p2: Button
-
-# ══════════════════════════════════════════════════════════════════════════════
-# LIFECYCLE
-# ══════════════════════════════════════════════════════════════════════════════
+var _bargain_tooltip: PanelContainer
 
 func _ready() -> void:
 	layer   = 20
 	visible = false
 	_build_ui()
+	_bargain_tooltip = _build_bargain_tooltip()
+	add_child(_bargain_tooltip)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PUBLIC API
-# ══════════════════════════════════════════════════════════════════════════════
 
 func present(customer: Dictionary, weapon: Dictionary) -> void:
+	var show_bargain_tip := not GameManager.has_tutorial_seen("bargain_shown")
 	_customer    = customer
 	_resolving   = false
 	_trade_offer = {}
@@ -326,81 +342,78 @@ func present(customer: Dictionary, weapon: Dictionary) -> void:
 	_btn_decline_p2.visible = false
 	visible = true
 	_on_weapon_selected(weapon)
+	if show_bargain_tip:
+		_show_bargain_tooltip()
 
 
 func close_ui() -> void:
 	visible = false
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# BUILD UI
-# ══════════════════════════════════════════════════════════════════════════════
-
 func _build_ui() -> void:
 	_root = Control.new()
 	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_root)
 
-	# ── Overlay fill viewport thực ────────────────────────────────────────────
+	# ── Overlay phủ màn hình để panel trung tâm đọc rõ hơn ────────────────────
+	var vp  := get_viewport().get_visible_rect()
 	var ov := ColorRect.new()
 	ov.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ov.color = C_OVR
 	_root.add_child(ov)
 
-	# Tính gốc panel căn giữa theo viewport thực
-	var vp  := get_viewport().get_visible_rect()
-	_bx = int((vp.size.x - 744.0) * 0.5)   # outer border left
-	_by = int((vp.size.y - 526.0) * 0.5)   # outer border top
+	# Tính gốc panel căn giữa viewport.
+	_bx = int((vp.size.x - PANEL_W) * 0.5)   # outer border left
+	_by = int((vp.size.y - PANEL_H) * 0.5)   # outer border top
 	var px  := _bx + 2   # inner panel left
 	var py  := _by + 2   # inner panel top
 
 	# ── Viền vàng panel ───────────────────────────────────────────────────────
-	_r(Vector2(_bx,       _by),       Vector2(744,   2), C_FRAME)
-	_r(Vector2(_bx,       _by + 524), Vector2(744,   2), C_FRAME)
-	_r(Vector2(_bx,       _by),       Vector2(  2, 526), C_FRAME)
-	_r(Vector2(_bx + 742, _by),       Vector2(  2, 526), C_FRAME)
+	_r(Vector2(_bx,       _by),       Vector2(PANEL_W,   2), C_FRAME)
+	_r(Vector2(_bx,       _by + PANEL_H - 2), Vector2(PANEL_W,   2), C_FRAME)
+	_r(Vector2(_bx,       _by),       Vector2(  2, PANEL_H), C_FRAME)
+	_r(Vector2(_bx + PANEL_W - 2, _by),       Vector2(  2, PANEL_H), C_FRAME)
 
 	# ── Nền panel ────────────────────────────────────────────────────────────
-	_r(Vector2(px, py), Vector2(740, 522), C_PANEL)
+	_r(Vector2(px, py), Vector2(PANEL_W - 4, PANEL_H - 4), C_PANEL)
 
-	# ── Header (py .. py+50) ──────────────────────────────────────────────────
-	_r(Vector2(px, py),       Vector2(740,  50), C_HDR)
-	_r(Vector2(_bx, py + 50), Vector2(744,   1), C_SEP)
-	_lbl_hdr = _lbl("", px + 8, py + 8, 724, 36, 18)
+	# ── Header ───────────────────────────────────────────────────────────────
+	_r(Vector2(px, py),       Vector2(PANEL_W - 4,  54), C_HDR)
+	_r(Vector2(_bx, py + 54), Vector2(PANEL_W,   1), C_SEP)
+	_lbl_hdr = _lbl("", px + 12, py + 11, PANEL_W - 28, 32, 22)
 	_lbl_hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
-	# ── Dialogue bubble (py+51 .. py+140) ────────────────────────────────────
-	_r(Vector2(px, py + 51),        Vector2(740, 88), C_SPCH)
-	_r(Vector2(_bx, py + 139),      Vector2(744,  1), C_SEP)
-	_lbl_npc_speech = _lbl("", px + 14, py + 57, 712, 76, 16)
+	# ── Dialogue bubble giữa hai chân dung ───────────────────────────────────
+	_dialogue_box(Vector2(px + 178, py + 76), Vector2(PANEL_W - 360, 148))
+	_lbl_npc_speech = _lbl("", px + 194, py + 90, PANEL_W - 392, 120, 20)
 	_lbl_npc_speech.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_lbl_npc_speech.add_theme_color_override("font_color", C_TEXT)
+	_lbl_npc_speech.add_theme_color_override("font_color", Color(0.18, 0.08, 0.03, 1.0))
 
-	# ── Phase 1: danh sách vũ khí (py+140 .. py+460) ─────────────────────────
-	var p1_title := _lbl("Chọn vật phẩm muốn đề xuất:", px + 8, py + 146, 724, 24, 14)
+	# ── Phase 1: danh sách vũ khí ────────────────────────────────────────────
+	var p1_title := _lbl("Chọn vật phẩm muốn đề xuất:", px + 34, py + 300, 860, 24, 16)
 	p1_title.add_theme_color_override("font_color", C_MUTE)
 
 	_weapon_box = VBoxContainer.new()
-	_weapon_box.position = Vector2(px, py + 174)
-	_weapon_box.size     = Vector2(740, 284)
-	_weapon_box.add_theme_constant_override("separation", 12)
+	_weapon_box.position = Vector2(px + 34, py + 334)
+	_weapon_box.size     = Vector2(PANEL_W - 72, 220)
+	_weapon_box.add_theme_constant_override("separation", 8)
 	_root.add_child(_weapon_box)
 
-	# ── Phase 2: khu vực đàm phán (py+140 .. py+460) ─────────────────────────
+	# ── Phase 2: khu vực đàm phán ────────────────────────────────────────────
 	_p2_root = Control.new()
-	_p2_root.position = Vector2(px, py + 140)
-	_p2_root.size     = Vector2(740, 320)
+	_p2_root.position = Vector2(px + 34, py + 300)
+	_p2_root.size     = Vector2(PANEL_W - 72, 230)
 	_p2_root.visible  = false
 	_root.add_child(_p2_root)
 	_build_phase2_layout()
 
 	# ── Separator trước nút ───────────────────────────────────────────────────
-	_r(Vector2(_bx, py + 460), Vector2(744, 1), C_SEP)
+	_r(Vector2(_bx, py + PANEL_H - 62), Vector2(PANEL_W, 1), C_SEP)
 
 	# ── Nút Phase 1 ──────────────────────────────────────────────────────────
 	_btn_no_sale = _btn("Không bán lần này", C_REJ, C_REJH, 15)
-	_btn_no_sale.position = Vector2(_bx + 742 - 220, py + 464)
-	_btn_no_sale.size     = Vector2(210, 52)
+	_btn_no_sale.position = Vector2(_bx + PANEL_W - 256, py + PANEL_H - 52)
+	_btn_no_sale.size     = Vector2(240, 44)
 	_btn_no_sale.pressed.connect(_on_decline)
 	_root.add_child(_btn_no_sale)
 
@@ -424,148 +437,244 @@ func _build_ui() -> void:
 	_build_npc_portrait()
 
 
+func _build_bargain_tooltip() -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.name = "BargainTooltip"
+	panel.visible = false
+	panel.custom_minimum_size = Vector2(456, 238)
+	panel.size = Vector2(456, 238)
+	panel.position = Vector2(_bx + 242, _by + 246)
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.add_theme_stylebox_override("panel", _make_tooltip_style())
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 14)
+	panel.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "MẶC CẢ"
+	title.custom_minimum_size = Vector2(396, 30)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", C_GOLD)
+	vbox.add_child(title)
+
+	var body := Label.new()
+	body.text = "Kéo slider để đặt giá trong vùng gợi ý. Giá quá cao sẽ làm khách mất "
+	body.text += "kiên nhẫn và có thể bỏ đi."
+	body.custom_minimum_size = Vector2(396, 92)
+	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	body.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_theme_font_size_override("font_size", 17)
+	body.add_theme_color_override("font_color", C_TEXT)
+	vbox.add_child(body)
+
+	var ok_btn := Button.new()
+	ok_btn.text = "Đã hiểu"
+	ok_btn.custom_minimum_size = Vector2(120, 40)
+	ok_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	ok_btn.pressed.connect(_on_bargain_tooltip_confirmed)
+	vbox.add_child(ok_btn)
+	return panel
+
+
+func _make_tooltip_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.035, 0.018, 0.96)
+	style.border_color = C_FRAME
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(8)
+	return style
+
+
+func _show_bargain_tooltip() -> void:
+	_set_action_buttons_disabled(true)
+	_bargain_tooltip.visible = true
+
+
+func _on_bargain_tooltip_confirmed() -> void:
+	_bargain_tooltip.visible = false
+	_set_action_buttons_disabled(false)
+	GameManager.mark_tutorial("bargain_shown")
+
+
+func _set_action_buttons_disabled(disabled: bool) -> void:
+	for b: Button in [_btn_sell_npc, _btn_propose, _btn_threaten, _btn_trade, _btn_decline_p2]:
+		b.disabled = disabled
+
+
 func _build_phase2_layout() -> void:
 	# Tên vũ khí
 	_lbl_wpn_name = Label.new()
-	_lbl_wpn_name.position = Vector2(8, 4)
-	_lbl_wpn_name.size     = Vector2(724, 30)
-	_lbl_wpn_name.add_theme_font_size_override("font_size", 17)
+	_lbl_wpn_name.position = Vector2(0, 0)
+	_lbl_wpn_name.size     = Vector2(520, 32)
+	_lbl_wpn_name.clip_text = true
+	_lbl_wpn_name.add_theme_font_size_override("font_size", 21)
 	_lbl_wpn_name.add_theme_color_override("font_color", C_TEXT)
 	_p2_root.add_child(_lbl_wpn_name)
 
 	# Chỉ số vũ khí (thu hẹp để nhường chỗ cho info label bên phải)
 	_lbl_wpn_stats = Label.new()
-	_lbl_wpn_stats.position = Vector2(8, 36)
-	_lbl_wpn_stats.size     = Vector2(360, 20)
-	_lbl_wpn_stats.add_theme_font_size_override("font_size", 12)
+	_lbl_wpn_stats.position = Vector2(0, 38)
+	_lbl_wpn_stats.size     = Vector2(500, 24)
+	_lbl_wpn_stats.clip_text = true
+	_lbl_wpn_stats.add_theme_font_size_override("font_size", 15)
 	_lbl_wpn_stats.add_theme_color_override("font_color", C_MUTE)
 	_p2_root.add_child(_lbl_wpn_stats)
 
 	# Lượt đề xuất + kiên nhẫn NPC (cùng hàng với stats, căn phải)
 	_lbl_negotiate_info = Label.new()
-	_lbl_negotiate_info.position           = Vector2(370, 36)
-	_lbl_negotiate_info.size               = Vector2(362, 20)
+	_lbl_negotiate_info.position           = Vector2(510, 38)
+	_lbl_negotiate_info.size               = Vector2(358, 24)
 	_lbl_negotiate_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_lbl_negotiate_info.add_theme_font_size_override("font_size", 12)
+	_lbl_negotiate_info.add_theme_font_size_override("font_size", 15)
 	_lbl_negotiate_info.add_theme_color_override("font_color", C_MUTE)
 	_p2_root.add_child(_lbl_negotiate_info)
 
-	_r_in(_p2_root, Vector2(0, 60), Vector2(740, 1), C_SEP)
+	_r_in(_p2_root, Vector2(0, 72), Vector2(868, 1), C_SEP)
 
 	# Giá NPC đề nghị
 	var lbl_ofr: Label = Label.new()
-	lbl_ofr.text     = "NPC đề nghị:"
-	lbl_ofr.position = Vector2(8, 64)
-	lbl_ofr.size     = Vector2(724, 20)
-	lbl_ofr.add_theme_font_size_override("font_size", 13)
+	lbl_ofr.text     = "NPC:"
+	lbl_ofr.position = Vector2(0, 94)
+	lbl_ofr.size     = Vector2(58, 26)
+	lbl_ofr.add_theme_font_size_override("font_size", 16)
 	lbl_ofr.add_theme_color_override("font_color", C_MUTE)
 	_p2_root.add_child(lbl_ofr)
 
 	_lbl_npc_offer = Label.new()
-	_lbl_npc_offer.position = Vector2(8, 84)
-	_lbl_npc_offer.size     = Vector2(380, 64)
-	_lbl_npc_offer.add_theme_font_size_override("font_size", 52)
+	_lbl_npc_offer.position = Vector2(70, 84)
+	_lbl_npc_offer.size     = Vector2(154, 52)
+	_lbl_npc_offer.add_theme_font_size_override("font_size", 40)
 	_lbl_npc_offer.add_theme_color_override("font_color", C_GOLD)
 	_p2_root.add_child(_lbl_npc_offer)
 
-	_r_in(_p2_root, Vector2(0, 152), Vector2(740, 1), C_SEP)
-
-	# Ô nhập giá player
+	# Slider giá player
 	var lbl_inp: Label = Label.new()
-	lbl_inp.text     = "Nhập giá của bạn:"
-	lbl_inp.position = Vector2(8, 156)
-	lbl_inp.size     = Vector2(280, 20)
-	lbl_inp.add_theme_font_size_override("font_size", 13)
+	lbl_inp.text     = "Giá của bạn:"
+	lbl_inp.position = Vector2(246, 146)
+	lbl_inp.size     = Vector2(126, 26)
+	lbl_inp.add_theme_font_size_override("font_size", 16)
 	lbl_inp.add_theme_color_override("font_color", C_MUTE)
 	_p2_root.add_child(lbl_inp)
 
 	# Gợi ý khoảng giá — cập nhật mỗi lần weapon được chọn và sau mỗi counter
 	_lbl_hint = Label.new()
-	_lbl_hint.position = Vector2(292, 156)
-	_lbl_hint.size     = Vector2(440, 20)
+	_lbl_hint.position = Vector2(380, 142)
+	_lbl_hint.size     = Vector2(366, 44)
 	_lbl_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_lbl_hint.add_theme_font_size_override("font_size", 13)
+	_lbl_hint.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_lbl_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lbl_hint.add_theme_font_size_override("font_size", 14)
 	_lbl_hint.add_theme_color_override("font_color", Color(0.54, 0.78, 0.54))
 	_p2_root.add_child(_lbl_hint)
 
-	_price_input = LineEdit.new()
-	_price_input.position         = Vector2(8, 178)
-	_price_input.size             = Vector2(670, 50)
-	_price_input.placeholder_text = "0"
-	_price_input.max_length       = 7
-	_price_input.add_theme_font_size_override("font_size", 24)
-	_price_input.add_theme_color_override("font_color", C_TEXT)
-	_price_input.add_theme_color_override("caret_color", C_GOLD)
-	var le_s := StyleBoxFlat.new()
-	le_s.bg_color            = C_IBKG
-	le_s.border_width_bottom = 2
-	le_s.border_color        = C_SEP
-	le_s.set_corner_radius_all(4)
-	le_s.content_margin_left = 12.0
-	_price_input.add_theme_stylebox_override("normal", le_s)
-	_price_input.add_theme_stylebox_override("focus",  le_s)
-	_p2_root.add_child(_price_input)
+	_zone_low_rect = ColorRect.new()
+	_zone_low_rect.position = Vector2(246, 132)
+	_zone_low_rect.size     = Vector2(0, PRICE_ZONE_H)
+	_zone_low_rect.color    = C_ZONE_SAFE
+	_p2_root.add_child(_zone_low_rect)
 
-	var g_lbl := Label.new()
-	g_lbl.text     = "G"
-	g_lbl.position = Vector2(682, 178)
-	g_lbl.size     = Vector2(50, 50)
-	g_lbl.add_theme_font_size_override("font_size", 24)
-	g_lbl.add_theme_color_override("font_color", C_GOLD)
-	_p2_root.add_child(g_lbl)
+	_zone_good_rect = ColorRect.new()
+	_zone_good_rect.position = Vector2(246, 132)
+	_zone_good_rect.size     = Vector2(0, PRICE_ZONE_H)
+	_zone_good_rect.color    = C_ZONE_DEAL
+	_p2_root.add_child(_zone_good_rect)
 
-	_r_in(_p2_root, Vector2(0, 232), Vector2(740, 1), C_SEP)
+	_zone_high_rect = ColorRect.new()
+	_zone_high_rect.position = Vector2(246, 132)
+	_zone_high_rect.size     = Vector2(0, PRICE_ZONE_H)
+	_zone_high_rect.color    = C_REJ
+	_p2_root.add_child(_zone_high_rect)
+
+	_price_slider = HSlider.new()
+	_price_slider.position = Vector2(246, 100)
+	_price_slider.size     = Vector2(PRICE_TRACK_W, 34)
+	_price_slider.step     = 1.0
+	_price_slider.value_changed.connect(_on_price_slider_changed)
+	_p2_root.add_child(_price_slider)
+
+	_lbl_price_display = Label.new()
+	_lbl_price_display.position = Vector2(760, 88)
+	_lbl_price_display.size     = Vector2(108, 54)
+	_lbl_price_display.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_lbl_price_display.add_theme_font_size_override("font_size", 38)
+	_lbl_price_display.add_theme_color_override("font_color", C_GOLD)
+	_p2_root.add_child(_lbl_price_display)
 
 	# Khu vực đổi hàng (ẩn khi không có trade)
 	_trade_section = Control.new()
-	_trade_section.position = Vector2(0, 236)
-	_trade_section.size     = Vector2(740, 56)
+	_trade_section.position = Vector2(0, 186)
+	_trade_section.size     = Vector2(868, 34)
 	_trade_section.visible  = false
 	_p2_root.add_child(_trade_section)
 
-	_r_in(_trade_section, Vector2(0, 0), Vector2(740, 56), C_TRAD)
+	_r_in(_trade_section, Vector2(0, 0), Vector2(868, 34), C_TRAD)
 
 	var trd_ttl := Label.new()
 	trd_ttl.text     = "Đề xuất đổi hàng:"
-	trd_ttl.position = Vector2(14, 6)
-	trd_ttl.size     = Vector2(712, 20)
-	trd_ttl.add_theme_font_size_override("font_size", 13)
+	trd_ttl.position = Vector2(12, 6)
+	trd_ttl.size     = Vector2(154, 22)
+	trd_ttl.add_theme_font_size_override("font_size", 15)
 	trd_ttl.add_theme_color_override("font_color", C_TGRN)
 	_trade_section.add_child(trd_ttl)
 
 	_lbl_trade_desc = Label.new()
-	_lbl_trade_desc.position = Vector2(14, 28)
-	_lbl_trade_desc.size     = Vector2(712, 24)
-	_lbl_trade_desc.add_theme_font_size_override("font_size", 17)
+	_lbl_trade_desc.position = Vector2(176, 5)
+	_lbl_trade_desc.size     = Vector2(680, 24)
+	_lbl_trade_desc.add_theme_font_size_override("font_size", 16)
 	_lbl_trade_desc.add_theme_color_override("font_color", C_TEXT)
 	_trade_section.add_child(_lbl_trade_desc)
 
 
 func _build_player_portrait() -> void:
-	# Tọa độ tính từ _bx/_by: chân dung trái cách panel 112px
-	var lx := _bx - 112; var ly := _by + 48
+	var lx := _bx + 34; var ly := _by + 78
 	_r(Vector2(lx - 2, ly - 2), Vector2(PPW + 4, PPH + 4), C_FRAME)
-	_r(Vector2(lx,     ly),     Vector2(PPW, PPH),          Color(0.16, 0.11, 0.06))
-	_r(Vector2(lx + 18, ly + 60), Vector2(80, 100), C_SHOP)
-	_r(Vector2(lx + 30, ly + 80), Vector2(56,  80), C_APRON)
-	_r(Vector2(lx + 28, ly + 18), Vector2(60,  42), C_SKIN)
-	var lbl := _lbl("Chủ Tiệm", lx, ly + PPH + 6, PPW, 22, 13)
+	_r(Vector2(lx,     ly),     Vector2(PPW, PPH),          Color(0.08, 0.05, 0.03))
+	var avatar_tex: Texture2D = load("res://assets/sprites/characters/nam_portrait.png")
+	if avatar_tex:
+		var portrait := TextureRect.new()
+		portrait.texture    = avatar_tex
+		portrait.position   = Vector2(lx, ly)
+		portrait.size       = Vector2(PPW, PPH)
+		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		portrait.expand_mode  = TextureRect.EXPAND_IGNORE_SIZE
+		_root.add_child(portrait)
+	var lbl := _lbl("Nấm", lx, ly + PPH + 10, PPW, 26, 15)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.add_theme_color_override("font_color", C_MUTE)
 
 
 func _build_npc_portrait() -> void:
-	# Chân dung phải: bắt đầu ngay sau cạnh phải panel
-	var rx := _bx + 740; var ry := _by + 48
+	# Chân dung NPC nằm gọn trong panel trung tâm.
+	var rx := _bx + PANEL_W - PPW - 34; var ry := _by + 78
 	_r(Vector2(rx - 2, ry - 2), Vector2(PPW + 4, PPH + 4), C_FRAME)
 	_r(Vector2(rx,     ry),     Vector2(PPW, PPH),          Color(0.16, 0.11, 0.06))
 	_rport_body = ColorRect.new()
-	_rport_body.position = Vector2(rx + 18, ry + 60)
-	_rport_body.size     = Vector2(80, 100)
+	_rport_body.position = Vector2(rx + 20, ry + 78)
+	_rport_body.size     = Vector2(88, 96)
 	_rport_body.color    = Color(0.5, 0.3, 0.3)
 	_root.add_child(_rport_body)
-	_r(Vector2(rx + 28, ry + 18), Vector2(60, 42), C_SKIN)
-	_rport_name = _lbl("Khách", rx, ry + PPH + 6, PPW, 22, 13)
+	_r(Vector2(rx + 32, ry + 24), Vector2(64, 50), C_SKIN)
+	_mood_overlay = ColorRect.new()
+	_mood_overlay.position = Vector2(rx, ry)
+	_mood_overlay.size     = Vector2(PPW, PPH)
+	_mood_overlay.color    = Color(0, 0, 0, 0)
+	_root.add_child(_mood_overlay)
+	_patience_bar = ColorRect.new()
+	_patience_bar.position = Vector2(rx + (PPW - 160) * 0.5, ry + PPH + 10)
+	_patience_bar.size     = Vector2(160, 8)
+	_patience_bar.color    = C_TGRN
+	_root.add_child(_patience_bar)
+	_rport_name = _lbl("Khách", rx, ry + PPH + 26, PPW, 26, 15)
 	_rport_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rport_name.add_theme_color_override("font_color", C_MUTE)
 
@@ -579,7 +688,7 @@ func _refresh_weapons(weapons: Array) -> void:
 		child.queue_free()
 	for w: Dictionary in weapons:
 		var btn := _btn(_weapon_label(w), C_BTN, C_BTNH, 15)
-		btn.custom_minimum_size   = Vector2(740, 88)
+		btn.custom_minimum_size   = Vector2(PANEL_W - 72, 82)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.alignment             = HORIZONTAL_ALIGNMENT_LEFT
 		btn.pressed.connect(_on_weapon_selected.bind(w))
@@ -602,10 +711,12 @@ func _weapon_label(w: Dictionary) -> String:
 func _on_weapon_selected(weapon: Dictionary) -> void:
 	if _resolving:
 		return
+	_resolving = true
 	_chosen_weapon = weapon
 	_offer_gold    = _calculate_offer(_customer, weapon)
 	_trade_offer   = _roll_trade_offer(_customer)
 	_phase         = Phase.PRICE
+	_set_mood(Mood.NEUTRAL)
 
 	# Cập nhật header
 	_lbl_hdr.text = weapon.get("weapon_name", "???")
@@ -614,7 +725,7 @@ func _on_weapon_selected(weapon: Dictionary) -> void:
 	# Cập nhật dialogue → lời chào giá NPC
 	var ctype: String = _customer.get("type", "")
 	var offer_line: String = NPC_OFFER_LINES.get(ctype, "Tôi trả %dG.")
-	_lbl_npc_speech.text = offer_line % _offer_gold
+	var speech_text: String = offer_line % _offer_gold
 
 	# Cập nhật phase 2 fields
 	_lbl_wpn_name.text  = weapon.get("weapon_name", "???")
@@ -624,8 +735,6 @@ func _on_weapon_selected(weapon: Dictionary) -> void:
 		_weapon_value(weapon),
 	]
 	_lbl_npc_offer.text      = "%dG" % _offer_gold
-	_price_input.text        = ""
-	_price_input.placeholder_text = str(_weapon_value(weapon))
 
 	# Tính giới hạn giá và gợi ý cho vòng đàm phán này
 	var val_w:    int   = _weapon_value(weapon)
@@ -635,12 +744,16 @@ func _on_weapon_selected(weapon: Dictionary) -> void:
 	_hint_min       = _offer_gold + 10
 	_hint_max       = int(_npc_max_price * randf_range(0.82, 0.93))
 	_lbl_hint.text  = "Gợi ý: ~%dG – %dG" % [_hint_min, _hint_max]
-
+	var show_bargain_tip := not GameManager.has_tutorial_seen("first_price_hint_seen")
+	if show_bargain_tip:
+		_lbl_hint.text = "Tutorial: kéo giá trong khoảng gợi ý; quá cao làm khách mất kiên nhẫn."
+		GameManager.mark_tutorial_seen("first_price_hint_seen")
+	_refresh_slider_range()
 	# Trade offer
 	if not _trade_offer.is_empty():
 		_lbl_trade_desc.text   = _trade_desc(_trade_offer)
 		_trade_section.visible = true
-		_lbl_npc_speech.text   = TRADE_INTRO_LINES.get(ctype, "Tôi có thứ muốn đổi.")
+		speech_text = TRADE_INTRO_LINES.get(ctype, "Tôi có thứ muốn đổi.")
 	else:
 		_trade_section.visible = false
 
@@ -655,15 +768,18 @@ func _on_weapon_selected(weapon: Dictionary) -> void:
 	_threat_available = randf() < THREAT_APPEAR_RATE.get(_customer.get("type", ""), 0.0)
 	_layout_p2_buttons(not _trade_offer.is_empty(), true, _threat_available)
 	_update_negotiate_info()
+	await _type_text(_lbl_npc_speech, speech_text)
+	if visible:
+		_resolving = false
 
 
 func _layout_p2_buttons(
 		has_trade: bool,
 		show_propose: bool = true,
 		show_threat: bool = false) -> void:
-	var bx := _bx + 2
-	var y  := _by + 2 + 464
-	var h  := 52
+	var bx := _bx + 3
+	var y  := _by + PANEL_H - 52
+	var h  := 44
 
 	# Ẩn tất cả trước
 	for b: Button in [_btn_sell_npc, _btn_propose, _btn_threaten, _btn_trade, _btn_decline_p2]:
@@ -678,10 +794,10 @@ func _layout_p2_buttons(
 
 	# Chia đều chiều rộng, pixel dư dồn vào nút cuối
 	const GAP  := 9
-	const AREA := 738
+	var area := PANEL_W - 6
 	var n      := btns.size()
-	var btn_w  := int((AREA - GAP * (n - 1)) / n)
-	var remain := AREA - GAP * (n - 1) - btn_w * n
+	var btn_w  := int((area - GAP * (n - 1)) / n)
+	var remain := area - GAP * (n - 1) - btn_w * n
 
 	var x := bx
 	for i: int in n:
@@ -694,13 +810,81 @@ func _layout_p2_buttons(
 	_btn_sell_npc.text = "Bán giá NPC  ·  %dG" % _offer_gold
 
 
+func _type_text(label: Label, text: String, speed: float = 0.032) -> void:
+	label.text = ""
+	for i: int in text.length():
+		label.text = text.left(i + 1)
+		await get_tree().create_timer(speed).timeout
+
+
+func _set_mood(mood: Mood) -> void:
+	if _mood_overlay == null:
+		return
+	match mood:
+		Mood.NEUTRAL:
+			_mood_overlay.color = Color(0, 0, 0, 0)
+		Mood.HAPPY:
+			_mood_overlay.color = Color(0.2, 0.8, 0.2, 0.30)
+		Mood.THINKING:
+			_mood_overlay.color = Color(0.6, 0.6, 0.0, 0.25)
+		Mood.ANNOYED:
+			_mood_overlay.color = Color(0.8, 0.4, 0.0, 0.30)
+		Mood.ANGRY:
+			_mood_overlay.color = Color(0.8, 0.1, 0.1, 0.40)
+
+
+func _refresh_slider_range() -> void:
+	var min_price := float(_offer_gold)
+	var deal_end := float(maxi(_offer_gold, _npc_max_price))
+	var max_price := _get_visible_slider_max(min_price, deal_end)
+	_price_slider.min_value = min_price
+	_price_slider.max_value = max_price
+	_price_slider.value = clampf(float(maxi(_offer_gold, _hint_min)), min_price, max_price)
+	_on_price_slider_changed(_price_slider.value)
+
+	var instant_accept_end := clampf(float(int(_offer_gold * 1.05)), min_price, deal_end)
+	var good_end := clampf(deal_end, min_price, max_price)
+	_set_zone_rect(_zone_low_rect, min_price, instant_accept_end)
+	if good_end > instant_accept_end:
+		_set_zone_rect(_zone_good_rect, instant_accept_end, good_end)
+	else:
+		_set_zone_rect(_zone_good_rect, min_price, good_end)
+	_set_zone_rect(_zone_high_rect, good_end, max_price)
+
+
+func _get_visible_slider_max(min_price: float, deal_end: float) -> float:
+	var hard_max := float(maxi(_offer_gold + 1, _price_cap_hard))
+	var deal_span := maxf(1.0, deal_end - min_price)
+	var pad := maxf(PRICE_VISIBLE_PAD_MIN, deal_span * PRICE_VISIBLE_PAD_RATIO)
+	return clampf(deal_end + pad, min_price + 1.0, hard_max)
+
+
+func _set_zone_rect(rect: ColorRect, start_price: float, end_price: float) -> void:
+	var min_price := float(_price_slider.min_value)
+	var max_price := float(_price_slider.max_value)
+	var price_range := maxf(1.0, max_price - min_price)
+	var start_ratio := clampf((start_price - min_price) / price_range, 0.0, 1.0)
+	var end_ratio := clampf((end_price - min_price) / price_range, 0.0, 1.0)
+	rect.position.x = _price_slider.position.x + PRICE_TRACK_W * start_ratio
+	rect.size.x = PRICE_TRACK_W * maxf(0.0, end_ratio - start_ratio)
+
+
+func _on_price_slider_changed(value: float) -> void:
+	_lbl_price_display.text = "%dG" % int(value)
+
+
+func _get_proposed_price() -> int:
+	return int(_price_slider.value)
+
+
 # ── Xử lý kết quả ─────────────────────────────────────────────────────────────
 
 func _on_sell_npc_price() -> void:
 	if _resolving: return
 	_resolving = true
 	var ctype: String = _customer.get("type", "")
-	_lbl_npc_speech.text = ACCEPT_LINES.get(ctype, "Cảm ơn!")
+	_set_mood(Mood.HAPPY)
+	await _type_text(_lbl_npc_speech, ACCEPT_LINES.get(ctype, "Cảm ơn!"))
 	await get_tree().create_timer(1.1).timeout
 	close_ui()
 	deal_accepted.emit(_chosen_weapon, _offer_gold)
@@ -708,25 +892,28 @@ func _on_sell_npc_price() -> void:
 
 func _on_propose() -> void:
 	if _resolving: return
+	_resolving = true
 
 	if _proposals_used >= PROPOSALS_MAX:
-		_resolving = true
 		_patience  = 0
 		_update_negotiate_info()
 		var ctype_imm: String = _customer.get("type", "")
-		_lbl_npc_speech.text = HAGGLE_TOO_HIGH_LINES.get(ctype_imm, "Quá đắt! Tôi đi.")
+		_set_mood(Mood.ANGRY)
+		await _type_text(_lbl_npc_speech, HAGGLE_TOO_HIGH_LINES.get(ctype_imm, "Quá đắt! Tôi đi."))
 		await get_tree().create_timer(1.2).timeout
 		close_ui()
 		deal_declined.emit()
 		return
 
-	var input: String = _price_input.text.strip_edges()
-	if input.is_empty() or not input.is_valid_int():
-		_lbl_npc_speech.text = "Bạn muốn bán giá bao nhiêu? Nhập số vào ô bên dưới."
-		return
-
-	var proposed: int   = int(input)
+	var proposed: int = _get_proposed_price()
 	var ctype:    String = _customer.get("type", "")
+	var thinking_line: String = THINKING_LINES.get(ctype, "")
+	if not thinking_line.is_empty():
+		_set_mood(Mood.THINKING)
+		await _type_text(_lbl_npc_speech, thinking_line)
+		await get_tree().create_timer(1.2).timeout
+		if not visible:
+			return
 
 	_proposals_used += 1
 	_update_negotiate_info()
@@ -735,29 +922,30 @@ func _on_propose() -> void:
 	if proposed > _price_cap_hard:
 		_patience -= 1
 		_update_negotiate_info()
+		_set_mood(Mood.ANGRY)
 		if _patience <= 0:
-			_resolving = true
-			_lbl_npc_speech.text = HAGGLE_TOO_HIGH_LINES.get(ctype, "Quá đắt! Tôi đi.")
+			await _type_text(_lbl_npc_speech, HAGGLE_TOO_HIGH_LINES.get(ctype, "Quá đắt! Tôi đi."))
 			await get_tree().create_timer(1.2).timeout
 			close_ui()
 			deal_declined.emit()
 		else:
-			_lbl_npc_speech.text = "Giá đó... không ai trả nổi đâu. Nghiêm túc lại đi."
+			await _type_text(_lbl_npc_speech, "Giá đó... không ai trả nổi đâu. Nghiêm túc lại đi.")
 			_check_proposal_limit()
+			_resolving = false
 		return
 
 	if proposed <= _offer_gold:
 		# Player tự bán dưới giá NPC → chấp nhận ngay
-		_resolving = true
-		_lbl_npc_speech.text = ACCEPT_LINES.get(ctype, "Cảm ơn!")
+		_set_mood(Mood.HAPPY)
+		await _type_text(_lbl_npc_speech, ACCEPT_LINES.get(ctype, "Cảm ơn!"))
 		await get_tree().create_timer(1.1).timeout
 		close_ui()
 		deal_accepted.emit(_chosen_weapon, proposed)
 
 	elif proposed <= int(_offer_gold * 1.05):
 		# Sát với giá NPC (≤5%) → chấp nhận, không mặc cả thêm
-		_resolving = true
-		_lbl_npc_speech.text = "Hm... %dG thôi, được rồi." % proposed
+		_set_mood(Mood.HAPPY)
+		await _type_text(_lbl_npc_speech, "Hm... %dG thôi, được rồi." % proposed)
 		await get_tree().create_timer(1.1).timeout
 		close_ui()
 		deal_accepted.emit(_chosen_weapon, proposed)
@@ -773,30 +961,37 @@ func _on_propose() -> void:
 		# Cập nhật gợi ý sau khi NPC đã nâng giá
 		_hint_min      = counter + 1
 		_lbl_hint.text = "Gợi ý: ~%dG – %dG" % [_hint_min, _hint_max]
+		_refresh_slider_range()
 		var counter_line: String = HAGGLE_COUNTER_LINES.get(ctype, "Tôi chỉ trả %dG.")
-		_lbl_npc_speech.text = counter_line % counter
+		_set_mood(Mood.ANNOYED)
+		await _type_text(_lbl_npc_speech, counter_line % counter)
 		_check_proposal_limit()
+		_resolving = false
 
 	else:
 		# Vượt quá khả năng → patience giảm, NPC bực bội
 		_patience -= 1
 		_update_negotiate_info()
+		if _patience <= 1:
+			_set_mood(Mood.ANGRY)
+		else:
+			_set_mood(Mood.ANNOYED)
 		if _patience <= 0:
-			_resolving = true
-			_lbl_npc_speech.text = HAGGLE_TOO_HIGH_LINES.get(ctype, "Quá đắt! Tôi đi.")
+			await _type_text(_lbl_npc_speech, HAGGLE_TOO_HIGH_LINES.get(ctype, "Quá đắt! Tôi đi."))
 			await get_tree().create_timer(1.2).timeout
 			close_ui()
 			deal_declined.emit()
 		else:
-			_lbl_npc_speech.text = HAGGLE_FRUSTRATED_LINES.get(ctype, "Giá quá cao!")
+			await _type_text(_lbl_npc_speech, HAGGLE_FRUSTRATED_LINES.get(ctype, "Giá quá cao!"))
 			_check_proposal_limit()
+			_resolving = false
 
 
 func _on_trade_accept() -> void:
 	if _resolving: return
 	_resolving = true
-	var ctype: String = _customer.get("type", "")
-	_lbl_npc_speech.text = "Tuyệt! Trao đổi thành công."
+	_set_mood(Mood.HAPPY)
+	await _type_text(_lbl_npc_speech, "Tuyệt! Trao đổi thành công.")
 	await get_tree().create_timer(1.1).timeout
 	close_ui()
 	trade_accepted.emit(_chosen_weapon, _trade_offer)
@@ -804,6 +999,7 @@ func _on_trade_accept() -> void:
 
 func _on_threaten() -> void:
 	if _resolving or _threat_used: return
+	_resolving         = true
 	_threat_used      = true
 	_threat_available = false
 
@@ -817,7 +1013,9 @@ func _on_threaten() -> void:
 		_npc_max_price = int(_npc_max_price * randf_range(1.15, 1.30))
 		_hint_max   = int(_npc_max_price * randf_range(0.82, 0.93))
 		_lbl_hint.text = "Gợi ý: ~%dG – %dG" % [_hint_min, _hint_max]
-		_lbl_npc_speech.text = THREAT_SUCCESS_LINES.get(ctype, "...(run rẩy) Vâng...")
+		_refresh_slider_range()
+		_set_mood(Mood.ANNOYED)
+		await _type_text(_lbl_npc_speech, THREAT_SUCCESS_LINES.get(ctype, "...(run rẩy) Vâng..."))
 		_update_negotiate_info()
 	else:
 		rep_loss   = randi_range(16, 24)
@@ -826,21 +1024,25 @@ func _on_threaten() -> void:
 		var fail_line: String = THREAT_FAIL_LINES.get(ctype, "Không! Tôi đi!")
 		if _patience <= 0:
 			_resolving = true
-			_lbl_npc_speech.text = fail_line
+			_set_mood(Mood.ANGRY)
+			await _type_text(_lbl_npc_speech, fail_line)
 			_show_rep_loss(rep_loss)
 			await get_tree().create_timer(1.4).timeout
 			close_ui()
 			deal_declined.emit()
 			return
-		_lbl_npc_speech.text = fail_line
+		if _patience <= 1:
+			_set_mood(Mood.ANGRY)
+		else:
+			_set_mood(Mood.ANNOYED)
+		await _type_text(_lbl_npc_speech, fail_line)
 
 	# Trừ uy tín (luôn xảy ra dù thành công hay thất bại)
 	_show_rep_loss(rep_loss)
-	if EventBus.has_signal("reputation_changed"):
-		EventBus.reputation_changed.emit(-rep_loss)
+	GameManager.add_reputation(-rep_loss)
 
-	if not _resolving:
-		_layout_p2_buttons(not _trade_offer.is_empty(), _proposals_used < PROPOSALS_MAX, false)
+	_layout_p2_buttons(not _trade_offer.is_empty(), _proposals_used < PROPOSALS_MAX, false)
+	_resolving = false
 
 
 func _show_rep_loss(amount: int) -> void:
@@ -853,9 +1055,9 @@ func _on_decline() -> void:
 	_resolving = true
 	var ctype: String = _customer.get("type", "")
 	if _phase == Phase.PRICE:
-		_lbl_npc_speech.text = DECLINE_LINES.get(ctype, "Không sao.")
+		await _type_text(_lbl_npc_speech, DECLINE_LINES.get(ctype, "Không sao."))
 	else:
-		_lbl_npc_speech.text = DECLINE_LINES.get(ctype, "Không sao.")
+		await _type_text(_lbl_npc_speech, DECLINE_LINES.get(ctype, "Không sao."))
 	await get_tree().create_timer(0.9).timeout
 	close_ui()
 	deal_declined.emit()
@@ -889,10 +1091,15 @@ func _calculate_offer(customer: Dictionary, weapon: Dictionary) -> int:
 	var val:    int   = _weapon_value(weapon)
 	var budget: int   = customer.get("budget_this_visit", 500)
 	var factor: float = randf_range(0.60, 0.80)
+	if weapon.get("rarity_tier", 1) < customer.get("min_weapon_rarity", 1):
+		factor *= 0.55
 	return mini(int(val * factor), budget)
 
 
 func _weapon_value(w: Dictionary) -> int:
+	if w.has("sell_value"):
+		return w["sell_value"]
+	# Fallback cho vũ khí cũ chưa có sell_value (save data trước Ticket B)
 	return (w.get("atk", 0) + w.get("magic", 0)) * 28 \
 		+ w.get("rarity_tier", 1) * 140 \
 		+ w.get("speed", 5) * 6
@@ -915,6 +1122,8 @@ func _get_class_max_factor(ctype: String) -> float:
 			factor = randf_range(1.10, 1.25)
 		"thu_ve":
 			factor = randf_range(1.05, 1.20)
+		"tho_san":
+			factor = randf_range(1.00, 1.15)
 		"thuong_nhan":
 			factor = randf_range(0.95, 1.10)   # cần lời, không trả cao
 		"nong_dan":
@@ -938,10 +1147,15 @@ func _update_negotiate_info() -> void:
 	]
 	if _patience <= 1:
 		_lbl_negotiate_info.add_theme_color_override("font_color", Color(0.90, 0.32, 0.22))
+		_set_mood(Mood.ANGRY)
 	elif left <= 1:
 		_lbl_negotiate_info.add_theme_color_override("font_color", Color(0.90, 0.72, 0.22))
 	else:
 		_lbl_negotiate_info.add_theme_color_override("font_color", C_MUTE)
+	if _patience_bar != null:
+		var ratio := float(_patience) / float(maxi(1, _customer.get("patience", 2)))
+		_patience_bar.size.x = 160.0 * ratio
+		_patience_bar.color = Color(1.0 - ratio, ratio * 0.8, 0.1)
 
 
 func _check_proposal_limit() -> void:
@@ -963,6 +1177,14 @@ func _r_in(parent: Control, pos: Vector2, sz: Vector2, color: Color) -> void:
 	var c := ColorRect.new()
 	c.color = color; c.position = pos; c.size = sz
 	parent.add_child(c)
+
+
+func _dialogue_box(pos: Vector2, sz: Vector2) -> void:
+	_r(pos, sz, C_SPCH)
+	_r(Vector2(pos.x, pos.y), Vector2(sz.x, 1), C_SEP)
+	_r(Vector2(pos.x, pos.y + sz.y - 1), Vector2(sz.x, 1), C_SEP)
+	_r(Vector2(pos.x, pos.y), Vector2(1, sz.y), C_SEP)
+	_r(Vector2(pos.x + sz.x - 1, pos.y), Vector2(1, sz.y), C_SEP)
 
 
 func _lbl(text: String, x: int, y: int, w: int, h: int, font_size: int) -> Label:

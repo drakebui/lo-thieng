@@ -15,6 +15,16 @@ signal weapon_unequipped(slot_idx: int)
 signal weapon_switched(from_slot: int, to_slot: int)
 
 # ══════════════════════════════════════════════════════════════════════════════
+# SWITCH RESULT — trả về từ switch_weapon()
+# ══════════════════════════════════════════════════════════════════════════════
+
+enum SwitchResult {
+	OK,         # đổi thành công, tốn 1 lượt
+	SAME_SLOT,  # đã ở slot đó rồi, không làm gì
+	EMPTY_SLOT, # slot trống, không thể đổi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
 # BASE STATS — stat của player, không bị vũ khí thay đổi
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -46,16 +56,6 @@ var weapon_slots: Array[Dictionary] = [{}, {}, {}]
 var active_slot: int = 0
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SWITCH RESULT — trả về từ switch_weapon()
-# ══════════════════════════════════════════════════════════════════════════════
-
-enum SwitchResult {
-	OK,         # đổi thành công, tốn 1 lượt
-	SAME_SLOT,  # đã ở slot đó rồi, không làm gì
-	EMPTY_SLOT, # slot trống, không thể đổi
-}
-
-# ══════════════════════════════════════════════════════════════════════════════
 # INIT
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -66,8 +66,7 @@ func setup_player(player_name: String = "Thợ Rèn") -> void:
 	max_hp         = BASE_HP
 	stamina        = BASE_STAMINA
 	max_stamina    = BASE_STAMINA
-	def_stat       = BASE_DEF
-	# ATK / Magic / Speed sẽ được set khi equip vũ khí vào slot 0
+	_clear_weapon_stats()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="NPCData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/NPCData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+npc_id = "hiep_khach"
+npc_name = "Hiệp Khách Lang Bạt"
+budget_range = Vector2i(600, 1400)
+budget_min = 600
+budget_max = 1400
+patience = 2
+preferred_weapon_tags = Array[String](["kiem_don", "song_dao", "khi_phach", "hoa"])
+disliked_weapon_tags = Array[String](["curse_nang", "phan_chu"])
+preferred_tags = Array[String](["kiem_don", "song_dao", "khi_phach", "hoa"])
+disliked_tags = Array[String](["curse_nang", "phan_chu"])
+walk_speed = 100.0
+min_day = 1
+min_weapon_rarity = 1

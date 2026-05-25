@@ -2,16 +2,16 @@
 # Kết quả emit EventBus.phase2_completed(score, prefix_tier)
 extends Node
 
+signal beat_started(beat_index: int, perfect_center: float)
+signal strike_resolved(result: int, strike_index: int, running_score: int)
+
+enum HitResult { PERFECT, GOOD, MISS }
+
 const TOTAL_STRIKES      := 5
 const BASE_BEAT_DURATION := 1.5   # giây mỗi nhát ở rarity 1
 const PERFECT_HALF_WIDTH := 0.08  # ±8% quanh tâm
 const GOOD_HALF_WIDTH    := 0.18  # ±18% quanh tâm
 # Difficulty: Story=1.5, Normal=1.0, Hardcore=0.7 — nhân vào half-width
-
-enum HitResult { PERFECT, GOOD, MISS }
-
-signal beat_started(beat_index: int, perfect_center: float)
-signal strike_resolved(result: HitResult, strike_index: int, running_score: int)
 
 var score: int = 0
 var current_strike: int = 0
@@ -20,18 +20,24 @@ var beat_progress: float = 0.0
 var perfect_center: float = 0.55
 var window_scale: float = 1.0
 var _beat_duration: float = BASE_BEAT_DURATION
+var _material_rarity: int = 1
 
 var _hit_this_beat: bool = false
 var _between_beats: bool = false
 
 
-func start_phase(p_window_scale: float = 1.0, p_beat_duration: float = BASE_BEAT_DURATION) -> void:
+func start_phase(
+	p_window_scale: float = 1.0,
+	p_beat_duration: float = BASE_BEAT_DURATION,
+	material_rarity: int = 1
+) -> void:
 	score = 0
 	current_strike = 0
 	is_active = true
 	_between_beats = false
 	window_scale = p_window_scale
 	_beat_duration = p_beat_duration
+	_material_rarity = material_rarity
 	_next_beat()
 
 
@@ -88,18 +94,39 @@ func _next_beat() -> void:
 
 
 func _score_to_prefix(s: int) -> String:
+	# GATE D — Prefix Eligibility Cap
+	# Material rarity acts as tier (1=T1 Thô, 2=T2 Tinh, 3=T3 Thượng).
+	# T1 max prefix score = 1  → "Tot" prefix ceiling
+	# T2 max prefix score = 3  → "Kiet Tac"/"Can Bang" ceiling
+	# T3 max prefix score = 5  → full "Perfect" unlock
+	const MATERIAL_PREFIX_CAP: Dictionary = {
+		1: 1,
+		2: 3,
+		3: 5,
+	}
+	s = mini(s, MATERIAL_PREFIX_CAP.get(_material_rarity, 5))
 	# GDD Section 6.2: score +2/+3/+4/+5 mỗi mức có 2 prefix ngẫu nhiên
+	var prefix_tier := "thuong"
 	match s:
-		-5, -4: return "phan_chu"
-		-3, -2: return "curse_nang"
-		-1:     return "curse_nhe"
-		0:      return "thuong"
-		1:      return (["tot", "nang_tay", "than_toc"] as Array).pick_random()
-		2:      return (["kiet_tac", "can_bang"]         as Array).pick_random()
-		3:      return (["to_nghe",  "huyen_bi"]         as Array).pick_random()
-		4:      return (["cung_nhu_da", "khi_phach"]     as Array).pick_random()
-		5:      return (["truong_sinh", "perfect"]        as Array).pick_random()
-		_:      return "thuong"
+		-5, -4:
+			prefix_tier = "phan_chu"
+		-3, -2:
+			prefix_tier = "curse_nang"
+		-1:
+			prefix_tier = "curse_nhe"
+		1:
+			prefix_tier = (["tot", "nang_tay", "than_toc"] as Array).pick_random()
+		2:
+			prefix_tier = (["kiet_tac", "can_bang"] as Array).pick_random()
+		3:
+			prefix_tier = (["to_nghe", "huyen_bi"] as Array).pick_random()
+		4:
+			prefix_tier = (["cung_nhu_da", "khi_phach"] as Array).pick_random()
+		5:
+			prefix_tier = (["truong_sinh", "perfect"] as Array).pick_random()
+		_:
+			pass
+	return prefix_tier
 
 
 func get_prefix_name(tier: String) -> String:

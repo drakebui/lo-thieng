@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="NPCData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/NPCData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+npc_id = "tho_san"
+npc_name = "Thợ Săn Đồng Mây"
+budget_range = Vector2i(450, 1100)
+budget_min = 450
+budget_max = 1100
+patience = 2
+preferred_weapon_tags = Array[String](["cung_truong", "no_ban", "cuong_phong"])
+disliked_weapon_tags = Array[String](["curse_nhe", "curse_nang"])
+preferred_tags = Array[String](["cung_truong", "no_ban", "cuong_phong"])
+disliked_tags = Array[String](["curse_nhe", "curse_nang"])
+walk_speed = 105.0
+min_day = 2
+min_weapon_rarity = 1

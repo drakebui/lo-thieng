@@ -1,0 +1,300 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/forge/forge_phase_indicator.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/indicator/indicator bar.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/indicator/icon_phoi.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/indicator/icon_nguyen_lieu.png" id="4"]
+[ext_resource type="Texture2D" path="res://assets/indicator/icon_linh_luc.png" id="5"]
+[ext_resource type="Texture2D" path="res://assets/indicator/icon_nung.png" id="6"]
+[ext_resource type="Texture2D" path="res://assets/indicator/icon_ren.png" id="7"]
+[ext_resource type="Texture2D" path="res://assets/indicator/icon_toi.png" id="8"]
+[ext_resource type="Texture2D" path="res://assets/indicator/indicator check done.png" id="9"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_scroll_bg"]
+atlas = ExtResource("2")
+region = Rect2(23, 291, 1478, 382)
+
+[node name="ForgePhaseIndicator" type="Control"]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -280.0
+offset_top = 18.0
+offset_right = 280.0
+offset_bottom = 163.0
+grow_horizontal = 2
+mouse_filter = 2
+script = ExtResource("1")
+
+[node name="ScrollBg" type="TextureRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = SubResource("AtlasTexture_scroll_bg")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="IconRow" type="HBoxContainer" parent="ScrollBg"]
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -205.0
+offset_top = -25.0
+offset_right = 205.0
+offset_bottom = 25.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 22
+alignment = 1
+
+[node name="Step1" type="Control" parent="ScrollBg/IconRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+pivot_offset = Vector2(25, 25)
+mouse_filter = 2
+
+[node name="Icon" type="TextureRect" parent="ScrollBg/IconRow/Step1"]
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -25.0
+offset_top = -25.0
+offset_right = 25.0
+offset_bottom = 25.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("3")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Checkmark" type="TextureRect" parent="ScrollBg/IconRow/Step1"]
+visible = false
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 0.0
+offset_top = -25.0
+offset_right = 30.0
+offset_bottom = 5.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("9")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Step2" type="Control" parent="ScrollBg/IconRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+pivot_offset = Vector2(25, 25)
+mouse_filter = 2
+
+[node name="Icon" type="TextureRect" parent="ScrollBg/IconRow/Step2"]
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -25.0
+offset_top = -25.0
+offset_right = 25.0
+offset_bottom = 25.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("4")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Checkmark" type="TextureRect" parent="ScrollBg/IconRow/Step2"]
+visible = false
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 0.0
+offset_top = -25.0
+offset_right = 30.0
+offset_bottom = 5.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("9")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Step3" type="Control" parent="ScrollBg/IconRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+pivot_offset = Vector2(25, 25)
+mouse_filter = 2
+
+[node name="Icon" type="TextureRect" parent="ScrollBg/IconRow/Step3"]
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -25.0
+offset_top = -25.0
+offset_right = 25.0
+offset_bottom = 25.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("5")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Checkmark" type="TextureRect" parent="ScrollBg/IconRow/Step3"]
+visible = false
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 0.0
+offset_top = -25.0
+offset_right = 30.0
+offset_bottom = 5.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("9")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Step4" type="Control" parent="ScrollBg/IconRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+pivot_offset = Vector2(25, 25)
+mouse_filter = 2
+
+[node name="Icon" type="TextureRect" parent="ScrollBg/IconRow/Step4"]
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -25.0
+offset_top = -25.0
+offset_right = 25.0
+offset_bottom = 25.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("6")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Checkmark" type="TextureRect" parent="ScrollBg/IconRow/Step4"]
+visible = false
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 0.0
+offset_top = -25.0
+offset_right = 30.0
+offset_bottom = 5.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("9")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Step5" type="Control" parent="ScrollBg/IconRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+pivot_offset = Vector2(25, 25)
+mouse_filter = 2
+
+[node name="Icon" type="TextureRect" parent="ScrollBg/IconRow/Step5"]
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -25.0
+offset_top = -25.0
+offset_right = 25.0
+offset_bottom = 25.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("7")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Checkmark" type="TextureRect" parent="ScrollBg/IconRow/Step5"]
+visible = false
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 0.0
+offset_top = -25.0
+offset_right = 30.0
+offset_bottom = 5.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("9")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Step6" type="Control" parent="ScrollBg/IconRow"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+pivot_offset = Vector2(25, 25)
+mouse_filter = 2
+
+[node name="Icon" type="TextureRect" parent="ScrollBg/IconRow/Step6"]
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -25.0
+offset_top = -25.0
+offset_right = 25.0
+offset_bottom = 25.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("8")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Checkmark" type="TextureRect" parent="ScrollBg/IconRow/Step6"]
+visible = false
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 0.0
+offset_top = -25.0
+offset_right = 30.0
+offset_bottom = 5.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("9")
+expand_mode = 1
+stretch_mode = 5

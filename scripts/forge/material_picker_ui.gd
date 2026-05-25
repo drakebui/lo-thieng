@@ -1,5 +1,5 @@
 # Material Picker — chọn nguyên liệu trước khi rèn
-# Lưu vào GameManager.selected_material → chuyển sang WeaponBuilder
+# Lưu vào GameManager.selected_material → chuyển sang chọn linh lực
 extends Control
 
 const REGION_NAMES := {
@@ -16,6 +16,11 @@ const RARITY_COLORS := [
 	Color(0.38, 0.62, 0.95),   # r2 — xanh
 	Color(0.95, 0.82, 0.22),   # r3 — vàng
 ]
+const BACKGROUND_PATH := "res://assets/sprites/forge/backgrounds/Forge Scene BG.PNG"
+const SLOT_EMPTY_PATH  := "res://assets/UI/forge/nguyen_lieu/slot1.png"
+const SLOT_FILLED_PATH := "res://assets/UI/forge/nguyen_lieu/slot2.png"
+const _PHASE_INDICATOR_SCRIPT := preload("res://scripts/forge/forge_phase_indicator.gd")
+const PATH_ELEMENT_PICKER := "res://scenes/forge/ElementPicker.tscn"
 
 var _materials: Array  = []
 var _selected_idx: int = -1
@@ -32,7 +37,7 @@ var _detail_effect:  Label
 var _next_btn:       Button
 
 # Refs để _do_layout() đặt position/size trực tiếp
-var _bg:          ColorRect
+var _bg:          TextureRect
 var _title_ctrl:  Control
 var _grid_scroll: ScrollContainer
 var _btn_wrap:    CenterContainer
@@ -52,14 +57,17 @@ func _ready() -> void:
 		if item_data != null:
 			_materials.append(item_data)
 
-	_bg = ColorRect.new()
-	_bg.color = Color(0.08, 0.07, 0.05)
+	_bg = TextureRect.new()
+	_bg.texture = load(BACKGROUND_PATH) as Texture2D
+	_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bg)
 
 	_back_btn = Button.new()
-	_back_btn.text = "[ Quay về Xưởng  (Esc) ]"
+	_back_btn.text = "[ Quay lại chọn vũ khí  (Esc) ]"
 	_back_btn.add_theme_font_size_override("font_size", 28)
-	_back_btn.pressed.connect(_go_to_hub)
+	_back_btn.pressed.connect(_go_to_weapon_builder)
 	add_child(_back_btn)
 
 	_title_ctrl = _build_title()
@@ -74,7 +82,7 @@ func _ready() -> void:
 	add_child(_btn_wrap)
 
 	_next_btn = Button.new()
-	_next_btn.text = "Chọn Phôi  →"
+	_next_btn.text = "Chọn Linh Lực  →"
 	_next_btn.add_theme_font_size_override("font_size", 62)
 	_next_btn.custom_minimum_size = Vector2(720, 100)
 	_next_btn.disabled   = true
@@ -85,6 +93,7 @@ func _ready() -> void:
 
 	_update_detail(-1)
 	_do_layout()
+	_setup_phase_indicator()
 
 
 func _notification(what: int) -> void:
@@ -134,6 +143,14 @@ func _do_layout() -> void:
 	_btn_wrap.size     = Vector2(w, BTN_H)
 
 
+func _setup_phase_indicator() -> void:
+	var indicator := get_node_or_null("ForgePhaseIndicator")
+	if indicator == null:
+		return
+	indicator.set_phase(_PHASE_INDICATOR_SCRIPT.Phase.CHON_NL)
+	move_child(indicator, get_child_count() - 1)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # BUILD — TITLE
 # ══════════════════════════════════════════════════════════════════════════════
@@ -172,7 +189,11 @@ func _build_grid() -> ScrollContainer:
 	grid.add_theme_constant_override("v_separation", 14)
 	_grid_scroll.add_child(grid)
 
+	const COLS := 4
+
 	if _materials.is_empty():
+		for _i in COLS:
+			grid.add_child(_build_empty_slot())
 		var empty_lbl := Label.new()
 		empty_lbl.text = "Kho vật liệu trống — hãy đi khám phá trước!"
 		empty_lbl.add_theme_font_size_override("font_size", 40)
@@ -189,7 +210,34 @@ func _build_grid() -> ScrollContainer:
 		grid.add_child(panel)
 		_item_panels.append(panel)
 
+	# Pad phần dư để hàng cuối đủ 4 cột
+	var remainder := _materials.size() % COLS
+	if remainder != 0:
+		for _i in (COLS - remainder):
+			grid.add_child(_build_empty_slot())
+
 	return _grid_scroll
+
+
+func _build_empty_slot() -> Control:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.custom_minimum_size   = Vector2(0, 130)
+	panel.mouse_filter          = Control.MOUSE_FILTER_IGNORE
+
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color.TRANSPARENT
+	panel.add_theme_stylebox_override("panel", s)
+
+	var slot_tex := TextureRect.new()
+	slot_tex.texture      = load(SLOT_EMPTY_PATH) as Texture2D
+	slot_tex.expand_mode  = TextureRect.EXPAND_IGNORE_SIZE
+	slot_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	slot_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	slot_tex.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.add_child(slot_tex)
+
+	return panel
 
 
 func _build_grid_item(idx: int) -> PanelContainer:
@@ -201,6 +249,15 @@ func _build_grid_item(idx: int) -> PanelContainer:
 	panel.custom_minimum_size   = Vector2(0, 130)
 	panel.mouse_filter          = Control.MOUSE_FILTER_STOP
 	_apply_item_style(panel, c, false, false)
+
+	# Nền slot — slot2 vì ô này có item
+	var slot_tex := TextureRect.new()
+	slot_tex.texture        = load(SLOT_FILLED_PATH) as Texture2D
+	slot_tex.expand_mode    = TextureRect.EXPAND_IGNORE_SIZE
+	slot_tex.stretch_mode   = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	slot_tex.mouse_filter   = Control.MOUSE_FILTER_IGNORE
+	slot_tex.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.add_child(slot_tex)
 
 	var inner := MarginContainer.new()
 	inner.add_theme_constant_override("margin_left",   18)
@@ -326,18 +383,17 @@ func _make_divider() -> Control:
 func _apply_item_style(panel: PanelContainer, c: Color, hovered: bool, selected: bool) -> void:
 	var s := StyleBoxFlat.new()
 	s.set_corner_radius_all(10)
+	# bg_color trong suốt — texture slot2 đã làm nền
+	s.bg_color = Color.TRANSPARENT
 	if selected:
-		s.bg_color     = Color(c.r * 0.30, c.g * 0.30, c.b * 0.30)
 		s.border_color = c
-		s.set_border_width_all(4)
+		s.set_border_width_all(5)
 	elif hovered:
-		s.bg_color     = Color(c.r * 0.20, c.g * 0.20, c.b * 0.20)
-		s.border_color = Color(c.r * 0.68, c.g * 0.68, c.b * 0.68)
+		s.border_color = Color(c.r * 0.85, c.g * 0.85, c.b * 0.85, 0.85)
 		s.set_border_width_all(3)
 	else:
-		s.bg_color     = Color(c.r * 0.12, c.g * 0.12, c.b * 0.12)
-		s.border_color = Color(c.r * 0.35, c.g * 0.35, c.b * 0.35)
-		s.set_border_width_all(2)
+		s.border_color = Color.TRANSPARENT
+		s.set_border_width_all(0)
 	panel.add_theme_stylebox_override("panel", s)
 
 
@@ -488,11 +544,12 @@ func _on_next_pressed() -> void:
 		"price_mult":  item.effect_data.get("price_mult",  1.0),
 		"phase1_min":  item.effect_data.get("phase1_min",  ""),
 	}
+	GameManager.selected_element = ""
+	get_tree().change_scene_to_file(PATH_ELEMENT_PICKER)
+
+
+func _go_to_weapon_builder() -> void:
 	get_tree().change_scene_to_file("res://scenes/forge/WeaponBuilder.tscn")
-
-
-func _go_to_hub() -> void:
-	SceneManager.go_to("res://scenes/main/WorkshopHub.tscn")
 
 
 func _input(event: InputEvent) -> void:
@@ -503,4 +560,4 @@ func _input(event: InputEvent) -> void:
 			if _selected_idx >= 0:
 				_on_next_pressed()
 		KEY_ESCAPE:
-			_go_to_hub()
+			_go_to_weapon_builder()

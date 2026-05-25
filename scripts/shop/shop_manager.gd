@@ -2,7 +2,6 @@ class_name ShopManager
 extends Node
 
 # Quản lý phiên bán hàng buổi chiều:
-# - Timer 10 phút thực
 # - Hàng đợi khách spawn theo interval ngẫu nhiên
 # - Open / close API
 # UI lắng nghe signals của node này; cross-system dùng EventBus.
@@ -15,101 +14,23 @@ signal shop_opened
 signal shop_closed(session_stats: Dictionary)
 signal customer_arrived(customer: Dictionary)
 signal customer_left(customer: Dictionary, reason: String)   # "sale"|"browsed"|"timeout"
-signal time_updated(seconds_left: float)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-const SESSION_DURATION  := 600.0  # 10 phút thực
 # Recettear model: toàn bộ khách vào 1 lần khi mở cửa
 const MIN_CUSTOMERS     := 3
 const MAX_CUSTOMERS     := 7
 const STAGGER_INTERVAL  := 0.6    # giây giữa mỗi khách bước qua cửa
 # Mỗi item trên kệ khớp preferred của template → +MATCH_BONUS vào weight
 const MATCH_BONUS       := 1.5
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CUSTOMER POOL (MVP — hard-coded, sau migrate sang .tres resource)
-# Mỗi entry là template; mỗi lần spawn tạo instance mới với id riêng.
-# budget: [min, max] — random khi spawn
-# patience: số lần offer tối đa trước khi bỏ đi
-# preferred / disliked: blank_id hoặc element tag
-# ══════════════════════════════════════════════════════════════════════════════
-
-const CUSTOMER_TEMPLATES: Array = [
-	{
-		"type": "hiep_khach",
-		"name": "Hiệp Khách Lang Bạt",
-		"budget": [600, 1400],
-		"patience": 2,
-		"preferred": ["kiem_don", "song_dao", "khi_phach", "hoa"],
-		"disliked": ["curse_nang", "phan_chu"],
-		"walk_speed": 100.0,
-	},
-	{
-		"type": "thu_ve",
-		"name": "Thủ Vệ Vùng Biên",
-		"budget": [500, 1200],
-		"patience": 2,
-		"preferred": ["bua_chien", "giao_dai", "khien_dong", "tot"],
-		"disliked": ["curse_nhe", "curse_nang"],
-		"walk_speed": 80.0,
-	},
-	{
-		"type": "vo_tang",
-		"name": "Võ Tăng Vân Du",
-		"budget": [700, 1500],
-		"patience": 2,
-		"preferred": ["quyen_cu", "con_nhi_khuc", "bua_chien"],
-		"disliked": ["phan_chu"],
-		"walk_speed": 110.0,
-	},
-	{
-		"type": "thich_khach",
-		"name": "Thích Khách Bóng Tối",
-		"budget": [800, 1600],
-		"patience": 1,
-		"preferred": ["song_dao", "liem_song", "hu_khong", "bang_gia"],
-		"disliked": ["khi_phach", "thuong"],
-		"walk_speed": 130.0,
-	},
-	{
-		"type": "dao_si",
-		"name": "Đạo Sĩ Đám Mây",
-		"budget": [900, 2000],
-		"patience": 2,
-		"preferred": ["gay_phep", "dao_dong", "sam_set"],
-		"disliked": ["phan_chu", "curse_nang"],
-		"walk_speed": 90.0,
-	},
-	{
-		"type": "thuong_nhan",
-		"name": "Thương Nhân Xa Xứ",
-		"budget": [300, 900],
-		"patience": 3,
-		"preferred": ["thuong", "tot"],  # thích hàng phổ thông, dễ bán lại
-		"disliked": ["perfect", "khi_phach"],  # không cần hàng quá đắt
-		"walk_speed": 85.0,
-	},
-	{
-		"type": "nong_dan",
-		"name": "Nông Dân Vùng Thảo Nguyên",
-		"budget": [200, 700],
-		"patience": 1,
-		"preferred": ["dao_phat", "bua_chien", "thuong"],
-		"disliked": [],
-		"walk_speed": 75.0,
-	},
-	{
-		"type": "ve_binh",
-		"name": "Vệ Binh Hoàng Gia",
-		"budget": [1200, 2500],
-		"patience": 2,
-		"preferred": ["giao_dai", "khien_dong", "phu_viet", "kiet_tac"],
-		"disliked": ["curse_nang", "phan_chu"],
-		"walk_speed": 90.0,
-	},
+const CUSTOMER_DIR := "res://resources/customers"
+const DEMO_CUSTOMER_IDS: Array[String] = [
+	"hiep_khach",
+	"ve_binh",
+	"tho_san",
+	"nong_dan",
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -117,11 +38,12 @@ const CUSTOMER_TEMPLATES: Array = [
 # ══════════════════════════════════════════════════════════════════════════════
 
 var is_open: bool = false
+var customer_templates: Array[NPCData] = []
 
 var _shelf_inventory: Array = []   # set trước open_shop()
 
-var _time_left:     float = 0.0
-var _next_id:       int   = 0
+var _next_id: int = 0
+var _session_start_time: float = 0.0
 
 # Hàng chờ vào cửa — drain với stagger timer
 var _spawn_queue:   Array[Dictionary] = []
@@ -136,6 +58,10 @@ var _customers_served:  int = 0
 var _customers_visited: int = 0
 
 
+func _ready() -> void:
+	_load_customer_templates()
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PUBLIC API
 # ══════════════════════════════════════════════════════════════════════════════
@@ -144,19 +70,26 @@ var _customers_visited: int = 0
 func open_shop(slot_count: int = 0) -> void:
 	if is_open:
 		return
+	if customer_templates.is_empty():
+		_load_customer_templates()
+	if customer_templates.is_empty():
+		return
 	is_open            = true
-	_time_left         = SESSION_DURATION
 	_next_id           = 0
+	_session_start_time = Time.get_ticks_msec()
 	_in_shop.clear()
 	_spawn_queue.clear()
 	_gold_earned       = 0
 	_customers_served  = 0
 	_customers_visited = 0
 
-	# Tổng NPC = số vũ khí trên kệ + ngẫu nhiên 0/1/2, tối thiểu 1
-	var count: int = maxi(1, slot_count + randi_range(0, 2))
-	for i in count:
-		_spawn_queue.append(_instantiate(_pick_weighted_template()))
+	if _should_run_tutorial_scripted_customer():
+		_spawn_queue.append(_spawn_scripted_customer(_get_scripted_customer_id()))
+	else:
+		# Tổng NPC = số vũ khí trên kệ + ngẫu nhiên 0/1/2, tối thiểu 1
+		var count: int = maxi(1, slot_count + randi_range(0, 2))
+		for i in count:
+			_spawn_queue.append(_instantiate(_pick_weighted_template()))
 	_stagger_timer = 0.2  # khách đầu vào ngay sau 0.2s
 
 	shop_opened.emit()
@@ -199,29 +132,17 @@ func customer_walk_out(instance_id: int) -> void:
 		_remove_customer(c, "browsed")
 
 
-# Trả về số giây còn lại trong phiên.
-func get_time_left() -> float:
-	return _time_left
-
-
 # Trả về danh sách khách đang trong shop (read-only copy).
 func get_customers_in_shop() -> Array[Dictionary]:
 	return _in_shop.duplicate()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PROCESS — session timer + spawn
+# PROCESS — spawn
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _process(delta: float) -> void:
 	if not is_open:
-		return
-
-	_time_left -= delta
-	time_updated.emit(_time_left)
-
-	if _time_left <= 0.0:
-		close_shop()
 		return
 
 	# Drain hàng chờ — stagger từng khách qua cửa
@@ -249,17 +170,27 @@ func set_shelf_inventory(items: Array) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Chọn template với xác suất tỉ lệ thuận với kệ hàng hiện tại.
-func _pick_weighted_template() -> Dictionary:
+func _pick_weighted_template() -> NPCData:
+	var eligible: Array[NPCData] = []
+	var day: int = GameManager.current_day
+	for tmpl in customer_templates:
+		if _is_demo_day() and not DEMO_CUSTOMER_IDS.has(tmpl.npc_id):
+			continue
+		if tmpl.min_day <= day:
+			eligible.append(tmpl)
+	if eligible.is_empty():
+		eligible = _get_demo_templates() if _is_demo_day() else customer_templates
+
 	var weights: Array[float] = []
-	for tmpl in CUSTOMER_TEMPLATES:
+	for tmpl in eligible:
 		weights.append(_calc_weight(tmpl))
-	return _weighted_random(weights)
+	return _weighted_random_from(eligible, weights)
 
 
 # Trọng số = 1.0 + MATCH_BONUS × số item trên kệ khớp preferred của template.
 # Mỗi item chỉ tính 1 lần dù khớp nhiều tag.
-func _calc_weight(tmpl: Dictionary) -> float:
-	var preferred: Array = tmpl.get("preferred", [])
+func _calc_weight(tmpl: NPCData) -> float:
+	var preferred: Array[String] = tmpl.preferred_tags
 	var weight: float = 1.0
 	for item: Dictionary in _shelf_inventory:
 		var item_tags := _item_tags(item)
@@ -280,28 +211,124 @@ func _item_tags(item: Dictionary) -> Array:
 	return tags
 
 
-# Chọn ngẫu nhiên có trọng số từ CUSTOMER_TEMPLATES.
-func _weighted_random(weights: Array[float]) -> Dictionary:
+# Chọn ngẫu nhiên có trọng số từ customer_templates.
+func _weighted_random(weights: Array[float]) -> NPCData:
+	return _weighted_random_from(customer_templates, weights)
+
+
+func _weighted_random_from(pool: Array[NPCData], weights: Array[float]) -> NPCData:
+	if pool.is_empty():
+		return null
 	var total: float = 0.0
 	for w in weights:
 		total += w
 	var r: float = randf() * total
 	var cumulative: float = 0.0
-	for i in CUSTOMER_TEMPLATES.size():
+	for i in pool.size():
 		cumulative += weights[i]
 		if r <= cumulative:
-			return CUSTOMER_TEMPLATES[i]
-	return CUSTOMER_TEMPLATES[-1]
+			return pool[i]
+	return pool[-1]
 
 
 # Tạo instance từ template — thêm instance_id và random budget.
-func _instantiate(tmpl: Dictionary) -> Dictionary:
-	var c        := tmpl.duplicate()
+func _instantiate(tmpl: NPCData) -> Dictionary:
+	var c := {
+		"type": tmpl.npc_id,
+		"name": tmpl.npc_name,
+		"budget": [tmpl.budget_min, tmpl.budget_max],
+		"patience": tmpl.patience,
+		"preferred": tmpl.preferred_tags.duplicate(),
+		"disliked": tmpl.disliked_tags.duplicate(),
+		"walk_speed": tmpl.walk_speed,
+		"min_weapon_rarity": tmpl.min_weapon_rarity,
+	}
 	c["instance_id"] = _next_id
 	_next_id += 1
-	var b: Array = tmpl["budget"]
-	c["budget_this_visit"] = randi_range(b[0], b[1])
+	c["budget_this_visit"] = randi_range(tmpl.budget_min, tmpl.budget_max)
 	return c
+
+
+func _load_customer_templates() -> void:
+	customer_templates.clear()
+	var dir := DirAccess.open(CUSTOMER_DIR)
+	if dir == null:
+		return
+
+	var files: PackedStringArray = dir.get_files()
+	files.sort()
+	for file_name in files:
+		if file_name.get_extension() != "tres":
+			continue
+
+		var resource_path := "%s/%s" % [CUSTOMER_DIR, file_name]
+		var resource := load(resource_path)
+		if resource is NPCData:
+			var customer := resource as NPCData
+			customer_templates.append(customer)
+
+
+func _is_demo_day() -> bool:
+	return GameManager.current_day <= GameManager.DEMO_LAST_DAY
+
+
+func _get_demo_templates() -> Array[NPCData]:
+	var result: Array[NPCData] = []
+	for tmpl in customer_templates:
+		if DEMO_CUSTOMER_IDS.has(tmpl.npc_id):
+			result.append(tmpl)
+	return result
+
+
+func _should_run_tutorial_scripted_customer() -> bool:
+	return (
+		(
+			GameManager.current_day == 0
+			and not GameManager.has_tutorial_seen("day0_customer_done")
+		)
+		or GameManager.current_day == 1
+	)
+
+
+func _get_scripted_customer_id() -> String:
+	if GameManager.current_day == 1:
+		return "hiep_khach_lang_bat"
+	return "nong_dan"
+
+
+func _spawn_scripted_customer(customer_id: String) -> Dictionary:
+	var template := _find_template(_normalize_scripted_customer_id(customer_id))
+	if template == null:
+		template = _make_default_scripted_customer(customer_id)
+	return _instantiate(template)
+
+
+func _normalize_scripted_customer_id(customer_id: String) -> String:
+	if customer_id == "hiep_khach_lang_bat":
+		return "hiep_khach"
+	return customer_id
+
+
+func _make_default_scripted_customer(customer_id: String) -> NPCData:
+	var customer := NPCData.new()
+	customer.npc_id = _normalize_scripted_customer_id(customer_id)
+	customer.npc_name = "Hiệp Khách Lang Bạt"
+	customer.budget_min = 500
+	customer.budget_max = 1500
+	customer.patience = 2
+	customer.preferred_tags = ["kiem", "bua_chien"]
+	customer.disliked_tags = []
+	customer.walk_speed = 100.0
+	customer.min_day = 1
+	customer.min_weapon_rarity = 1
+	return customer
+
+
+func _find_template(npc_id: String) -> NPCData:
+	for tmpl in customer_templates:
+		if tmpl.npc_id == npc_id:
+			return tmpl
+	return _pick_weighted_template()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -328,9 +355,14 @@ func _find_customer(instance_id: int) -> Dictionary:
 
 
 func _build_stats() -> Dictionary:
+	if _should_run_tutorial_scripted_customer():
+		GameManager.mark_tutorial_seen("day0_customer_done")
+	var duration := 0.0
+	if _session_start_time > 0.0:
+		duration = (Time.get_ticks_msec() - _session_start_time) / 1000.0
 	return {
 		"gold_earned":       _gold_earned,
 		"customers_served":  _customers_served,
 		"customers_visited": _customers_visited,
-		"duration":          SESSION_DURATION - _time_left,
+		"duration":          duration,
 	}

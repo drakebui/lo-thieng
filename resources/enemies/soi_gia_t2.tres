@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "soi_gia_t2"
+enemy_name = "Sói Già"
+archetype = "defensive"
+tier = 2
+hp = 88
+atk = 14
+def_stat = 5
+magic = 0
+speed = 5
+drop_gold = 80
+color = Color(0.42, 0.32, 0.22, 1)
+region = "DongMay"
+crit_rate = 0.12
+loot_items = Array[Dictionary]([{"item_id": "da_thu", "chance": 0.65}, {"item_id": "sat_tho", "chance": 0.45}, {"item_id": "bac_manh", "chance": 0.25}])

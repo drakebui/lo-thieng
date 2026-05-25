@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="NPCData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/NPCData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+npc_id = "dao_si"
+npc_name = "Đạo Sĩ Đám Mây"
+budget_range = Vector2i(900, 2000)
+budget_min = 900
+budget_max = 2000
+patience = 2
+preferred_weapon_tags = Array[String](["gay_phep", "dao_dong", "sam_set"])
+disliked_weapon_tags = Array[String](["phan_chu", "curse_nang"])
+preferred_tags = Array[String](["gay_phep", "dao_dong", "sam_set"])
+disliked_tags = Array[String](["phan_chu", "curse_nang"])
+walk_speed = 90.0
+min_day = 8
+min_weapon_rarity = 3

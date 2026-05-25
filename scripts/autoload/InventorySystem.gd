@@ -36,6 +36,12 @@ func set_materials(new_materials: Array) -> void:
 			var material_dict: Dictionary = mat
 			materials.append(material_dict)
 
+func clear_all() -> void:
+	weapons.clear()
+	shelf_weapons.clear()
+	materials.clear()
+	shelf_updated.emit()
+
 func remove_material(mat: Dictionary) -> void:
 	materials.erase(mat)
 
@@ -48,8 +54,27 @@ func has_material(item_id: String) -> bool:
 			return true
 	return false
 
+func get_item_count(item_name: String) -> int:
+	var total := 0
+	for mat in materials:
+		var material_name: String = mat.get(
+			"material_name",
+			mat.get("item_name", mat.get("name", ""))
+		)
+		if material_name != item_name:
+			continue
+		total += int(mat.get("quantity", mat.get("amount", 1)))
+	return total
+
 func get_weapons() -> Array[Dictionary]:
 	return weapons
+
+func set_weapons(new_weapons: Array) -> void:
+	weapons.clear()
+	for weapon in new_weapons:
+		if weapon is Dictionary:
+			var weapon_dict: Dictionary = weapon
+			weapons.append(weapon_dict)
 
 func move_to_shelf(weapon: Dictionary) -> bool:
 	if shelf_weapons.size() >= MAX_SHELF_SLOTS:
@@ -68,6 +93,7 @@ func remove_from_shelf(weapon: Dictionary) -> void:
 
 func sell_weapon(weapon: Dictionary) -> void:
 	shelf_weapons.erase(weapon)
+	weapons.erase(weapon)
 	shelf_updated.emit()
 
 func get_shelf_weapons() -> Array[Dictionary]:

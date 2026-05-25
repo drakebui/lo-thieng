@@ -1,7 +1,7 @@
 extends Node
 
 # Chuyển scene với fade đơn giản: màn đen → đổi scene → hiện ra
-# Dùng: SceneManager.go_to("res://scenes/forge/ForgeScene.tscn")
+# Dùng: SceneManager.go_to("res://scenes/forge/ForgeSession.tscn")
 
 const FADE_DURATION := 0.20
 
@@ -25,6 +25,9 @@ func _ready() -> void:
 # Chuyển tới scene tại path. Bỏ qua nếu đang trong quá trình chuyển.
 func go_to(path: String) -> void:
 	if _busy:
+		return
+	if not ResourceLoader.exists(path):
+		push_error("Scene không tồn tại: %s" % path)
 		return
 	_busy = true
 

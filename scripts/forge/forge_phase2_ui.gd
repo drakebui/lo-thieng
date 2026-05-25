@@ -3,8 +3,13 @@
 extends Control
 
 const _PHASE2_SCRIPT := preload("res://scripts/forge/forge_phase2.gd")
-const BAR_WIDTH  := 1400.0
-const BAR_HEIGHT := 140.0
+const _PHASE_INDICATOR_SCRIPT := preload("res://scripts/forge/forge_phase_indicator.gd")
+const BAR_WIDTH     := 1400.0
+const BAR_HEIGHT    := 140.0
+const COLOR_PERFECT := Color(0.95, 0.86, 0.2)
+const COLOR_GOOD    := Color(0.85, 0.55, 0.1)
+const COLOR_MISS    := Color(0.75, 0.22, 0.18)
+const BACKGROUND_PATH := "res://assets/sprites/forge/backgrounds/Forge Scene BG.PNG"
 
 var _phase2: Node
 
@@ -24,17 +29,15 @@ var _result_container: VBoxContainer
 var _result_label:     Label
 var _prefix_label:     Label
 
-# Màu feedback
-const COLOR_PERFECT := Color(0.95, 0.86, 0.2)
-const COLOR_GOOD    := Color(0.85, 0.55, 0.1)
-const COLOR_MISS    := Color(0.75, 0.22, 0.18)
-
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.10, 0.08, 0.06)
+	var bg := TextureRect.new()
+	bg.texture = load(BACKGROUND_PATH) as Texture2D
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
@@ -118,6 +121,15 @@ func _ready() -> void:
 	_result_container.add_child(retry)
 
 	_phase2.start_phase(1.0)
+	_set_indicator_phase(_PHASE_INDICATOR_SCRIPT.Phase.REN_BUA)
+
+
+func _set_indicator_phase(phase: int) -> void:
+	var indicator := get_node_or_null("ForgePhaseIndicator")
+	if indicator == null:
+		return
+	indicator.set_phase(phase)
+	move_child(indicator, get_child_count() - 1)
 
 
 func _build_beat_bar() -> Control:

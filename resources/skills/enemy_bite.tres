@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="SkillData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/SkillData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = "enemy_bite"
+skill_name = "Cắn Mạnh"
+stamina_cost = 0
+effect = "DAMAGE"
+damage_multiplier = 1.3
+damage_mult = 1.3
+dice = 0

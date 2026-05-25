@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="NPCData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/NPCData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+npc_id = "vo_tang"
+npc_name = "Võ Tăng Vân Du"
+budget_range = Vector2i(700, 1500)
+budget_min = 700
+budget_max = 1500
+patience = 2
+preferred_weapon_tags = Array[String](["quyen_cu", "con_nhi_khuc", "bua_chien"])
+disliked_weapon_tags = Array[String](["phan_chu"])
+preferred_tags = Array[String](["quyen_cu", "con_nhi_khuc", "bua_chien"])
+disliked_tags = Array[String](["phan_chu"])
+walk_speed = 110.0
+min_day = 4
+min_weapon_rarity = 2

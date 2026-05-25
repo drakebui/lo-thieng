@@ -32,20 +32,23 @@ const CUSTOMER_TYPE_TAGS := {
 	},
 	"ThichKhach": {
 		"label":       "Thích Khách",
-		"desc":        "Thích vũ khí nhẹ, song đao, sát thương nhanh. Phôi: Song Đao, Liềm Song, Côn.",
-		"blank_ids":   ["phoi_song_dao", "phoi_liem_song", "phoi_con_hai_khuc"],
+		"desc":        "Thích vũ khí nhẹ, song đao, sát thương nhanh. Phôi: Song Đao, Liềm Song, Côn, Nỏ.",
+		"blank_ids":   ["phoi_song_dao", "phoi_liem_song", "phoi_con_hai_khuc", "phoi_no_ban"],
 		"score_bonus": 30,
 	},
 	"ThuVe": {
 		"label":       "Thủ Vệ",
 		"desc":        "Thích vũ khí phòng thủ cao, DEF là ưu tiên. Phôi: Khiên, Giáo, Búa, Đao Phạt.",
-		"blank_ids":   ["phoi_khien_dong", "phoi_giao_dai", "phoi_bua_chien", "phoi_dao_phat", "phoi_phu_viet"],
+		"blank_ids":   [
+			"phoi_khien_dong", "phoi_giao_dai",
+			"phoi_bua_chien", "phoi_dao_phat"
+		],
 		"score_bonus": 30,
 	},
 	"VoTang": {
 		"label":       "Võ Tăng",
-		"desc":        "Thích vũ khí gần, đòn combo. Phôi: Quyền Cụ, Côn Nhị Khúc, Búa, Phủ Việt.",
-		"blank_ids":   ["phoi_quyen_cu", "phoi_con_hai_khuc", "phoi_bua_chien", "phoi_phu_viet"],
+		"desc":        "Thích vũ khí gần, đòn combo. Phôi: Quyền Cụ, Côn Nhị Khúc, Búa.",
+		"blank_ids":   ["phoi_quyen_cu", "phoi_con_hai_khuc", "phoi_bua_chien"],
 		"score_bonus": 30,
 	},
 	"DaoSi": {
@@ -56,8 +59,8 @@ const CUSTOMER_TYPE_TAGS := {
 	},
 	"ThoSan": {
 		"label":       "Thợ Săn",
-		"desc":        "Thích cung trường, tầm xa, speed cao. Phôi: Cung Trường.",
-		"blank_ids":   ["phoi_cung_truong"],
+		"desc":        "Thích vũ khí tầm xa. Phôi: Cung Trường, Nỏ Bắn.",
+		"blank_ids":   ["phoi_cung_truong", "phoi_no_ban"],
 		"score_bonus": 30,
 	},
 }
@@ -277,7 +280,9 @@ static func score_weapon_for_npc(weapon: WeaponData, npc: NPCData) -> Dictionary
 		if tag in PREFIX_TAGS:
 			if weapon.prefix == PREFIX_TAGS[tag]["skill_id"] or weapon.prefix == tag:
 				score -= PREFIX_TAGS[tag]["score_bonus"] * 2
-				reasons.append("Prefix '%s' không thích (-%d)" % [PREFIX_TAGS[tag]["label"], PREFIX_TAGS[tag]["score_bonus"] * 2])
+				reasons.append("Prefix '%s' không thích (-%d)" % [
+				PREFIX_TAGS[tag]["label"], PREFIX_TAGS[tag]["score_bonus"] * 2
+			])
 
 	# ── 3. Check SUFFIX / ELEMENT TAG ────────────────────────
 	for tag in npc.preferred_weapon_tags:
@@ -340,7 +345,9 @@ static func score_weapon_for_npc(weapon: WeaponData, npc: NPCData) -> Dictionary
 	if weapon.durability < QUALITY_TAGS["LowDurability"]["threshold"]:
 		var penalty: int = absf(QUALITY_TAGS["LowDurability"]["score_penalty"]) as int
 		score -= penalty
-		reasons.append("Durability thấp (%d/%d) (-%d)" % [weapon.durability, weapon.max_durability, penalty])
+		reasons.append("Durability thấp (%d/%d) (-%d)" % [
+			weapon.durability, weapon.max_durability, penalty
+		])
 
 	# Perfect Forge (Phase 1 Vàng Kim — lưu trong WeaponData.effect_data hoặc flag)
 	# Giả sử WeaponData có field forge_tier: String
@@ -375,16 +382,15 @@ static func score_weapon_for_npc(weapon: WeaponData, npc: NPCData) -> Dictionary
 static func _score_to_price_mult(score: int) -> float:
 	if score < -30:
 		return 0.6
-	elif score < 0:
+	if score < 0:
 		return 0.8
-	elif score < 20:
+	if score < 20:
 		return 1.0
-	elif score < 40:
+	if score < 40:
 		return 1.1
-	elif score < 60:
+	if score < 60:
 		return 1.25
-	else:
-		return 1.4   # Hào Kiệt Mastery cho VIP → x1.4 giá
+	return 1.4   # Hào Kiệt Mastery cho VIP → x1.4 giá
 
 
 static func _npc_wants_high_atk(npc: NPCData) -> bool:

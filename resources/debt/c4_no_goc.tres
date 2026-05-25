@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="DebtCheckpoint" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/DebtCheckpoint.gd" id="1_c4abc"]
+
+[resource]
+script = ExtResource("1_c4abc")
+id = "c4_no_goc"
+title = "Nợ gốc — đối mặt cuối"
+agent_id = "ba_trum_hac_nguyet"
+amount_gold = 65000
+trigger_day = 29
+deadline_day = 52
+penalty_gold = 6500
+late_days_before_harass = 3
+on_time_reward = {}
+agent_name = "Bà Trùm Hắc Nguyệt"
+agent_description = "Chủ nợ gốc của Lò Thiêng. Không phái tay sai — lần này bà đến trực tiếp."
+agent_quote = "65,000G. Không đàm phán, không gia hạn. Ngươi biết điều đó từ đầu."
+is_paid = false
+is_late = false
+has_notified = false

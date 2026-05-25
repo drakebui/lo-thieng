@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="SkillData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/SkillData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = "burn_skill"
+skill_name = "Burn"
+stamina_cost = 2
+effect = "DAMAGE_STATUS"
+damage_multiplier = 1.0
+damage_mult = 1.0
+dice = 0
+status = "burn"
+status_turns = 2
+status_dmg = 4

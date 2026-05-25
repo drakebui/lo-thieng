@@ -27,7 +27,7 @@ var crit_rate: float = 0.15
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Tạo EnemyCombatUnit từ template Dictionary.
-# Template format (xem ENEMY_TEMPLATES trong combat_manager.gd):
+# Template format (xem EnemyData.to_template()):
 #   "name"      : String
 #   "archetype" : String  — "aggressive" | "defensive" | "caster" | "boss"
 #   "hp"        : int

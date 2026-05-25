@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="SkillData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/SkillData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = "slash"
+skill_name = "Slash"
+stamina_cost = 1
+effect = "DAMAGE"
+damage_multiplier = 1.5
+damage_mult = 1.5
+dice = 0

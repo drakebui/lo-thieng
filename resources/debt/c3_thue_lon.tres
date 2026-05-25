@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="DebtCheckpoint" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/DebtCheckpoint.gd" id="1_o4r2w"]
+
+[resource]
+script = ExtResource("1_o4r2w")
+id = "c3_thue_lon"
+title = "Thuế lớn giữa mùa"
+agent_id = "thuong_nhan_sa_mac"
+amount_gold = 24000
+trigger_day = 13
+deadline_day = 28
+penalty_gold = 2400
+late_days_before_harass = 3
+on_time_reward = {}
+agent_name = "Thương Nhân Sa Mạc"
+agent_description = "Thương nhân từ phương xa, ăn mặc lịch sự nhưng ánh mắt lạnh tanh như sa mạc."
+agent_quote = "Thuế giữa mùa, không trả thì lò rèn của ngươi sẽ có chủ mới."
+is_paid = false
+is_late = false
+has_notified = false

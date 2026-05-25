@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="SkillData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/SkillData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = "basic_attack"
+skill_name = "Tấn Công Thường"
+stamina_cost = 0
+effect = "DAMAGE"
+damage_multiplier = 1.0
+damage_mult = 1.0
+dice = 4

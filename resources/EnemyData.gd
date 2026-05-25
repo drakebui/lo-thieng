@@ -4,6 +4,7 @@ extends Resource
 @export var enemy_id:   String = ""
 @export var enemy_name: String = ""
 @export var archetype:  String = "aggressive"  # "aggressive" | "defensive" | "caster" | "boss"
+@export var tier:       int    = 1
 @export var hp:         int    = 30
 @export var atk:        int    = 8
 @export var def_stat:   int    = 0

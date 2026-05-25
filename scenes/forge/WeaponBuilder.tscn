@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://b43n5g58eq5ai"]
 
 [ext_resource type="Script" uid="uid://g4rs36sqcj2r" path="res://scripts/forge/weapon_builder_ui.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/forge/ForgePhaseIndicator.tscn" id="2"]
 
 [node name="WeaponBuilder" type="Control" unique_id=1655828209]
 layout_mode = 3
@@ -10,3 +11,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1")
+
+[node name="ForgePhaseIndicator" parent="." unique_id=1988580098 instance=ExtResource("2")]
+anchors_preset = 0

@@ -59,7 +59,9 @@ static func execute(skill: SkillData, attacker: Combatant, target: Combatant) ->
 # ══════════════════════════════════════════════════════════════════════════════
 
 # DAMAGE — sát thương ATK × multiplier. Nếu effect_value > 0 → cũng hồi HP.
-static func _do_damage(skill: SkillData, attacker: Combatant, target: Combatant, r: Dictionary) -> Dictionary:
+static func _do_damage(
+		skill: SkillData, attacker: Combatant,
+		target: Combatant, r: Dictionary) -> Dictionary:
 	var raw    := attacker.calc_raw_damage(skill.damage_multiplier)
 	var actual := target.take_damage(raw)
 	r["dmg"] = actual
@@ -80,17 +82,23 @@ static func _do_damage(skill: SkillData, attacker: Combatant, target: Combatant,
 
 
 # DAMAGE_MAGIC — sát thương tính theo Magic stat thay vì ATK (Arcane Blade).
-static func _do_damage_magic(skill: SkillData, attacker: Combatant, target: Combatant, r: Dictionary) -> Dictionary:
+static func _do_damage_magic(
+		skill: SkillData, attacker: Combatant,
+		target: Combatant, r: Dictionary) -> Dictionary:
 	var raw    := attacker.calc_magic_damage(skill.damage_multiplier)
 	var actual := target.take_damage(raw)
 	r["dmg"] = actual
 	r["hit"] = actual > 0
-	r["log"] = "> %s dùng %s (Magic): %s" % [attacker.combatant_name, skill.skill_name, _dmg_text(actual)]
+	r["log"] = "> %s dùng %s (Magic): %s" % [
+		attacker.combatant_name, skill.skill_name, _dmg_text(actual)
+	]
 	return r
 
 
 # DAMAGE_IGNORE_DEF — xuyên qua X% DEF (Chain Lightning 50%, Shadow Strike 100%).
-static func _do_damage_ignore_def(skill: SkillData, attacker: Combatant, target: Combatant, r: Dictionary) -> Dictionary:
+static func _do_damage_ignore_def(
+		skill: SkillData, attacker: Combatant,
+		target: Combatant, r: Dictionary) -> Dictionary:
 	var raw    := attacker.calc_raw_damage(skill.damage_multiplier)
 	var actual := target.take_damage(raw, skill.ignore_def_percent)
 	r["dmg"] = actual
@@ -103,7 +111,9 @@ static func _do_damage_ignore_def(skill: SkillData, attacker: Combatant, target:
 
 
 # DAMAGE_MULTI — đánh nhiều lần (Double Strike = 2 lần). Shield chặn lần đầu.
-static func _do_damage_multi(skill: SkillData, attacker: Combatant, target: Combatant, r: Dictionary) -> Dictionary:
+static func _do_damage_multi(
+		skill: SkillData, attacker: Combatant,
+		target: Combatant, r: Dictionary) -> Dictionary:
 	var total  := 0
 	var hits: int = max(1, skill.hit_count)
 	for _i in hits:
@@ -113,7 +123,9 @@ static func _do_damage_multi(skill: SkillData, attacker: Combatant, target: Comb
 		if actual > 0:
 			r["hit"] = true
 	r["dmg"] = total
-	r["log"] = "> %s dùng %s (%d lần): -%d HP tổng" % [attacker.combatant_name, skill.skill_name, hits, total]
+	r["log"] = "> %s dùng %s (%d lần): -%d HP tổng" % [
+		attacker.combatant_name, skill.skill_name, hits, total
+	]
 	return r
 
 
@@ -139,7 +151,9 @@ static func _do_buff_self(skill: SkillData, attacker: Combatant, r: Dictionary) 
 
 
 # DEBUFF_ENEMY — giảm ATK kẻ thù (Heroic Shout: -1 ATK 3 lượt).
-static func _do_debuff_enemy(skill: SkillData, target: Combatant, attacker: Combatant, r: Dictionary) -> Dictionary:
+static func _do_debuff_enemy(
+		skill: SkillData, target: Combatant,
+		attacker: Combatant, r: Dictionary) -> Dictionary:
 	var penalty := int(skill.effect_value)
 	target.atk_penalty       = penalty
 	target.atk_penalty_turns = max(1, skill.effect_duration)
@@ -169,7 +183,9 @@ static func _do_heal(skill: SkillData, attacker: Combatant, r: Dictionary) -> Di
 
 
 # STATUS_BURN — gây damage + Burn X lượt (4 dmg/lượt từ effect_value).
-static func _do_status_burn(skill: SkillData, attacker: Combatant, target: Combatant, r: Dictionary) -> Dictionary:
+static func _do_status_burn(
+		skill: SkillData, attacker: Combatant,
+		target: Combatant, r: Dictionary) -> Dictionary:
 	var raw    := attacker.calc_raw_damage(skill.damage_multiplier)
 	var actual := target.take_damage(raw)
 	target.burn_turns = max(1, skill.effect_duration)
@@ -185,7 +201,9 @@ static func _do_status_burn(skill: SkillData, attacker: Combatant, target: Comba
 
 
 # STATUS_FREEZE — gây damage + Freeze (effect_chance % mất lượt tiếp theo).
-static func _do_status_freeze(skill: SkillData, attacker: Combatant, target: Combatant, r: Dictionary) -> Dictionary:
+static func _do_status_freeze(
+		skill: SkillData, attacker: Combatant,
+		target: Combatant, r: Dictionary) -> Dictionary:
 	var raw    := attacker.calc_raw_damage(skill.damage_multiplier)
 	var actual := target.take_damage(raw)
 	r["dmg"] = actual
@@ -200,7 +218,9 @@ static func _do_status_freeze(skill: SkillData, attacker: Combatant, target: Com
 
 # STATUS_POISON — tích tụ Độc (5% max HP/lượt, bền đến khi cleanse).
 # Poison Cloud (damage_multiplier = 0) không gây direct damage.
-static func _do_status_poison(skill: SkillData, attacker: Combatant, target: Combatant, r: Dictionary) -> Dictionary:
+static func _do_status_poison(
+		skill: SkillData, attacker: Combatant,
+		target: Combatant, r: Dictionary) -> Dictionary:
 	if skill.damage_multiplier > 0.0:
 		var raw    := attacker.calc_raw_damage(skill.damage_multiplier)
 		var actual := target.take_damage(raw)
@@ -229,19 +249,27 @@ static func _do_cleanse(skill: SkillData, attacker: Combatant, r: Dictionary) ->
 
 
 # SPECIAL — effect đặc biệt, xử lý theo skill_id.
-static func _do_special(skill: SkillData, attacker: Combatant, _target: Combatant, r: Dictionary) -> Dictionary:
+static func _do_special(
+		skill: SkillData, attacker: Combatant,
+		_target: Combatant, r: Dictionary) -> Dictionary:
 	match skill.skill_id:
 		"last_stand":
 			# Khi HP < 20%: boost ×1.5 damage lượt này
 			if float(attacker.hp) / float(attacker.max_hp) < 0.20:
 				attacker.dmg_mult       = skill.effect_value  # 1.5
 				attacker.dmg_mult_turns = 1
-				r["log"] = "> %s kích hoạt %s: +50%% sát thương lượt này!" % [attacker.combatant_name, skill.skill_name]
+				r["log"] = "> %s kích hoạt %s: +50%% sát thương lượt này!" % [
+					attacker.combatant_name, skill.skill_name
+				]
 			else:
-				r["log"] = "> %s: %s chưa kích hoạt (cần HP < 20%%)." % [attacker.combatant_name, skill.skill_name]
+				r["log"] = "> %s: %s chưa kích hoạt (cần HP < 20%%)." % [
+					attacker.combatant_name, skill.skill_name
+				]
 		"truong_sinh":
 			# Eternal — không có combat effect, chỉ bảo vệ durability (forge system)
-			r["log"] = "> %s: %s đang bảo vệ vũ khí khỏi mài mòn." % [attacker.combatant_name, skill.skill_name]
+			r["log"] = "> %s: %s đang bảo vệ vũ khí khỏi mài mòn." % [
+				attacker.combatant_name, skill.skill_name
+			]
 		_:
 			r["log"] = "> %s dùng %s." % [attacker.combatant_name, skill.skill_name]
 	return r

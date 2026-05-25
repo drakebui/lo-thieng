@@ -13,36 +13,25 @@ signal reached_counter(instance_id: int)
 signal left_shop(instance_id: int, reason: String)   # "served"|"impatient"|"dismissed"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CONSTANTS — tọa độ khớp shop_scene.gd (TILE=64)
+# ENUMS
 # ══════════════════════════════════════════════════════════════════════════════
 
-const ARRIVE_DIST     := 10.0   # px — tính là đã đến nơi
-const BROWSE_PAUSE    := 1.8    # giây đứng ngắm trước kệ
-const COUNTER_WAIT    := 120.0  # giây tối đa đợi ở quầy (đủ cho 2-3 negotiations)
+enum State { ENTERING, BROWSING, APPROACHING_COUNTER, AT_COUNTER, LEAVING, DONE }
 
-# Vừa qua cửa phải, giữa khe (row 5-6 → y=384)
-const DOOR_ENTRY := Vector2(920, 384)
-# Ra khỏi cửa — off-screen để queue_free
-const DOOR_EXIT  := Vector2(1010, 384)
+# ══════════════════════════════════════════════════════════════════════════════
+# CONSTANTS
+# ══════════════════════════════════════════════════════════════════════════════
 
-# Vị trí đứng trước mỗi kệ (dưới kệ 128px + khoảng 36px)
-const SHELF_FRONTS: Array = [
-	Vector2(256, 260),
-	Vector2(512, 260),
-	Vector2(768, 260),
-]
-
-# 3 điểm đứng trước quầy (phía bắc quầy TILE*9=576, cách 45px)
-const COUNTER_SPOTS: Array = [
-	Vector2(384, 531),
-	Vector2(512, 531),
-	Vector2(640, 531),
-]
+const ARRIVE_DIST  := 10.0   # px — tính là đã đến nơi
+const BROWSE_PAUSE := 1.8    # giây đứng ngắm trước kệ
+const COUNTER_WAIT := 120.0  # giây tối đa đợi ở quầy (đủ cho 2-3 negotiations)
+const SHOP_SPEED_MULTIPLIER := 1.30  # tăng tốc khách trong cửa hàng
 
 # Màu đặc trưng theo loại khách
 const CUSTOMER_COLORS: Dictionary = {
 	"hiep_khach":  Color(0.20, 0.45, 0.72),
 	"thu_ve":      Color(0.48, 0.50, 0.56),
+	"tho_san":     Color(0.30, 0.48, 0.24),
 	"vo_tang":     Color(0.72, 0.62, 0.22),
 	"thich_khach": Color(0.48, 0.22, 0.58),
 	"dao_si":      Color(0.22, 0.60, 0.58),
@@ -55,10 +44,15 @@ const CUSTOMER_COLORS: Dictionary = {
 # STATE
 # ══════════════════════════════════════════════════════════════════════════════
 
-enum State { ENTERING, BROWSING, APPROACHING_COUNTER, AT_COUNTER, LEAVING, DONE }
-
 var instance_id:    int        = -1
 var customer_data:  Dictionary = {}
+
+# Layout — ShopScene inject qua setup(); fallback an toàn nếu thiếu
+var _shelf_fronts:    Array   = []
+var _counter_spots:   Array   = []
+var _door_entry:      Vector2 = Vector2.ZERO
+var _door_exit:       Vector2 = Vector2.ZERO
+var _occupied_shelves: Array  = []   # chỉ số kệ có hàng thực sự
 
 var _state:         State   = State.ENTERING
 var _speed:         float   = 100.0
@@ -78,9 +72,17 @@ var _wants_to_buy:  bool    = true
 func setup(data: Dictionary) -> void:
 	instance_id   = data.get("instance_id", -1)
 	customer_data = data
-	_speed        = data.get("walk_speed", 100.0)
+	_speed        = data.get("walk_speed", 100.0) * SHOP_SPEED_MULTIPLIER
 	_wants_to_buy = randf() < 0.90
-	position      = DOOR_ENTRY
+
+	# Nhận layout động từ ShopScene
+	_shelf_fronts    = data.get("shelf_fronts",    [])
+	_counter_spots   = data.get("counter_spots",   [])
+	_door_entry      = data.get("door_entry",      Vector2.ZERO)
+	_door_exit       = data.get("door_exit",       Vector2.ZERO)
+	_occupied_shelves = data.get("occupied_shelves", [])
+
+	position = _door_entry
 	# Layer 2 = khách, chỉ va chạm tường (layer 4); không chặn player (layer 1) hay nhau (layer 2)
 	collision_layer = 2
 	collision_mask  = 4
@@ -120,19 +122,25 @@ func _build_visuals(ctype: String) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _pick_browse_plan() -> void:
-	var all := [0, 1, 2]
-	all.shuffle()
-	var count := randi_range(1, 2)
-	_browse_queue = all.slice(0, count)
+	# Chỉ ghé kệ có hàng thực sự
+	var candidates: Array = _occupied_shelves.duplicate()
+	if candidates.is_empty():
+		_wants_to_buy = false
+		return
+	candidates.shuffle()
+	var count: int = mini(randi_range(1, 2), candidates.size())
+	_browse_queue = candidates.slice(0, count)
 
 
 func _begin_enter() -> void:
 	_state = State.ENTERING
 	# Đi thẳng đến kệ đầu tiên — tự nhiên hơn là đi vào giữa rồi mới rẽ
-	if not _browse_queue.is_empty():
-		_target = SHELF_FRONTS[_browse_queue[0]]
+	if not _browse_queue.is_empty() and not _shelf_fronts.is_empty():
+		_target = _shelf_fronts[_browse_queue[0]]
+	elif not _counter_spots.is_empty():
+		_target = _counter_spots.pick_random()
 	else:
-		_target = COUNTER_SPOTS.pick_random()
+		_target = position   # fallback: đứng yên
 
 
 func _on_entered() -> void:
@@ -151,13 +159,13 @@ func _next_browse_target() -> void:
 			_begin_leave("browsed")
 		return
 	var idx: int = _browse_queue.pop_front()
-	_target  = SHELF_FRONTS[idx]
+	_target  = _shelf_fronts[idx]
 	_pausing = false
 
 
 func _begin_approach() -> void:
 	_state  = State.APPROACHING_COUNTER
-	_target = COUNTER_SPOTS.pick_random()
+	_target = _counter_spots.pick_random() if not _counter_spots.is_empty() else position
 
 
 func _on_reached_counter() -> void:
@@ -170,7 +178,7 @@ func _on_reached_counter() -> void:
 func _begin_leave(reason: String) -> void:
 	_leaving_reason = reason
 	_state          = State.LEAVING
-	_target         = DOOR_EXIT
+	_target         = _door_exit
 
 
 func _on_exited() -> void:

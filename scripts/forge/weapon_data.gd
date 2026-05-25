@@ -4,9 +4,10 @@ class_name ForgeConverter
 # Không có state — tất cả hàm đều static.
 
 const P1_MULTIPLIERS: Dictionary = {
-	"lanh":     0.7,
-	"cam":      1.2,
-	"vang_kim": 1.4,
+	"lanh":   0.7,   # −30%
+	"cam":    1.2,   # +20%
+	"do_ruc": 1.4,   # +40%
+	"chay":   0.5,   # −50%
 }
 
 const PREFIX_NAMES: Dictionary = {
@@ -46,6 +47,23 @@ const PREFIX_RARITY: Dictionary = {
 }
 
 
+## Nguồn sự thật duy nhất cho giá bán vũ khí.
+## Dùng chung bởi weapon_card_ui (hiển thị) và negotiation_ui (shop).
+static func weapon_sell_value(
+	atk: int,
+	magic: int,
+	speed: int,
+	rarity_tier: int,
+	price_mult: float = 1.0
+) -> int:
+	return int((atk * 40 + magic * 30 + rarity_tier * 120 + speed * 10 + 200) * price_mult)
+
+
+## Chỉ số sức mạnh tổng hợp để hiển thị và so sánh — không dùng trong combat logic.
+static func weapon_combat_power(atk: int, def_stat: int, magic: int, speed: int) -> int:
+	return atk * 3 + magic * 2 + def_stat + speed
+
+
 ## Nhận forge_data từ GameManager.forged_weapons, trả về combat-ready weapon Dict.
 ## forge_data cần có: phase1_tier, phase2_prefix, suffix, element_name,
 ##   base_atk, base_def, base_magic, base_speed, weapon_type, blank_id
@@ -58,28 +76,34 @@ static func forge_to_combat(fd: Dictionary) -> Dictionary:
 	var p1_mult: float = P1_MULTIPLIERS.get(p1_tier, 1.0)
 
 	# Phase 1 nhân ATK, DEF, Magic — Speed là tốc độ chiến đấu, không phụ thuộc nhiệt
-	var atk:   int = maxi(1, int(fd.get("base_atk",   10) * p1_mult))
-	var def_s: int = maxi(0, int(fd.get("base_def",    0) * p1_mult))
-	var magic: int = maxi(0, int(fd.get("base_magic",  0) * p1_mult))
-	var speed: int = fd.get("base_speed", 5)
+	# TODO: PHASE2_BONUS is applied in weapon_card_ui preview but NOT here.
+	# Combat stats and preview stats currently diverge. Fix in next pass.
+	var atk:        int   = maxi(1, int(fd.get("base_atk",   10) * p1_mult))
+	var def_s:      int   = maxi(0, int(fd.get("base_def",    0) * p1_mult))
+	var magic:      int   = maxi(0, int(fd.get("base_magic",  0) * p1_mult))
+	var speed:      int   = fd.get("base_speed", 5)
+	var price_mult: float = fd.get("price_mult", 1.0)
+	var rar_tier:   int   = PREFIX_RARITY.get(p2_prefix, 2)
 
 	return {
-		"weapon_name":   _build_name(fd),
-		"blank_id":      blank_id,
-		"blank_name":    fd.get("weapon_type", "Vũ Khí"),
-		"atk":           atk,
-		"def_stat":      def_s,
-		"magic":         magic,
-		"speed":         speed,
-		"skill1":        _prefix_to_skill(p2_prefix),
-		"skill2":        _suffix_to_skill(suffix),
-		"rarity_tier":   PREFIX_RARITY.get(p2_prefix, 2),
-		"phase1_tier":   p1_tier,
-		"phase2_prefix": p2_prefix,
-		"element":       fd.get("element",      ""),
-		"element_name":  fd.get("element_name", ""),
-		"durability":     50,
-		"durability_max": 50,
+		"weapon_name":    _build_name(fd),
+		"blank_id":       blank_id,
+		"blank_name":     fd.get("weapon_type", "Vũ Khí"),
+		"atk":            atk,
+		"def_stat":       def_s,
+		"magic":          magic,
+		"speed":          speed,
+		"skill1":         _prefix_to_skill(p2_prefix),
+		"skill2":         _suffix_to_skill(suffix),
+		"rarity_tier":    rar_tier,
+		"phase1_tier":    p1_tier,
+		"phase2_prefix":  p2_prefix,
+		"element":        fd.get("element",      ""),
+		"element_name":   fd.get("element_name", ""),
+		"durability":      50,
+		"durability_max":  50,
+		"sell_value":      weapon_sell_value(atk, magic, speed, rar_tier, price_mult),
+		"combat_power":    weapon_combat_power(atk, def_s, magic, speed),
 	}
 
 

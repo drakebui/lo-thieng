@@ -1,5 +1,6 @@
+# gdlint: disable=max-file-lines
 # Forge Session — kết hợp 3 phase rèn thành một luồng hoàn chỉnh
-# Phase 1 (Nung) → Phase 2 (Rèn Búa) → Phase 3 (Tôi Luyện) → Weapon Card
+# Nung → Rèn Búa → Tôi Luyện bằng linh lực đã chọn → Weapon Card
 extends Control
 
 enum Phase { P1, P2, P3_PICK, P3_ANIM, RESULT }
@@ -7,7 +8,16 @@ enum Phase { P1, P2, P3_PICK, P3_ANIM, RESULT }
 const _FORGE1_SCRIPT := preload("res://scripts/forge/forge_system.gd")
 const _FORGE2_SCRIPT := preload("res://scripts/forge/forge_phase2.gd")
 const _FORGE3_SCRIPT := preload("res://scripts/forge/forge_phase3.gd")
+const _HEAT_BAR_SCRIPT := preload("res://scripts/forge/heat_bar.gd")
 const _CARD_SCENE    := preload("res://scenes/ui/WeaponCardUI.tscn")
+const _PHASE_INDICATOR_SCRIPT := preload("res://scripts/forge/forge_phase_indicator.gd")
+const _PHASE_INDICATOR_SCENE := preload("res://scenes/forge/ForgePhaseIndicator.tscn")
+
+const PATH_MATERIAL_PICKER := "res://scenes/forge/MaterialPicker.tscn"
+const PATH_ELEMENT_PICKER := "res://scenes/forge/ElementPicker.tscn"
+const PATH_WEAPON_BUILDER := "res://scenes/forge/WeaponBuilder.tscn"
+const PATH_WORKSHOP := "res://scenes/main/WorkshopHub.tscn"
+const BACKGROUND_PATH := "res://assets/sprites/forge/backgrounds/Forge Scene BG.PNG"
 
 const BAR_WIDTH  := 1400.0
 const BAR_HEIGHT := 140.0
@@ -25,7 +35,7 @@ const PHASE2_PREFIX_NAMES := {
 }
 
 const PHASE1_TIER_NAMES := {
-	"lanh": "Lạnh", "cam": "Cam", "vang_kim": "Vàng Kim",
+	"lanh": "Lạnh", "cam": "Cam", "do_ruc": "Đỏ Rực", "chay": "Cháy Thép",
 }
 
 # ─── State ────────────────────────────────────────────────────────────────────
@@ -50,12 +60,12 @@ var _result_root:  Control
 
 # ─── Phase indicator ──────────────────────────────────────────────────────────
 
-var _ind_labels: Array[Label] = []
+var _phase_indicator
 
 # ─── Phase 1 widgets ──────────────────────────────────────────────────────────
 
 var _p1_active_box:     VBoxContainer  # ẩn khi phase 1 xong
-var _p1_heat_indicator: ColorRect
+var _p1_heat_bar:       HeatBar
 var _p1_heat_label:     Label
 var _p1_zone_label:     Label
 var _p1_instruct:       Label
@@ -63,13 +73,17 @@ var _p1_result_box:     VBoxContainer
 var _p1_result_label:   Label
 var _p1_mult_label:     Label
 
-# Zones trong heat bar — resize theo rarity
-var _p1_zone_lanh:  ColorRect
-var _p1_zone_cam:   ColorRect
-var _p1_zone_gold:  ColorRect
+# Labels của heat bar — resize theo rarity
 var _p1_lbl_lanh:   Label
 var _p1_lbl_cam:    Label
-var _p1_lbl_gold:   Label
+var _p1_lbl_do_ruc: Label
+var _p1_lbl_chay:   Label
+var _p1_lbl_eff_lanh:   Label
+var _p1_lbl_eff_cam:    Label
+var _p1_lbl_eff_do_ruc: Label
+var _p1_lbl_eff_chay:   Label
+var _p1_tip_label:  Label
+var _p1_label_pulse: float = 0.0
 
 # ─── Phase 2 widgets ──────────────────────────────────────────────────────────
 
@@ -87,12 +101,16 @@ var _p3_flash_rect:  ColorRect
 var _p3_weapon_rect: ColorRect
 var _p3_anim_label:  Label
 var _p3_tween:       Tween
+var _p3_element_grid: GridContainer
 
 # ─── Result ───────────────────────────────────────────────────────────────────
 
 var _weapon_card:  Control
 var _save_btn:     Button
 var _forge_result: Dictionary = {}
+var _global_back_btn: Button
+var _phase1_tooltip: PanelContainer
+var _phase2_tooltip: PanelContainer
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -101,9 +119,15 @@ var _forge_result: Dictionary = {}
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var forge_book := get_node_or_null("ForgeBookUI")
+	if forge_book:
+		forge_book.queue_free()
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.10, 0.08, 0.06)
+	var bg := TextureRect.new()
+	bg.texture = load(BACKGROUND_PATH) as Texture2D
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
@@ -129,7 +153,23 @@ func _ready() -> void:
 	add_child(_p3_pick_root)
 	add_child(_p3_anim_root)
 	add_child(_result_root)
-	add_child(_build_global_back_button())
+	_phase1_tooltip = _build_phase_tooltip(
+		"Phase1Tooltip",
+		"PHASE 1 — NUNG",
+		"Giữ [Space] để bơm bễ. Nhả khi nhiệt độ vào vùng Cam trên thanh.",
+		_on_phase1_tooltip_confirmed
+	)
+	_phase2_tooltip = _build_phase_tooltip(
+		"Phase2Tooltip",
+		"PHASE 2 — RÈN",
+		"Nhấn [Space] khi thanh đến vùng PERFECT (xanh). "
+			+ "5 nhát búa quyết định chất lượng!",
+		_on_phase2_tooltip_confirmed
+	)
+	add_child(_phase1_tooltip)
+	add_child(_phase2_tooltip)
+	_global_back_btn = _build_global_back_button()
+	add_child(_global_back_btn)
 
 	_go_to_phase1()
 
@@ -140,44 +180,33 @@ func _ready() -> void:
 
 func _build_global_back_button() -> Button:
 	var back_btn := Button.new()
-	back_btn.text = "[ Quay về Xưởng  (Esc) ]"
+	back_btn.text = "[ Quay lại chọn linh lực  (Esc) ]"
 	back_btn.add_theme_font_size_override("font_size", 28)
 	back_btn.position = Vector2(32, 28)
-	back_btn.size = Vector2(300, 52)
-	back_btn.pressed.connect(_go_to_hub)
+	back_btn.size = Vector2(380, 52)
+	back_btn.pressed.connect(_go_to_element_picker)
 	return back_btn
 
 
 func _build_indicator() -> void:
-	var bar := HBoxContainer.new()
-	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("separation", 0)
-	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	bar.offset_top    = 24
-	bar.offset_bottom = 100
-	add_child(bar)
-
-	var steps := [
-		["1", "Nung Thép"],
-		["—————", ""],
-		["2", "Rèn Búa"],
-		["—————", ""],
-		["3", "Tôi Luyện"],
-	]
-	for step in steps:
-		var lbl := Label.new()
-		lbl.text = "  %s  " % step[0] if step[1] == "" else "  [%s] %s  " % step
-		lbl.add_theme_font_size_override("font_size", 40)
-		lbl.add_theme_color_override("font_color", Color(0.4, 0.38, 0.32))
-		bar.add_child(lbl)
-		if step[1] != "":
-			_ind_labels.append(lbl)
+	_phase_indicator = get_node_or_null("ForgePhaseIndicator")
+	if _phase_indicator == null:
+		_phase_indicator = _PHASE_INDICATOR_SCENE.instantiate()
+		add_child(_phase_indicator)
+	_phase_indicator.set_phase(_PHASE_INDICATOR_SCRIPT.Phase.CHON_PHOI)
+	_move_indicator_to_front()
 
 
 func _update_indicator(active: int) -> void:
-	for i in _ind_labels.size():
-		var c := Color(0.92, 0.82, 0.42) if i == active else Color(0.4, 0.38, 0.32)
-		_ind_labels[i].add_theme_color_override("font_color", c)
+	if _phase_indicator == null:
+		return
+	_phase_indicator.set_phase(active)
+	_move_indicator_to_front()
+
+
+func _move_indicator_to_front() -> void:
+	if _phase_indicator:
+		move_child(_phase_indicator, get_child_count() - 1)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -223,6 +252,16 @@ func _build_phase1_ui() -> Control:
 	_p1_zone_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_p1_active_box.add_child(_p1_zone_label)
 
+	_p1_tip_label = Label.new()
+	_p1_tip_label.text = (
+		"Cam = an toàn (+20%)  •  Đỏ Rực = mạo hiểm (+40%)  •  "
+		+ "Cháy Thép = hỏng (−50%)"
+	)
+	_p1_tip_label.add_theme_font_size_override("font_size", 38)
+	_p1_tip_label.add_theme_color_override("font_color", Color(0.72, 0.67, 0.52))
+	_p1_tip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_p1_active_box.add_child(_p1_tip_label)
+
 	_p1_instruct = Label.new()
 	_p1_instruct.text = "Giữ [SPACE] để bơm ống bễ — Nhả để kết thúc"
 	_p1_instruct.add_theme_font_size_override("font_size", 52)
@@ -258,31 +297,9 @@ func _build_heat_bar() -> Control:
 	var wrapper := VBoxContainer.new()
 	wrapper.add_theme_constant_override("separation", 8)
 
-	var bar := Control.new()
-	bar.custom_minimum_size = Vector2(BAR_WIDTH, BAR_HEIGHT)
-	wrapper.add_child(bar)
-
-	_p1_zone_lanh = ColorRect.new()
-	_p1_zone_lanh.color = Color(0.22, 0.28, 0.45)
-	_p1_zone_lanh.size  = Vector2(BAR_WIDTH * 0.6, BAR_HEIGHT)
-	bar.add_child(_p1_zone_lanh)
-
-	_p1_zone_cam = ColorRect.new()
-	_p1_zone_cam.color    = Color(0.85, 0.45, 0.08)
-	_p1_zone_cam.position = Vector2(BAR_WIDTH * 0.6, 0)
-	_p1_zone_cam.size     = Vector2(BAR_WIDTH * 0.2, BAR_HEIGHT)
-	bar.add_child(_p1_zone_cam)
-
-	_p1_zone_gold = ColorRect.new()
-	_p1_zone_gold.color    = Color(0.92, 0.76, 0.1)
-	_p1_zone_gold.position = Vector2(BAR_WIDTH * 0.8, 0)
-	_p1_zone_gold.size     = Vector2(BAR_WIDTH * 0.2, BAR_HEIGHT)
-	bar.add_child(_p1_zone_gold)
-
-	_p1_heat_indicator = ColorRect.new()
-	_p1_heat_indicator.color = Color.WHITE
-	_p1_heat_indicator.size  = Vector2(8, BAR_HEIGHT)
-	bar.add_child(_p1_heat_indicator)
+	_p1_heat_bar = _HEAT_BAR_SCRIPT.new()
+	_p1_heat_bar.custom_minimum_size = Vector2(BAR_WIDTH, BAR_HEIGHT)
+	wrapper.add_child(_p1_heat_bar)
 
 	var row := HBoxContainer.new()
 
@@ -302,26 +319,68 @@ func _build_heat_bar() -> Control:
 	_p1_lbl_cam.custom_minimum_size.x = BAR_WIDTH * 0.2
 	row.add_child(_p1_lbl_cam)
 
-	_p1_lbl_gold = Label.new()
-	_p1_lbl_gold.text = "Vàng Kim"
-	_p1_lbl_gold.add_theme_font_size_override("font_size", 40)
-	_p1_lbl_gold.add_theme_color_override("font_color", Color(0.95, 0.86, 0.2))
-	_p1_lbl_gold.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_p1_lbl_gold.custom_minimum_size.x = BAR_WIDTH * 0.2
-	row.add_child(_p1_lbl_gold)
+	_p1_lbl_do_ruc = Label.new()
+	_p1_lbl_do_ruc.text = "Đỏ Rực"
+	_p1_lbl_do_ruc.add_theme_font_size_override("font_size", 40)
+	_p1_lbl_do_ruc.add_theme_color_override("font_color", Color(1.0, 0.45, 0.05))
+	_p1_lbl_do_ruc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_p1_lbl_do_ruc.custom_minimum_size.x = BAR_WIDTH * 0.12
+	row.add_child(_p1_lbl_do_ruc)
+
+	_p1_lbl_chay = Label.new()
+	_p1_lbl_chay.text = "Cháy Thép"
+	_p1_lbl_chay.add_theme_font_size_override("font_size", 40)
+	_p1_lbl_chay.add_theme_color_override("font_color", Color(0.55, 0.25, 0.10))
+	_p1_lbl_chay.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_p1_lbl_chay.custom_minimum_size.x = BAR_WIDTH * 0.08
+	row.add_child(_p1_lbl_chay)
 
 	wrapper.add_child(row)
+
+	# Hàng effect: luôn hiển thị multiplier của từng zone
+	var eff_row := HBoxContainer.new()
+
+	_p1_lbl_eff_lanh = Label.new()
+	_p1_lbl_eff_lanh.text = "−30%"
+	_p1_lbl_eff_lanh.add_theme_font_size_override("font_size", 36)
+	_p1_lbl_eff_lanh.add_theme_color_override("font_color", Color(0.6, 0.72, 0.95))
+	eff_row.add_child(_p1_lbl_eff_lanh)
+
+	_p1_lbl_eff_cam = Label.new()
+	_p1_lbl_eff_cam.text = "+20%"
+	_p1_lbl_eff_cam.add_theme_font_size_override("font_size", 36)
+	_p1_lbl_eff_cam.add_theme_color_override("font_color", Color(0.95, 0.62, 0.18))
+	_p1_lbl_eff_cam.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	eff_row.add_child(_p1_lbl_eff_cam)
+
+	_p1_lbl_eff_do_ruc = Label.new()
+	_p1_lbl_eff_do_ruc.text = "+40% ★"
+	_p1_lbl_eff_do_ruc.add_theme_font_size_override("font_size", 36)
+	_p1_lbl_eff_do_ruc.add_theme_color_override("font_color", Color(1.0, 0.45, 0.05))
+	_p1_lbl_eff_do_ruc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	eff_row.add_child(_p1_lbl_eff_do_ruc)
+
+	_p1_lbl_eff_chay = Label.new()
+	_p1_lbl_eff_chay.text = "−50%"
+	_p1_lbl_eff_chay.add_theme_font_size_override("font_size", 36)
+	_p1_lbl_eff_chay.add_theme_color_override("font_color", Color(0.55, 0.25, 0.10))
+	_p1_lbl_eff_chay.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	eff_row.add_child(_p1_lbl_eff_chay)
+
+	wrapper.add_child(eff_row)
 	return wrapper
 
 
 func _go_to_phase1() -> void:
 	_current_phase = Phase.P1
-	_update_indicator(0)
+	_update_indicator(_PHASE_INDICATOR_SCRIPT.Phase.NUNG_THEP)
 	_p1_root.visible      = true
 	_p2_root.visible      = false
 	_p3_pick_root.visible = false
 	_p3_anim_root.visible = false
 	_result_root.visible  = false
+	if _global_back_btn:
+		_global_back_btn.visible = true
 	_p1_active_box.visible = true
 	_p1_result_box.visible = false
 	_p1_zone_label.text    = "Sẵn sàng..."
@@ -329,28 +388,46 @@ func _go_to_phase1() -> void:
 	var rarity: int = GameManager.selected_material.get("rarity", 1)
 	_p1_instruct.text = "Giữ [SPACE] để bơm ống bễ — Nhả để kết thúc     %s" \
 		% _rarity_label(rarity)
+	if not GameManager.has_tutorial_seen("forge_phase1_shown"):
+		_phase1_tooltip.visible = true
+		return
+	_start_phase1_logic()
+
+
+func _start_phase1_logic() -> void:
+	var rarity: int = GameManager.selected_material.get("rarity", 1)
+	var validation_error := ForgeValidator.validate(
+		GameManager.selected_blank,
+		GameManager.selected_material,
+		InventorySystem.materials
+	)
+	if validation_error != "":
+		_p1_zone_label.text = validation_error
+		_p1_zone_label.add_theme_color_override("font_color", COLOR_MISS)
+		push_warning("[ForgeValidator] " + validation_error)
+		return
 	_forge1.start_phase(0, rarity)
 	_update_heat_zones()
 
 
 func _update_heat_zones() -> void:
-	var high: float    = _forge1.sweet_spot_high
-	var low_frac: float  = _forge1.SWEET_SPOT_LOW / 100.0
-	var high_frac: float = high / 100.0
-	var gold_pct: int  = int((1.0 - high_frac) * 100.0)
+	var low_frac: float  = _forge1.SWEET_SPOT_LOW  / 100.0
+	var peak_frac: float = _forge1.SWEET_SPOT_PEAK / 100.0
+	var burn_frac: float = _forge1.burn_point      / 100.0
 
-	_p1_zone_lanh.size     = Vector2(BAR_WIDTH * low_frac, BAR_HEIGHT)
+	_p1_heat_bar.set_thresholds(low_frac, peak_frac, burn_frac)
 
-	_p1_zone_cam.position  = Vector2(BAR_WIDTH * low_frac, 0)
-	_p1_zone_cam.size      = Vector2(BAR_WIDTH * (high_frac - low_frac), BAR_HEIGHT)
+	_p1_lbl_lanh.custom_minimum_size.x   = BAR_WIDTH * low_frac
+	_p1_lbl_cam.custom_minimum_size.x    = BAR_WIDTH * (peak_frac - low_frac)
+	_p1_lbl_do_ruc.custom_minimum_size.x = BAR_WIDTH * (burn_frac - peak_frac)
+	_p1_lbl_chay.custom_minimum_size.x   = BAR_WIDTH * (1.0 - burn_frac)
+	_p1_lbl_do_ruc.text = "Đỏ Rực  (%d%%)" % int((burn_frac - peak_frac) * 100.0)
+	_p1_lbl_chay.text   = "Cháy Thép  (%d%%)" % int((1.0 - burn_frac) * 100.0)
 
-	_p1_zone_gold.position = Vector2(BAR_WIDTH * high_frac, 0)
-	_p1_zone_gold.size     = Vector2(BAR_WIDTH * (1.0 - high_frac), BAR_HEIGHT)
-
-	_p1_lbl_lanh.custom_minimum_size.x = BAR_WIDTH * low_frac
-	_p1_lbl_cam.custom_minimum_size.x  = BAR_WIDTH * (high_frac - low_frac)
-	_p1_lbl_gold.custom_minimum_size.x = BAR_WIDTH * (1.0 - high_frac)
-	_p1_lbl_gold.text = "Vàng Kim  (%d%%)" % gold_pct
+	_p1_lbl_eff_lanh.custom_minimum_size.x   = BAR_WIDTH * low_frac
+	_p1_lbl_eff_cam.custom_minimum_size.x    = BAR_WIDTH * (peak_frac - low_frac)
+	_p1_lbl_eff_do_ruc.custom_minimum_size.x = BAR_WIDTH * (burn_frac - peak_frac)
+	_p1_lbl_eff_chay.custom_minimum_size.x   = BAR_WIDTH * (1.0 - burn_frac)
 
 
 func _on_phase1_done(tier: String) -> void:
@@ -358,8 +435,8 @@ func _on_phase1_done(tier: String) -> void:
 		return
 	# Nguyên liệu có thể override tier tối thiểu
 	var p1_min := GameManager.selected_material.get("phase1_min", "") as String
-	if p1_min == "vang_kim":
-		tier = "vang_kim"
+	if p1_min == "do_ruc":
+		tier = "do_ruc"
 	elif p1_min == "cam" and tier == "lanh":
 		tier = "cam"
 	_p1_tier = tier
@@ -376,9 +453,10 @@ func _on_phase1_done(tier: String) -> void:
 
 	var tier_color := Color.WHITE
 	match tier:
-		"lanh":     tier_color = Color(0.6, 0.72, 0.95)
-		"cam":      tier_color = Color(0.95, 0.62, 0.18)
-		"vang_kim": tier_color = Color(0.95, 0.86, 0.2)
+		"lanh":   tier_color = Color(0.6, 0.72, 0.95)
+		"cam":    tier_color = Color(0.95, 0.62, 0.18)
+		"do_ruc": tier_color = Color(1.0, 0.45, 0.05)
+		"chay":   tier_color = Color(0.55, 0.25, 0.10)
 	_p1_result_label.add_theme_color_override("font_color", tier_color)
 
 
@@ -487,15 +565,24 @@ func _build_beat_bar() -> Control:
 
 func _go_to_phase2() -> void:
 	_current_phase = Phase.P2
-	_update_indicator(1)
+	_update_indicator(_PHASE_INDICATOR_SCRIPT.Phase.REN_BUA)
 	_p1_root.visible      = false
 	_p2_root.visible      = true
 	_p3_pick_root.visible = false
 	_p3_anim_root.visible = false
 	_result_root.visible  = false
+	if _global_back_btn:
+		_global_back_btn.visible = true
 	_p2_score_label.text    = "Điểm:  0"
 	_p2_strike_label.text   = "Nhát  1 / 5"
 	_p2_feedback_label.text = ""
+	if not GameManager.has_tutorial_seen("forge_phase2_shown"):
+		_phase2_tooltip.visible = true
+		return
+	_start_phase2_logic()
+
+
+func _start_phase2_logic() -> void:
 	var rarity: int = GameManager.selected_material.get("rarity", 1)
 	var window_scale: float
 	var beat_dur: float
@@ -506,8 +593,85 @@ func _go_to_phase2() -> void:
 		_: window_scale = 1.00; beat_dur = 1.50
 	var diff_lbl := _p2_root.find_child("DiffLabel") as Label
 	if diff_lbl:
-		diff_lbl.text = _rarity_label(rarity)
-	_forge2.start_phase(window_scale, beat_dur)
+		var max_stars := {1: "★★☆☆☆", 2: "★★★☆☆", 3: "★★★★★"}
+		diff_lbl.text = "%s  |  Tối đa Prefix: %s" % [
+			_rarity_label(rarity),
+			max_stars.get(rarity, "★★★★★"),
+		]
+	_forge2.start_phase(window_scale, beat_dur, rarity)
+
+
+func _build_phase_tooltip(
+	node_name: String,
+	title_text: String,
+	body_text: String,
+	confirmed_callback: Callable
+) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.name = node_name
+	panel.visible = false
+	panel.custom_minimum_size = Vector2(430, 190)
+	panel.position = Vector2(get_viewport_rect().size.x - 480, 130)
+	panel.add_theme_stylebox_override("panel", _make_tooltip_style())
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 14)
+	panel.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	margin.add_child(vbox)
+
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color(1.0, 0.84, 0.28))
+	vbox.add_child(title)
+
+	var body := Label.new()
+	body.text = body_text
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_theme_font_size_override("font_size", 18)
+	body.add_theme_color_override("font_color", Color(0.92, 0.86, 0.72))
+	vbox.add_child(body)
+
+	var button := Button.new()
+	button.text = "Đã hiểu"
+	button.custom_minimum_size = Vector2(120, 40)
+	button.pressed.connect(confirmed_callback)
+	vbox.add_child(button)
+	return panel
+
+
+func _make_tooltip_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.035, 0.018, 0.96)
+	style.border_color = Color(0.72, 0.54, 0.24)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(8)
+	return style
+
+
+func _on_phase1_tooltip_confirmed() -> void:
+	_phase1_tooltip.visible = false
+	GameManager.mark_tutorial("forge_phase1_shown")
+	_start_phase1_logic()
+
+
+func _on_phase2_tooltip_confirmed() -> void:
+	_phase2_tooltip.visible = false
+	GameManager.mark_tutorial("forge_phase2_shown")
+	_start_phase2_logic()
+
+
+func _has_active_phase_tooltip() -> bool:
+	return (
+		(_phase1_tooltip != null and _phase1_tooltip.visible)
+		or (_phase2_tooltip != null and _phase2_tooltip.visible)
+	)
 
 
 func _on_beat_started(beat_index: int, perfect_center: float) -> void:
@@ -536,19 +700,22 @@ func _on_strike_resolved(result: int, _idx: int, running_score: int) -> void:
 		_forge2.HitResult.PERFECT:
 			_p2_feedback_label.text = "PERFECT!"
 			_p2_feedback_label.add_theme_color_override("font_color", COLOR_PERFECT)
+			AudioManager.play_sfx_key("hammer_perfect")
 		_forge2.HitResult.GOOD:
 			_p2_feedback_label.text = "GOOD"
 			_p2_feedback_label.add_theme_color_override("font_color", COLOR_GOOD)
+			AudioManager.play_sfx_key("hammer_good")
 		_forge2.HitResult.MISS:
 			_p2_feedback_label.text = "MISS..."
 			_p2_feedback_label.add_theme_color_override("font_color", COLOR_MISS)
+			AudioManager.play_sfx_key("hammer_miss")
 
 
 func _on_phase2_done(_score: int, prefix_tier: String) -> void:
 	if _current_phase != Phase.P2:
 		return
 	_p2_prefix = prefix_tier
-	_go_to_phase3_pick()
+	_go_to_phase3_anim()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -582,21 +749,11 @@ func _build_phase3_pick_ui() -> Control:
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(sub)
 
-	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 40)
-	grid.add_theme_constant_override("v_separation", 40)
-	vbox.add_child(grid)
-
-	for key in _forge3.ELEMENTS.keys():
-		var data: Dictionary = _forge3.ELEMENTS[key]
-		var btn := Button.new()
-		btn.text = data["name"]
-		btn.custom_minimum_size = Vector2(360, 120)
-		btn.add_theme_font_size_override("font_size", 64)
-		btn.add_theme_color_override("font_color", data["color"])
-		btn.pressed.connect(_on_element_picked.bind(key))
-		grid.add_child(btn)
+	_p3_element_grid = GridContainer.new()
+	_p3_element_grid.columns = 3
+	_p3_element_grid.add_theme_constant_override("h_separation", 40)
+	_p3_element_grid.add_theme_constant_override("v_separation", 40)
+	vbox.add_child(_p3_element_grid)
 
 	return root
 
@@ -641,20 +798,45 @@ func _build_phase3_anim_ui() -> Control:
 
 
 func _go_to_phase3_pick() -> void:
-	_current_phase = Phase.P3_PICK
-	_update_indicator(2)
-	_p1_root.visible      = false
-	_p2_root.visible      = false
-	_p3_pick_root.visible = true
-	_p3_anim_root.visible = false
-	_result_root.visible  = false
+	_go_to_phase3_anim()
+
+
+func _refresh_phase3_elements() -> void:
+	for child in _p3_element_grid.get_children():
+		child.queue_free()
+	var allowed: Array = GameManager.selected_material.get("allowed_elements", [])
+	for key in _forge3.ELEMENTS.keys():
+		if allowed.is_empty() or key in allowed:
+			var data: Dictionary = _forge3.ELEMENTS[key]
+			var btn := Button.new()
+			btn.text = data["name"]
+			btn.custom_minimum_size = Vector2(360, 120)
+			btn.add_theme_font_size_override("font_size", 64)
+			btn.add_theme_color_override("font_color", data["color"])
+			btn.pressed.connect(_on_element_picked.bind(key))
+			_p3_element_grid.add_child(btn)
 
 
 func _on_element_picked(element_key: String) -> void:
+	GameManager.selected_element = element_key
+	_go_to_phase3_anim()
+
+
+func _go_to_phase3_anim() -> void:
+	var element_key := GameManager.selected_element
+	if element_key == "":
+		element_key = "hoa"
+		GameManager.selected_element = element_key
 	_forge3.start_phase(element_key)
 	_current_phase        = Phase.P3_ANIM
+	_update_indicator(_PHASE_INDICATOR_SCRIPT.Phase.TOI_LUYEN)
+	_p1_root.visible      = false
+	_p2_root.visible      = false
 	_p3_pick_root.visible = false
 	_p3_anim_root.visible = true
+	_result_root.visible  = false
+	if _global_back_btn:
+		_global_back_btn.visible = true
 
 	var elem: Dictionary = _forge3.get_element_data(element_key)
 	var elem_color: Color = elem.get("color", Color.WHITE)
@@ -689,10 +871,14 @@ func _finish_quench(_element_key: String) -> void:
 	result["base_def"]          = blank.get("def",         0) + mat.get("def_bonus",    0)
 	result["base_magic"]        = blank.get("magic",       3) + mat.get("magic_bonus",  0)
 	result["base_speed"]        = blank.get("speed",       5) + mat.get("speed_bonus",  0)
-	result["innate_skill"]      = blank.get("skill",       "")
+	result["innate_skill_id"]   = blank.get("skill",       "")
+	result["innate_skill"]      = blank.get("skill_name",  blank.get("skill", ""))
 	result["innate_skill_desc"] = blank.get("skill_desc",  "")
 	result["material_name"]     = mat.get("name",          "")
-	result["price_mult"]        = mat.get("price_mult",    1.0)
+	var rarity_price_table := {1: 0.5, 2: 1.0, 3: 1.6}
+	var material_rarity: int = GameManager.selected_material.get("rarity", 1)
+	result["price_mult"] = rarity_price_table.get(material_rarity, 1.0) \
+		* mat.get("price_mult", 1.0)
 	_show_result(result)
 
 
@@ -768,6 +954,8 @@ func _show_result(result: Dictionary) -> void:
 	_current_phase        = Phase.RESULT
 	_p3_anim_root.visible = false
 	_result_root.visible  = true
+	if _global_back_btn:
+		_global_back_btn.visible = false
 	_save_btn.disabled    = false
 	_weapon_card.setup(result)
 
@@ -779,6 +967,8 @@ func _show_result(result: Dictionary) -> void:
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or event.echo or not event.pressed:
 		return
+	if _has_active_phase_tooltip():
+		return
 
 	match event.keycode:
 		KEY_SPACE:
@@ -786,9 +976,13 @@ func _input(event: InputEvent) -> void:
 				Phase.P1:
 					if _forge1.is_active:
 						_forge1.is_pumping = true
+						AudioManager.play_sfx_loop("furnace_burn")
 				Phase.P2:
 					if _forge2.is_active:
 						_forge2.try_hit()
+		KEY_ENTER:
+			if _current_phase == Phase.P2 and _forge2.is_active:
+				_forge2.try_hit()
 		KEY_S:
 			if _current_phase == Phase.RESULT:
 				_on_save_pressed()
@@ -796,7 +990,10 @@ func _input(event: InputEvent) -> void:
 			if _current_phase == Phase.RESULT:
 				_on_retry_pressed()
 		KEY_ESCAPE:
-			_go_to_hub()
+			if _current_phase == Phase.RESULT:
+				_go_to_hub()
+			else:
+				_go_to_element_picker()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -806,32 +1003,50 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if _current_phase == Phase.P1 and _forge1.is_active:
 			_forge1.is_pumping = false
 			_forge1.release()
+			AudioManager.stop_sfx_loop()
 
 
 func _process(_delta: float) -> void:
 	match _current_phase:
 		Phase.P1:
 			var h: float = _forge1.heat
-			_p1_heat_indicator.position.x = clampf(h / 100.0 * BAR_WIDTH - 4.0, 0, BAR_WIDTH - 8)
+			_p1_heat_bar.heat_percent = h / 100.0
+			_p1_heat_bar.tick_animation(_delta)
 			_p1_heat_label.text = "Nhiệt độ: %d / 100" % int(h)
 			if _forge1.is_active:
+				_p1_label_pulse += _delta
 				_p1_update_zone(h)
+				_p1_animate_zone_label(h)
 		Phase.P2:
 			if _forge2.is_active:
 				_p2_beat_indicator.position.x = clampf(
 					_forge2.beat_progress * BAR_WIDTH - 5.0, 0, BAR_WIDTH - 10)
 
 
+func _p1_animate_zone_label(h: float) -> void:
+	if h >= _forge1.burn_point:
+		var a: float = 0.45 + sin(_p1_label_pulse * 12.0) * 0.55
+		_p1_zone_label.modulate = Color(1.0, 1.0, 1.0, a)
+	elif h >= _forge1.SWEET_SPOT_PEAK:
+		var a: float = 0.70 + sin(_p1_label_pulse * 6.0) * 0.30
+		_p1_zone_label.modulate = Color(1.0, 1.0, 1.0, a)
+	else:
+		_p1_zone_label.modulate = Color.WHITE
+
+
 func _p1_update_zone(h: float) -> void:
 	if h < _forge1.SWEET_SPOT_LOW:
 		_p1_zone_label.text = "[ Lạnh ]   Tiếp tục bơm..."
 		_p1_zone_label.add_theme_color_override("font_color", Color(0.6, 0.72, 0.95))
-	elif h <= _forge1.sweet_spot_high:
-		_p1_zone_label.text = "[ Cam ]   Sweet spot — Nhả ngay!"
+	elif h < _forge1.SWEET_SPOT_PEAK:
+		_p1_zone_label.text = "[ Cam ]   Sweet spot — có thể nhả!"
 		_p1_zone_label.add_theme_color_override("font_color", Color(0.95, 0.62, 0.18))
+	elif h < _forge1.burn_point:
+		_p1_zone_label.text = "[ Đỏ Rực ]   ĐỈNH NHIỆT — Nhả ngay!"
+		_p1_zone_label.add_theme_color_override("font_color", Color(1.0, 0.45, 0.05))
 	else:
-		_p1_zone_label.text = "[ Vàng Kim ]   Quá nóng!"
-		_p1_zone_label.add_theme_color_override("font_color", Color(0.95, 0.86, 0.2))
+		_p1_zone_label.text = "[ Cháy Thép ]   Thép đã hỏng!"
+		_p1_zone_label.add_theme_color_override("font_color", Color(0.55, 0.25, 0.10))
 
 
 func _on_save_pressed() -> void:
@@ -846,12 +1061,58 @@ func _on_save_pressed() -> void:
 			weapon[key] = _forge_result[key]
 	InventorySystem.add_weapon(weapon)
 	EventBus.weapon_forged.emit(weapon)
-	var mat_id: String = GameManager.selected_material.get("id", "")
-	if not mat_id.is_empty():
-		for mat in InventorySystem.get_materials():
-			if mat.get("item_id", "") == mat_id:
-				InventorySystem.remove_material(mat)
-				break
+	var qty_to_consume: int = GameManager.selected_blank.get("required_quantity", 2)
+	var selected_mat_ids: Array = GameManager.selected_material.get("material_ids", [])
+	if not selected_mat_ids.is_empty():
+		_consume_selected_material_ids(selected_mat_ids)
+		return
+	var selected_mat_id: String = GameManager.selected_material.get(
+		"item_id", GameManager.selected_material.get("id", "")
+	)
+	_consume_material_units([selected_mat_id], qty_to_consume)
+
+
+func _consume_selected_material_ids(selected_mat_ids: Array) -> void:
+	var alias_map: Dictionary = GameManager.selected_material.get("material_inventory_aliases", {})
+	for selected_id in selected_mat_ids:
+		var accepted_ids: Array = alias_map.get(selected_id, [selected_id])
+		_consume_material_units(accepted_ids, 1)
+
+
+func _consume_material_units(accepted_ids: Array, amount: int) -> void:
+	var remaining := maxi(0, amount)
+	var i := InventorySystem.materials.size() - 1
+	while i >= 0 and remaining > 0:
+		var entry: Dictionary = InventorySystem.materials[i]
+		if not accepted_ids.has(entry.get("item_id", "")):
+			i -= 1
+			continue
+
+		var quantity_key := _get_material_quantity_key(entry)
+		if quantity_key == "":
+			InventorySystem.materials.remove_at(i)
+			remaining -= 1
+			i -= 1
+			continue
+
+		var quantity := maxi(1, int(entry.get(quantity_key, 1)))
+		var consumed := mini(quantity, remaining)
+		quantity -= consumed
+		remaining -= consumed
+		if quantity <= 0:
+			InventorySystem.materials.remove_at(i)
+		else:
+			entry[quantity_key] = quantity
+			InventorySystem.materials[i] = entry
+		i -= 1
+
+
+func _get_material_quantity_key(entry: Dictionary) -> String:
+	if entry.has("quantity"):
+		return "quantity"
+	if entry.has("amount"):
+		return "amount"
+	return ""
 
 
 func _rarity_label(rarity: int) -> String:
@@ -865,10 +1126,16 @@ func _rarity_label(rarity: int) -> String:
 func _on_retry_pressed() -> void:
 	if _p3_tween:
 		_p3_tween.kill()
-	get_tree().change_scene_to_file("res://scenes/forge/MaterialPicker.tscn")
+	get_tree().change_scene_to_file(PATH_WEAPON_BUILDER)
+
+
+func _go_to_element_picker() -> void:
+	if _p3_tween:
+		_p3_tween.kill()
+	get_tree().change_scene_to_file(PATH_ELEMENT_PICKER)
 
 
 func _go_to_hub() -> void:
 	if _p3_tween:
 		_p3_tween.kill()
-	SceneManager.go_to("res://scenes/main/WorkshopHub.tscn")
+	SceneManager.go_to(PATH_WORKSHOP)

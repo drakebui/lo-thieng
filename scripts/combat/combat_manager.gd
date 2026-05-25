@@ -27,85 +27,7 @@ enum CombatState { IDLE, PLAYER_TURN, ENEMY_TURN, RESOLVE, ENDED }
 
 # Khoảng dừng giữa action player và action enemy (giây)
 const ACTION_DELAY := 0.65
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SKILL DATABASE (MVP — chuyển sang SkillExecutor + .tres ở phase sau)
-# ══════════════════════════════════════════════════════════════════════════════
-
-const SKILLS: Dictionary = {
-	"basic_attack": {
-		"name": "Tấn Công Thường", "stamina_cost": 0,
-		"effect": "DAMAGE", "damage_mult": 1.0, "dice": 4,
-	},
-	"master_form": {
-		"name": "Master's Form", "stamina_cost": 2,
-		"effect": "DAMAGE_HEAL", "damage_mult": 1.3, "dice": 0, "heal_flat": 10,
-	},
-	"slash": {
-		"name": "Slash", "stamina_cost": 1,
-		"effect": "DAMAGE", "damage_mult": 1.5, "dice": 0,
-	},
-	"burn_skill": {
-		"name": "Burn", "stamina_cost": 2,
-		"effect": "DAMAGE_STATUS", "damage_mult": 1.0, "dice": 0,
-		"status": "burn", "status_turns": 2, "status_dmg": 4,
-	},
-	"freeze_skill": {
-		"name": "Băng Giá", "stamina_cost": 2,
-		"effect": "DAMAGE_STATUS", "damage_mult": 0.8, "dice": 0,
-		"status": "freeze", "status_turns": 1, "effect_chance": 0.5,
-	},
-	"chain_lightning": {
-		"name": "Sấm Sét", "stamina_cost": 2,
-		"effect": "DAMAGE", "damage_mult": 1.0, "dice": 0, "ignore_def": 0.5,
-	},
-	"iron_wall": {
-		"name": "Iron Wall", "stamina_cost": 1,
-		"effect": "BUFF_DEF", "def_bonus": 5, "def_bonus_turns": 2,
-	},
-	"heroic_shout": {
-		"name": "Heroic Shout", "stamina_cost": 1,
-		"effect": "DEBUFF_ATK", "atk_penalty": 2, "atk_penalty_turns": 3,
-	},
-	"enemy_bite": {
-		"name": "Cắn Mạnh", "stamina_cost": 0,
-		"effect": "DAMAGE", "damage_mult": 1.3, "dice": 0,
-	},
-	"enemy_magic": {
-		"name": "Ma Lực", "stamina_cost": 0,
-		"effect": "DAMAGE", "damage_mult": 0.0, "dice": 0, "use_magic": true, "magic_mult": 1.5,
-	},
-}
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ENEMY TEMPLATES (MVP — chuyển sang EnemyData.tres ở phase sau)
-# ══════════════════════════════════════════════════════════════════════════════
-
-const ENEMY_TEMPLATES: Dictionary = {
-	# Đồng Mây Trắng — vùng đầu tiên, kẻ địch mức cơ bản
-	# Mục tiêu: 3-4 lượt với player ATK=16 DEF=2 (Kiếm Đơn slot 0)
-	# Sói: T1 Slash(21) T2 Burn(13+tick) T3 Slash(21+tick) → enemy HP=0 giữa T3-T4
-	"soi": {
-		"name": "Sói Hoang", "archetype": "aggressive",
-		"hp": 72, "atk": 13, "def_stat": 3, "magic": 0, "speed": 6,
-		"color": Color(0.55, 0.25, 0.12), "drop_gold": 45,
-		"crit_rate": 0.25,  # hung hăng → crit cao nhất
-	},
-	# Người Đá: DEF cao, thủ mỗi lượt 3 → kéo dài 4-5 lượt
-	"nguoi_da": {
-		"name": "Người Đá", "archetype": "defensive",
-		"hp": 75, "atk": 11, "def_stat": 6, "magic": 0, "speed": 4,
-		"color": Color(0.42, 0.42, 0.45), "drop_gold": 60,
-		"crit_rate": 0.10,  # phòng thủ → ít crit
-	},
-	# Ma Rừng: caster xen kẽ basic/magic → 3-4 lượt, player phải chịu magic burst
-	"ma_rung": {
-		"name": "Ma Rừng", "archetype": "caster",
-		"hp": 60, "atk": 5, "def_stat": 2, "magic": 10, "speed": 8,
-		"color": Color(0.22, 0.45, 0.35), "drop_gold": 75,
-		"crit_rate": 0.20,  # phép thuật tập trung → crit trung bình
-	},
-}
+const SKILL_DIR := "res://resources/skills"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STATE
@@ -113,21 +35,31 @@ const ENEMY_TEMPLATES: Dictionary = {
 
 var player: Combatant      = null
 var enemy:  EnemyCombatUnit = null
+var skill_db: Dictionary = {}
 
 var _state:          CombatState = CombatState.IDLE
 var _round_num:      int         = 0
 var _enemy_intent:   Dictionary  = {}
 var _pending_action: Dictionary  = {}
+var _is_counter_encounter: bool = false
+var _counter_bonus_applied: bool = false
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PUBLIC API
 # ══════════════════════════════════════════════════════════════════════════════
 
+func _ready() -> void:
+	_load_skill_db()
+
+
 func start_combat(p: Combatant, e: EnemyCombatUnit) -> void:
 	player     = p
 	enemy      = e
 	_round_num = 0
+	_is_counter_encounter = GameManager.pending_combat_is_counter
+	GameManager.pending_combat_is_counter = false
+	_counter_bonus_applied = false
 	_go_to(CombatState.PLAYER_TURN)
 
 
@@ -141,6 +73,12 @@ func submit_player_action(action: Dictionary) -> void:
 
 func get_state() -> CombatState:
 	return _state
+
+
+func get_skill(skill_id: String) -> SkillData:
+	if skill_db.is_empty():
+		_load_skill_db()
+	return skill_db.get(skill_id, null)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -161,6 +99,9 @@ func _go_to(new_state: CombatState) -> void:
 
 func _enter_player_turn() -> void:
 	_round_num += 1
+	if _round_num == 1 and _is_counter_encounter:
+		_counter_bonus_applied = false
+		_log("> Phủ Đầu! Đòn đầu tiên tăng 30% sát thương.")
 
 	# Hồi stamina cho player mỗi đầu lượt
 	if player is PlayerCombatUnit:
@@ -269,8 +210,8 @@ func _do_player_action(action: Dictionary) -> void:
 		combatant_updated.emit(true)
 		return
 
-	var skill: Dictionary = action.get("skill", {})
-	var cost:  int        = skill.get("stamina_cost", 0)
+	var skill: Variant = action.get("skill", {})
+	var cost:  int     = _get_skill_cost(skill)
 	player.stamina        = max(0, player.stamina - cost)
 
 	_execute_skill(skill, player, enemy)
@@ -308,12 +249,15 @@ func _do_enemy_action() -> void:
 			var actual := player.take_damage(raw)
 			if actual == 0:
 				_log("> %s tấn công — bị chặn bởi khiên!" % enemy.combatant_name)
+				AudioManager.play_sfx_key("shield_block")
 			elif is_crit:
 				_log("> %s ĐÒN CHÍ MẠNG! -%d HP" % [enemy.combatant_name, actual])
 				hit_landed.emit(true, actual, true)
+				AudioManager.play_sfx_key("player_hurt")
 			else:
 				_log("> %s tấn công: -%d HP" % [enemy.combatant_name, actual])
 				hit_landed.emit(true, actual, false)
+				AudioManager.play_sfx_key("player_hurt")
 
 		"defend":
 			enemy.def_bonus       = 4
@@ -322,8 +266,8 @@ func _do_enemy_action() -> void:
 
 		"skill":
 			var skill_id: String = _enemy_intent.get("skill_id", "enemy_magic")
-			if SKILLS.has(skill_id):
-				_execute_skill(SKILLS[skill_id], enemy, player)
+			if skill_db.has(skill_id):
+				_execute_skill(skill_db[skill_id], enemy, player)
 			else:
 				var eff_crit: float = maxf(0.0, enemy.crit_rate - player.crit_resist)
 				var is_crit:  bool  = randf() < eff_crit
@@ -351,7 +295,10 @@ func _do_enemy_action() -> void:
 # SKILL EXECUTION (MVP — chuyển sang skill_executor.gd ở phase sau)
 # ══════════════════════════════════════════════════════════════════════════════
 
-func _execute_skill(skill: Dictionary, attacker: Combatant, target: Combatant) -> void:
+func _execute_skill(skill_data: Variant, attacker: Combatant, target: Combatant) -> void:
+	var skill: Dictionary = _skill_to_runtime_dict(skill_data)
+	if skill.is_empty():
+		return
 	var effect:     String = skill.get("effect",       "DAMAGE")
 	var mult:       float  = skill.get("damage_mult",  1.0)
 	var dice:       int    = skill.get("dice",         0)
@@ -367,11 +314,30 @@ func _execute_skill(skill: Dictionary, attacker: Combatant, target: Combatant) -
 				raw = attacker.calc_magic_damage(skill.get("magic_mult", 1.0))
 			else:
 				raw = attacker.calc_raw_damage(mult, dice)
+			raw = _apply_counter_bonus(raw, attacker, target, effect)
 			var actual := target.take_damage(raw, ignore_def)
 			_log("> %s dùng %s: %s" % [attacker.combatant_name, name,
 				"chặn bởi khiên!" if actual == 0 else "-%d HP" % actual])
 			if actual > 0:
 				hit_landed.emit(target_is_player, actual, false)
+				AudioManager.play_sfx_key("player_hurt" if target_is_player else "sword_hit")
+			elif actual == 0:
+				AudioManager.play_sfx_key("shield_block")
+
+		"DAMAGE_IGNORE_DEF":
+			# Xuyên DEF — ignore_def 1.0 = bỏ qua toàn bộ DEF địch.
+			var raw := attacker.calc_raw_damage(mult, dice)
+			raw = _apply_counter_bonus(raw, attacker, target, effect)
+			var actual := target.take_damage(raw, skill.get("ignore_def", 1.0))
+			_log("> %s dùng %s (xuyên DEF): %s" % [
+				attacker.combatant_name, name,
+				"chặn bởi khiên!" if actual == 0 else "-%d HP" % actual,
+			])
+			if actual > 0:
+				hit_landed.emit(target_is_player, actual, false)
+				AudioManager.play_sfx_key("player_hurt" if target_is_player else "sword_hit")
+			elif actual == 0:
+				AudioManager.play_sfx_key("shield_block")
 
 		"DAMAGE_HEAL":
 			var raw    := attacker.calc_raw_damage(mult, dice)
@@ -381,9 +347,11 @@ func _execute_skill(skill: Dictionary, attacker: Combatant, target: Combatant) -
 				attacker.combatant_name, name, actual, healed])
 			if actual > 0:
 				hit_landed.emit(target_is_player, actual, false)
+				AudioManager.play_sfx_key("player_hurt" if target_is_player else "sword_hit")
 
 		"DAMAGE_STATUS":
 			var raw    := attacker.calc_raw_damage(mult, dice)
+			raw = _apply_counter_bonus(raw, attacker, target, effect)
 			var actual := target.take_damage(raw)
 			var status: String = skill.get("status", "")
 			var applied: bool  = randf() <= skill.get("effect_chance", 1.0)
@@ -404,6 +372,10 @@ func _execute_skill(skill: Dictionary, attacker: Combatant, target: Combatant) -
 			_log(msg)
 			if actual > 0:
 				hit_landed.emit(target_is_player, actual, false)
+				var hit_sfx := "skill_fire" if status == "burn" \
+						else "skill_ice" if status == "freeze" \
+						else ("player_hurt" if target_is_player else "sword_hit")
+				AudioManager.play_sfx_key(hit_sfx)
 
 		"BUFF_DEF":
 			attacker.def_bonus       = skill.get("def_bonus",       0)
@@ -411,6 +383,7 @@ func _execute_skill(skill: Dictionary, attacker: Combatant, target: Combatant) -
 			_log("> %s dùng %s: +%d DEF trong %d lượt!" % [
 				attacker.combatant_name, name,
 				attacker.def_bonus, attacker.def_bonus_turns])
+			AudioManager.play_sfx_key("shield_block")
 
 		"DEBUFF_ATK":
 			target.atk_penalty       = skill.get("atk_penalty",       0)
@@ -423,24 +396,28 @@ func _execute_skill(skill: Dictionary, attacker: Combatant, target: Combatant) -
 		"DAMAGE_SKIP_TURN":
 			# Nặng Tay — Crushing Blow: ×2 dmg, mất lượt tiếp theo
 			var raw    := attacker.calc_raw_damage(mult, dice)
+			raw = _apply_counter_bonus(raw, attacker, target, effect)
 			var actual := target.take_damage(raw, ignore_def)
 			attacker.lose_next_turn = true
 			_log("> %s dùng %s: -%d HP (sẽ mất lượt sau!)" % [
 				attacker.combatant_name, name, actual])
 			if actual > 0:
 				hit_landed.emit(target_is_player, actual, false)
+				AudioManager.play_sfx_key("player_hurt" if target_is_player else "blunt_swing")
 
 		"DAMAGE_TWICE":
 			# Thần Tốc — Double Strike: đánh 2 lần liên tiếp
 			var total := 0
 			for _i in 2:
 				var raw    := attacker.calc_raw_damage(mult, dice)
+				raw = _apply_counter_bonus(raw, attacker, target, effect)
 				var actual := target.take_damage(raw, ignore_def)
 				total += actual
 			_log("> %s dùng %s: 2 đòn, -%d HP tổng!" % [
 				attacker.combatant_name, name, total])
 			if total > 0:
 				hit_landed.emit(target_is_player, total, false)
+				AudioManager.play_sfx_key("player_hurt" if target_is_player else "sword_hit")
 
 		"BUFF_ALL_STATS":
 			# Cân Bằng — Balanced Stance: dmg_mult phủ ATK+Magic, def_bonus phủ DEF
@@ -458,6 +435,7 @@ func _execute_skill(skill: Dictionary, attacker: Combatant, target: Combatant) -
 			attacker.shield_active = true
 			_log("> %s dùng %s: sẵn sàng chặn 1 đòn!" % [
 				attacker.combatant_name, name])
+			AudioManager.play_sfx_key("shield_block")
 
 		"PASSIVE_NO_DURABILITY":
 			# Trường Sinh — Eternal: hiệu ứng bị động, không cần kích hoạt thủ công
@@ -466,12 +444,37 @@ func _execute_skill(skill: Dictionary, attacker: Combatant, target: Combatant) -
 				attacker.combatant_name)
 
 
+func _apply_counter_bonus(
+		raw_damage: int,
+		attacker: Combatant,
+		target: Combatant,
+		effect: String
+) -> int:
+	if _counter_bonus_applied:
+		return raw_damage
+	if _round_num != 1 or not _is_counter_encounter:
+		return raw_damage
+	if attacker != player or target != enemy:
+		return raw_damage
+	if effect not in [
+		"DAMAGE",
+		"DAMAGE_IGNORE_DEF",
+		"DAMAGE_STATUS",
+		"DAMAGE_SKIP_TURN",
+		"DAMAGE_TWICE",
+	]:
+		return raw_damage
+	_counter_bonus_applied = true
+	return int(round(raw_damage * 1.3))
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # WIN / LOSE DETECTION
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _check_end() -> bool:
 	if not enemy.is_alive():
+		AudioManager.play_sfx_key("enemy_death")
 		_finish("win", { "gold": enemy.drop_gold })
 		return true
 	if not player.is_alive():
@@ -483,6 +486,9 @@ func _check_end() -> bool:
 func _finish(result: String, data: Dictionary) -> void:
 	_state = CombatState.ENDED
 	state_changed.emit(CombatState.ENDED)
+	match result:
+		"win":  AudioManager.play_sfx_key("combat_victory")
+		"lose": AudioManager.play_sfx_key("player_death")
 	EventBus.combat_ended.emit(result)
 	combat_ended.emit(result, data)
 
@@ -493,3 +499,61 @@ func _finish(result: String, data: Dictionary) -> void:
 
 func _log(msg: String) -> void:
 	action_logged.emit(msg)
+
+
+func _load_skill_db() -> void:
+	skill_db.clear()
+	var dir := DirAccess.open(SKILL_DIR)
+	if dir == null:
+		return
+
+	var files: PackedStringArray = dir.get_files()
+	files.sort()
+	for file_name in files:
+		if file_name.get_extension() != "tres":
+			continue
+
+		var resource_path := "%s/%s" % [SKILL_DIR, file_name]
+		var resource := load(resource_path)
+		if resource is SkillData:
+			var skill := resource as SkillData
+			skill_db[skill.skill_id] = skill
+
+
+func _get_skill_cost(skill_data: Variant) -> int:
+	if skill_data is SkillData:
+		return (skill_data as SkillData).stamina_cost
+	if skill_data is Dictionary:
+		var skill: Dictionary = skill_data
+		return skill.get("stamina_cost", 0)
+	return 0
+
+
+func _skill_to_runtime_dict(skill_data: Variant) -> Dictionary:
+	if skill_data is Dictionary:
+		return skill_data
+	if not skill_data is SkillData:
+		return {}
+
+	var skill := skill_data as SkillData
+	return {
+		"name": skill.skill_name,
+		"stamina_cost": skill.stamina_cost,
+		"effect": skill.effect,
+		"damage_mult": skill.damage_mult,
+		"dice": skill.dice,
+		"status": skill.status,
+		"status_turns": skill.status_turns,
+		"status_dmg": skill.status_dmg,
+		"effect_chance": skill.effect_chance,
+		"ignore_def": skill.ignore_def,
+		"heal_flat": skill.heal_flat,
+		"use_magic": skill.use_magic,
+		"magic_mult": skill.magic_mult,
+		"def_bonus": skill.def_bonus,
+		"def_bonus_turns": skill.def_bonus_turns,
+		"atk_penalty": skill.atk_penalty,
+		"atk_penalty_turns": skill.atk_penalty_turns,
+		"stat_bonus_pct": skill.stat_bonus_pct,
+		"stat_bonus_turns": skill.stat_bonus_turns,
+	}

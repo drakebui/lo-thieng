@@ -57,7 +57,7 @@ static func _defensive(round_num: int) -> Dictionary:
 static func _caster(round_num: int) -> Dictionary:
 	if round_num % 2 == 0:
 		return { "type": "skill", "skill_id": "enemy_magic",
-				 "label": "đang đọc thần chú!" }
+				"label": "đang đọc thần chú!" }
 	return _atk()
 
 
@@ -71,14 +71,13 @@ static func _boss(
 		# Enrage: xen kẽ đòn cắn và phép thuật, bỏ qua lượt phòng thủ
 		if round_num % 2 == 0:
 			return { "type": "skill", "skill_id": "enemy_magic",
-					 "label": "kích hoạt phép thuật chúa tể!" }
+					"label": "kích hoạt phép thuật chúa tể!" }
 		return { "type": "skill", "skill_id": "enemy_bite",
-				 "label": "chuẩn bị đòn kết liễu!" }
-	else:
-		# Phase 1: phòng thủ mỗi 4 lượt, không bỏ chạy
-		if round_num % 4 == 0:
-			return { "type": "defend", "label": "đang phục hồi..." }
-		return _atk()
+				"label": "chuẩn bị đòn kết liễu!" }
+	# Phase 1: phòng thủ mỗi 4 lượt, không bỏ chạy
+	if round_num % 4 == 0:
+		return { "type": "defend", "label": "đang phục hồi..." }
+	return _atk()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

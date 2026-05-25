@@ -3,27 +3,24 @@ extends Node
 # Hệ thống rèn Phase 1: Nung Thép
 # Kết quả emit qua EventBus.phase1_completed(result_tier)
 
-const HEAT_MIN       := 0.0
-const HEAT_MAX       := 100.0
-const SWEET_SPOT_LOW := 60.0   # Cam bắt đầu — cố định cho mọi rarity
-
-# Vàng Kim bắt đầu — thay đổi theo rarity để thu nhỏ vùng vàng:
-#   rarity 1 → 72  (Gold = 28%)
-#   rarity 2 → 80  (Gold = 20%)
-#   rarity 3 → 91  (Gold =  9%)
-var sweet_spot_high: float = 80.0
-
-# Đơn vị/giây
-const BASE_HEAT_RATE := 15.0
+const HEAT_MIN        := 0.0
+const HEAT_MAX        := 100.0
+const SWEET_SPOT_LOW  := 60.0   # Cam bắt đầu — cố định
+const SWEET_SPOT_PEAK := 80.0   # Đỏ Rực bắt đầu — cố định
+const BASE_HEAT_RATE  := 15.0
 const HEAT_DECAY_RATE := 5.0
-
-# Multiplier kết quả theo tier
 const TIER_MULTIPLIERS := {
-	"lanh":    0.7,  # <60  → -30%
-	"cam":     1.2,  # 60-80 → +20%
-	"vang_kim": 1.4, # >80  → +40%
+	"lanh":   0.7,   # < 60           → −30% (thép lạnh, cứng, khó rèn)
+	"cam":    1.2,   # 60 đến peak    → +20% (nhiệt vừa đủ)
+	"do_ruc": 1.4,   # peak đến burn  → +40% (đỉnh nhiệt, thép mềm nhất)
+	"chay":   0.5,   # ≥ burn_point   → −50% (thép cháy, hạt tinh thể vỡ)
 }
 
+# Vùng Cháy bắt đầu — hẹp dần theo rarity, vùng Đỏ Rực càng khó bắt:
+#   rarity 1 → 92  (Đỏ Rực = 12%)
+#   rarity 2 → 88  (Đỏ Rực =  8%)
+#   rarity 3 → 84  (Đỏ Rực =  4%)
+var burn_point: float = 92.0
 var heat: float = 0.0
 var is_pumping: bool = false
 var is_active: bool = false
@@ -36,13 +33,12 @@ func start_phase(reputation_level: int = 0, rarity: int = 1) -> void:
 	heat = 0.0
 	is_pumping = false
 	is_active = true
-	# Vùng vàng kim co lại theo rarity: 1★=28%, 2★=20%, 3★=9%
 	match rarity:
-		1: sweet_spot_high = 72.0
-		2: sweet_spot_high = 80.0
-		3: sweet_spot_high = 91.0
-		_: sweet_spot_high = 80.0
-	# Rarity 1=×1.0 | 2=×1.6 | 3=×2.2 — thanh chạy nhanh hơn → vàng kim khó bắt hơn
+		1: burn_point = 92.0
+		2: burn_point = 88.0
+		3: burn_point = 84.0
+		_: burn_point = 92.0
+	# Rarity 1=×1.0 | 2=×1.6 | 3=×2.2 — thanh chạy nhanh hơn → đỉnh nhiệt khó bắt hơn
 	var rarity_mult: float = 1.0 + (rarity - 1) * 0.6
 	_heat_rate_multiplier = (1.0 + reputation_level * 0.1) * rarity_mult
 
@@ -74,7 +70,8 @@ func _process(delta: float) -> void:
 func _get_tier(h: float) -> String:
 	if h < SWEET_SPOT_LOW:
 		return "lanh"
-	elif h <= sweet_spot_high:
+	if h < SWEET_SPOT_PEAK:
 		return "cam"
-	else:
-		return "vang_kim"
+	if h < burn_point:
+		return "do_ruc"
+	return "chay"

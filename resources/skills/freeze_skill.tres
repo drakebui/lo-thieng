@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="SkillData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/SkillData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = "freeze_skill"
+skill_name = "Băng Giá"
+stamina_cost = 2
+effect = "DAMAGE_STATUS"
+damage_multiplier = 0.8
+damage_mult = 0.8
+dice = 0
+status = "freeze"
+status_turns = 1
+effect_chance = 0.5

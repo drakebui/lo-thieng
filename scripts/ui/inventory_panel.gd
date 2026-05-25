@@ -46,6 +46,7 @@ var _mode:       Mode = Mode.SHOP
 var _weapons:    Array = []           # toàn bộ kho
 var _shelf_slots: Array = []          # ref tới _shelf_slots của shop_scene (SHOP mode)
 var _shelf_idx:  int = -1             # kệ đang chọn (SHOP mode)
+var _shelf_groups: Array = []         # cấu hình nhóm slot từ ShopScene
 
 # Nodes
 var _root:         Control
@@ -69,12 +70,18 @@ func _ready() -> void:
 # PUBLIC API
 # ══════════════════════════════════════════════════════════════════════════════
 
-func open_shop(weapons: Array, shelf_idx: int, shelf_slots: Array) -> void:
+func open_shop(
+	weapons: Array,
+	shelf_idx: int,
+	shelf_slots: Array,
+	shelf_groups: Array = []
+) -> void:
 	_mode       = Mode.SHOP
 	_weapons    = weapons
 	_shelf_idx  = shelf_idx
 	_shelf_slots = shelf_slots
-	_lbl_title.text = "Kệ %d  —  Bày Hàng" % (shelf_idx + 1)
+	_shelf_groups = shelf_groups
+	_lbl_title.text = "%s  —  Bày Hàng" % _get_shelf_name(shelf_idx)
 	_rebuild_content()
 	visible = true
 
@@ -204,31 +211,32 @@ func _clear_dynamic() -> void:
 # ── SHOP mode ─────────────────────────────────────────────────────────────────
 
 func _build_shop_content() -> void:
-	# Phần 1: trạng thái 2 hàng kệ đang chọn (y: 0–128)
-	_add_section_label("Hàng trên kệ", 4)
-	_build_slot_row(0, 18)    # slot_idx = shelf_idx*2
-	_add_section_label("Hàng dưới kệ", 66)
-	_build_slot_row(1, 80)    # slot_idx = shelf_idx*2 + 1
+	var slot_indices := _get_current_group_slot_indices()
+	_add_section_label("Ô trưng bày", 4)
+	var next_y := 28
+	for slot_idx: int in slot_indices:
+		_build_slot_row(slot_idx, next_y)
+		next_y += 52
 
 	# Separator
 	var sep := ColorRect.new()
-	sep.position = Vector2(8, 132)
+	sep.position = Vector2(8, next_y)
 	sep.size     = Vector2(PW - 16, 1)
 	sep.color    = C_SEP
 	_content_root.add_child(sep)
 	_dynamic_nodes.append(sep)
 
-	# Phần 2: danh sách vũ khí (y: 136 trở xuống)
+	# Phần 2: danh sách vũ khí
 	var inv_lbl := Label.new()
 	inv_lbl.text     = "Kho vũ khí"
-	inv_lbl.position = Vector2(12, 136)
+	inv_lbl.position = Vector2(12, next_y + 4)
 	inv_lbl.size     = Vector2(200, 22)
 	inv_lbl.add_theme_font_size_override("font_size", 18)
 	inv_lbl.add_theme_color_override("font_color", C_MUTE)
 	_content_root.add_child(inv_lbl)
 	_dynamic_nodes.append(inv_lbl)
 
-	var list_y := 162
+	var list_y := next_y + 30
 	for w: Dictionary in _weapons:
 		_build_shop_weapon_card(w, list_y)
 		list_y += 84
@@ -245,8 +253,7 @@ func _add_section_label(text: String, y: int) -> void:
 	_dynamic_nodes.append(lbl)
 
 
-func _build_slot_row(row: int, y: int) -> void:
-	var slot_idx := _shelf_idx * 2 + row
+func _build_slot_row(slot_idx: int, y: int) -> void:
 	var slot: Dictionary = _shelf_slots[slot_idx] if slot_idx < _shelf_slots.size() else {}
 	var weapon: Dictionary = slot.get("weapon", {})
 	var has_wpn := not weapon.is_empty()
@@ -272,7 +279,7 @@ func _build_slot_row(row: int, y: int) -> void:
 	# Tên vũ khí hoặc "(Trống)"
 	var wpn_name: String = weapon.get("weapon_name", "( Trống )") if has_wpn else "( Trống )"
 	var name_lbl := Label.new()
-	name_lbl.text     = wpn_name
+	name_lbl.text     = "%s · %s" % [_get_slot_name(slot_idx), wpn_name]
 	name_lbl.position = Vector2(18, y + 4)
 	name_lbl.size     = Vector2(PW - 220, 20)
 	name_lbl.add_theme_font_size_override("font_size", 18)
@@ -358,34 +365,24 @@ func _build_shop_weapon_card(w: Dictionary, y: int) -> void:
 	_content_root.add_child(loc_lbl)
 	_dynamic_nodes.append(loc_lbl)
 
-	# Nút ↑ Hàng Trên / ↓ Hàng Dưới
-	var slot0 := _shelf_idx * 2
-	var slot1 := _shelf_idx * 2 + 1
-	var on_top    := _slot_has_weapon(slot0, w)
-	var on_bottom := _slot_has_weapon(slot1, w)
+	# Nút đặt vũ khí vào từng ô của nhóm hiện tại
+	var slot_indices := _get_current_group_slot_indices()
 	var on_other  := _is_on_other_shelf(w)
-
-	var btn_top := Button.new()
-	btn_top.text     = "↑ Hàng Trên" if not on_top else "✓ Hàng Trên"
-	btn_top.position = Vector2(PW - 222, y + 6)
-	btn_top.size     = Vector2(104, 30)
-	btn_top.add_theme_font_size_override("font_size", 15)
-	btn_top.disabled = on_top or on_other
-	if not on_top and not on_other:
-		btn_top.pressed.connect(_on_place_weapon.bind(slot0, w))
-	_content_root.add_child(btn_top)
-	_dynamic_nodes.append(btn_top)
-
-	var btn_bot := Button.new()
-	btn_bot.text     = "↓ Hàng Dưới" if not on_bottom else "✓ Hàng Dưới"
-	btn_bot.position = Vector2(PW - 114, y + 6)
-	btn_bot.size     = Vector2(106, 30)
-	btn_bot.add_theme_font_size_override("font_size", 15)
-	btn_bot.disabled = on_bottom or on_other
-	if not on_bottom and not on_other:
-		btn_bot.pressed.connect(_on_place_weapon.bind(slot1, w))
-	_content_root.add_child(btn_bot)
-	_dynamic_nodes.append(btn_bot)
+	for i: int in slot_indices.size():
+		var slot_idx: int = slot_indices[i]
+		var on_slot := _slot_has_weapon(slot_idx, w)
+		var btn := Button.new()
+		btn.text = _get_slot_name(slot_idx)
+		if on_slot:
+			btn.text = "✓ %s" % _get_slot_name(slot_idx)
+		btn.position = Vector2(PW - 222 + (i % 2) * 108, y + 6 + floori(i / 2.0) * 34)
+		btn.size = Vector2(104, 30)
+		btn.add_theme_font_size_override("font_size", 15)
+		btn.disabled = on_slot or on_other
+		if not on_slot and not on_other:
+			btn.pressed.connect(_on_place_weapon.bind(slot_idx, w))
+		_content_root.add_child(btn)
+		_dynamic_nodes.append(btn)
 
 
 # ── FORGE mode ────────────────────────────────────────────────────────────────
@@ -496,7 +493,7 @@ func _is_on_other_shelf(w: Dictionary) -> bool:
 	# Vũ khí đang ở kệ khác (không phải _shelf_idx hiện tại)
 	for i: int in _shelf_slots.size():
 		if _shelf_slots[i].get("weapon", {}) == w:
-			var this_shelf := i / 2
+			var this_shelf := _get_group_idx_for_slot(i)
 			if this_shelf != _shelf_idx:
 				return true
 	return false
@@ -505,10 +502,45 @@ func _is_on_other_shelf(w: Dictionary) -> bool:
 func _get_weapon_location_text(w: Dictionary) -> String:
 	for i: int in _shelf_slots.size():
 		if _shelf_slots[i].get("weapon", {}) == w:
-			var sh  := i / 2 + 1
-			var row := "Hàng trên" if i % 2 == 0 else "Hàng dưới"
-			return "Kệ %d · %s" % [sh, row]
+			return "%s · %s" % [
+				_get_shelf_name(_get_group_idx_for_slot(i)),
+				_get_slot_name(i),
+			]
 	return "Trong kho"
+
+
+func _get_current_group_slot_indices() -> Array:
+	if _shelf_idx >= 0 and _shelf_idx < _shelf_groups.size():
+		return _shelf_groups[_shelf_idx].get("slots", [])
+	return [_shelf_idx * 2, _shelf_idx * 2 + 1]
+
+
+func _get_group_idx_for_slot(slot_idx: int) -> int:
+	for group_idx: int in _shelf_groups.size():
+		var slots: Array = _shelf_groups[group_idx].get("slots", [])
+		if slot_idx in slots:
+			return group_idx
+	return floori(slot_idx / 2.0)
+
+
+func _get_shelf_name(shelf_idx: int) -> String:
+	if shelf_idx >= 0 and shelf_idx < _shelf_groups.size():
+		return _shelf_groups[shelf_idx].get("name", "Kệ")
+	return "Kệ %d" % (shelf_idx + 1)
+
+
+func _get_slot_name(slot_idx: int) -> String:
+	var group_idx := _get_group_idx_for_slot(slot_idx)
+	if group_idx >= 0 and group_idx < _shelf_groups.size():
+		var group: Dictionary = _shelf_groups[group_idx]
+		var configured_name: String = group.get("slot_name", "")
+		if not configured_name.is_empty():
+			return configured_name
+		var slots: Array = group.get("slots", [])
+		var local_idx := slots.find(slot_idx)
+		if local_idx >= 0:
+			return "Ô %d" % (local_idx + 1)
+	return "Ô %d" % (slot_idx + 1)
 
 
 func _rarity_name(tier: int) -> String:

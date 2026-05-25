@@ -3,6 +3,8 @@
 extends Control
 
 const _PHASE3_SCRIPT := preload("res://scripts/forge/forge_phase3.gd")
+const _PHASE_INDICATOR_SCRIPT := preload("res://scripts/forge/forge_phase_indicator.gd")
+const BACKGROUND_PATH := "res://assets/sprites/forge/backgrounds/Forge Scene BG.PNG"
 
 # Giả lập đầu vào từ phase 1+2 (trong game thật sẽ nhận từ EventBus)
 const MOCK_PHASE1_TIER   := "cam"
@@ -51,8 +53,11 @@ var _tween: Tween
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.10, 0.08, 0.06)
+	var bg := TextureRect.new()
+	bg.texture = load(BACKGROUND_PATH) as Texture2D
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
@@ -220,13 +225,23 @@ func _show_pick_screen() -> void:
 	_pick_screen.visible   = true
 	_anim_screen.visible   = false
 	_result_screen.visible = false
+	_set_indicator_phase(_PHASE_INDICATOR_SCRIPT.Phase.CHON_LINH_LUC)
 
 
 func _on_element_picked(element_key: String) -> void:
 	_chosen_element = element_key
 	_phase3.start_phase(element_key)
+	_set_indicator_phase(_PHASE_INDICATOR_SCRIPT.Phase.TOI_LUYEN)
 	_pick_screen.visible = false
 	_start_quench_animation(element_key)
+
+
+func _set_indicator_phase(phase: int) -> void:
+	var indicator := get_node_or_null("ForgePhaseIndicator")
+	if indicator == null:
+		return
+	indicator.set_phase(phase)
+	move_child(indicator, get_child_count() - 1)
 
 
 func _start_quench_animation(element_key: String) -> void:

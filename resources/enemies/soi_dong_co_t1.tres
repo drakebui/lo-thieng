@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "soi_dong_co_t1"
+enemy_name = "Sói Đồng Cỏ"
+archetype = "aggressive"
+tier = 1
+hp = 55
+atk = 9
+def_stat = 3
+magic = 0
+speed = 6
+drop_gold = 45
+color = Color(0.55, 0.25, 0.12, 1)
+region = "DongMay"
+crit_rate = 0.25
+loot_items = Array[Dictionary]([{"item_id": "sat_tho", "chance": 0.65}, {"item_id": "da_thu", "chance": 0.50}, {"item_id": "dong_co_kho", "chance": 0.35}])

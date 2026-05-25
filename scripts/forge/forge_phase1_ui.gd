@@ -3,24 +3,36 @@
 extends Control
 
 const _FORGE_SCRIPT := preload("res://scripts/forge/forge_system.gd")
+const _HEAT_BAR_SCRIPT := preload("res://scripts/forge/heat_bar.gd")
+const _PHASE_INDICATOR_SCRIPT := preload("res://scripts/forge/forge_phase_indicator.gd")
 const BAR_WIDTH  := 1400.0
 const BAR_HEIGHT := 140.0
+const BACKGROUND_PATH := "res://assets/sprites/forge/backgrounds/Forge Scene BG.PNG"
 
 var _forge: Node
-var _heat_indicator: ColorRect
+var _heat_bar: HeatBar
 var _heat_label: Label
 var _zone_label: Label
 var _instruct_label: Label
 var _result_container: VBoxContainer
 var _result_label: Label
 var _multiplier_label: Label
+var _lbl_eff_lanh: Label
+var _lbl_eff_cam: Label
+var _lbl_eff_do_ruc: Label
+var _lbl_eff_chay: Label
+var _tip_label: Label
+var _label_pulse: float = 0.0
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.12, 0.09, 0.07)
+	var bg := TextureRect.new()
+	bg.texture = load(BACKGROUND_PATH) as Texture2D
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
@@ -56,6 +68,13 @@ func _ready() -> void:
 	_zone_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(_zone_label)
 
+	_tip_label = Label.new()
+	_tip_label.text = "Cam = an toàn (+20%)  •  Đỏ Rực = mạo hiểm (+40%)  •  Cháy Thép = hỏng (−50%)"
+	_tip_label.add_theme_font_size_override("font_size", 38)
+	_tip_label.add_theme_color_override("font_color", Color(0.72, 0.67, 0.52))
+	_tip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(_tip_label)
+
 	_instruct_label = Label.new()
 	_instruct_label.text = "Giữ [SPACE] để bơm ống bễ — Nhả để kết thúc"
 	_instruct_label.add_theme_font_size_override("font_size", 52)
@@ -87,70 +106,57 @@ func _ready() -> void:
 
 	EventBus.phase1_completed.connect(_on_phase1_completed)
 	_forge.start_phase(0)
+	_update_heat_bar_thresholds()
+	_set_indicator_phase(_PHASE_INDICATOR_SCRIPT.Phase.NUNG_THEP)
+
+
+func _set_indicator_phase(phase: int) -> void:
+	var indicator := get_node_or_null("ForgePhaseIndicator")
+	if indicator == null:
+		return
+	indicator.set_phase(phase)
+	move_child(indicator, get_child_count() - 1)
 
 
 func _build_heat_bar() -> Control:
 	var wrapper := VBoxContainer.new()
 	wrapper.add_theme_constant_override("separation", 8)
 
-	var bar := Control.new()
-	bar.custom_minimum_size = Vector2(BAR_WIDTH, BAR_HEIGHT)
-	wrapper.add_child(bar)
+	_heat_bar = _HEAT_BAR_SCRIPT.new()
+	_heat_bar.custom_minimum_size = Vector2(BAR_WIDTH, BAR_HEIGHT)
+	wrapper.add_child(_heat_bar)
 
-	# Zone Lạnh: 0–60
-	var z_lanh := ColorRect.new()
-	z_lanh.color = Color(0.22, 0.28, 0.45)
-	z_lanh.position = Vector2.ZERO
-	z_lanh.size = Vector2(BAR_WIDTH * 0.6, BAR_HEIGHT)
-	bar.add_child(z_lanh)
+	# Hàng effect: luôn hiển thị multiplier của từng zone
+	var eff_row := HBoxContainer.new()
 
-	# Zone Cam: 60–80
-	var z_cam := ColorRect.new()
-	z_cam.color = Color(0.85, 0.45, 0.08)
-	z_cam.position = Vector2(BAR_WIDTH * 0.6, 0.0)
-	z_cam.size = Vector2(BAR_WIDTH * 0.2, BAR_HEIGHT)
-	bar.add_child(z_cam)
+	_lbl_eff_lanh = Label.new()
+	_lbl_eff_lanh.text = "−30%"
+	_lbl_eff_lanh.add_theme_font_size_override("font_size", 36)
+	_lbl_eff_lanh.add_theme_color_override("font_color", Color(0.6, 0.72, 0.95))
+	eff_row.add_child(_lbl_eff_lanh)
 
-	# Zone Vàng Kim: 80–100
-	var z_gold := ColorRect.new()
-	z_gold.color = Color(0.92, 0.76, 0.1)
-	z_gold.position = Vector2(BAR_WIDTH * 0.8, 0.0)
-	z_gold.size = Vector2(BAR_WIDTH * 0.2, BAR_HEIGHT)
-	bar.add_child(z_gold)
+	_lbl_eff_cam = Label.new()
+	_lbl_eff_cam.text = "+20%"
+	_lbl_eff_cam.add_theme_font_size_override("font_size", 36)
+	_lbl_eff_cam.add_theme_color_override("font_color", Color(0.95, 0.62, 0.18))
+	_lbl_eff_cam.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	eff_row.add_child(_lbl_eff_cam)
 
-	_heat_indicator = ColorRect.new()
-	_heat_indicator.color = Color.WHITE
-	_heat_indicator.size = Vector2(8.0, BAR_HEIGHT)
-	_heat_indicator.position = Vector2.ZERO
-	bar.add_child(_heat_indicator)
+	_lbl_eff_do_ruc = Label.new()
+	_lbl_eff_do_ruc.text = "+40% ★"
+	_lbl_eff_do_ruc.add_theme_font_size_override("font_size", 36)
+	_lbl_eff_do_ruc.add_theme_color_override("font_color", Color(1.0, 0.45, 0.05))
+	_lbl_eff_do_ruc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	eff_row.add_child(_lbl_eff_do_ruc)
 
-	# Nhãn tên zone
-	var row := HBoxContainer.new()
+	_lbl_eff_chay = Label.new()
+	_lbl_eff_chay.text = "−50%"
+	_lbl_eff_chay.add_theme_font_size_override("font_size", 36)
+	_lbl_eff_chay.add_theme_color_override("font_color", Color(0.55, 0.25, 0.10))
+	_lbl_eff_chay.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	eff_row.add_child(_lbl_eff_chay)
 
-	var l_lanh := Label.new()
-	l_lanh.text = "Lạnh  (<60)"
-	l_lanh.add_theme_font_size_override("font_size", 40)
-	l_lanh.add_theme_color_override("font_color", Color(0.6, 0.72, 0.95))
-	l_lanh.custom_minimum_size.x = BAR_WIDTH * 0.6
-	row.add_child(l_lanh)
-
-	var l_cam := Label.new()
-	l_cam.text = "Cam"
-	l_cam.add_theme_font_size_override("font_size", 40)
-	l_cam.add_theme_color_override("font_color", Color(0.95, 0.62, 0.18))
-	l_cam.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l_cam.custom_minimum_size.x = BAR_WIDTH * 0.2
-	row.add_child(l_cam)
-
-	var l_gold := Label.new()
-	l_gold.text = "Vàng Kim"
-	l_gold.add_theme_font_size_override("font_size", 40)
-	l_gold.add_theme_color_override("font_color", Color(0.95, 0.86, 0.2))
-	l_gold.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	l_gold.custom_minimum_size.x = BAR_WIDTH * 0.2
-	row.add_child(l_gold)
-
-	wrapper.add_child(row)
+	wrapper.add_child(eff_row)
 	return wrapper
 
 
@@ -166,24 +172,43 @@ func _input(event: InputEvent) -> void:
 		_on_retry_pressed()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var h: float = _forge.heat
-	_heat_indicator.position.x = clampf(h / 100.0 * BAR_WIDTH - 4.0, 0.0, BAR_WIDTH - 8.0)
+	_heat_bar.heat_percent = h / 100.0
+	_heat_bar.tick_animation(delta)
 	_heat_label.text = "Nhiệt độ: %d / 100" % int(h)
 	if _forge.is_active:
+		_label_pulse += delta
 		_update_zone_feedback(h)
+		_animate_zone_label(h)
+
+
+func _animate_zone_label(h: float) -> void:
+	if h >= _forge.burn_point:
+		# Cháy: flash nhanh — thép đã hỏng, panic
+		var a: float = 0.45 + sin(_label_pulse * 12.0) * 0.55
+		_zone_label.modulate = Color(1.0, 1.0, 1.0, a)
+	elif h >= _forge.SWEET_SPOT_PEAK:
+		# Đỏ Rực: pulse urgency — nhả ngay!
+		var a: float = 0.70 + sin(_label_pulse * 6.0) * 0.30
+		_zone_label.modulate = Color(1.0, 1.0, 1.0, a)
+	else:
+		_zone_label.modulate = Color.WHITE
 
 
 func _update_zone_feedback(h: float) -> void:
-	if h < 60.0:
+	if h < _forge.SWEET_SPOT_LOW:
 		_zone_label.text = "[ Lạnh ]   Tiếp tục bơm..."
 		_zone_label.add_theme_color_override("font_color", Color(0.6, 0.72, 0.95))
-	elif h <= 80.0:
-		_zone_label.text = "[ Cam ]   Sweet spot — Nhả ngay!"
+	elif h < _forge.SWEET_SPOT_PEAK:
+		_zone_label.text = "[ Cam ]   Sweet spot — có thể nhả!"
 		_zone_label.add_theme_color_override("font_color", Color(0.95, 0.62, 0.18))
+	elif h < _forge.burn_point:
+		_zone_label.text = "[ Đỏ Rực ]   ĐỈNH NHIỆT — Nhả ngay!"
+		_zone_label.add_theme_color_override("font_color", Color(1.0, 0.45, 0.05))
 	else:
-		_zone_label.text = "[ Vàng Kim ]   Quá nóng!"
-		_zone_label.add_theme_color_override("font_color", Color(0.95, 0.86, 0.2))
+		_zone_label.text = "[ Cháy Thép ]   Thép đã hỏng!"
+		_zone_label.add_theme_color_override("font_color", Color(0.55, 0.25, 0.10))
 
 
 func _on_phase1_completed(tier: String) -> void:
@@ -193,16 +218,22 @@ func _on_phase1_completed(tier: String) -> void:
 	var mult: float = _forge.get_multiplier(tier)
 	var pct := int(abs(mult - 1.0) * 100)
 	var sign_str := "+" if mult >= 1.0 else "-"
-	var tier_name: String = {"lanh": "Lạnh", "cam": "Cam", "vang_kim": "Vàng Kim"}.get(tier, tier)
+	var tier_name: String = {
+		"lanh":   "Lạnh",
+		"cam":    "Cam",
+		"do_ruc": "Đỏ Rực",
+		"chay":   "Cháy Thép",
+	}.get(tier, tier)
 
 	_result_label.text = "Kết quả: %s" % tier_name
 	_multiplier_label.text = "Nhân stats: ×%.1f  (%s%d%%)" % [mult, sign_str, pct]
 
 	var tier_color := Color.WHITE
 	match tier:
-		"lanh":     tier_color = Color(0.6, 0.72, 0.95)
-		"cam":      tier_color = Color(0.95, 0.62, 0.18)
-		"vang_kim": tier_color = Color(0.95, 0.86, 0.2)
+		"lanh":   tier_color = Color(0.6, 0.72, 0.95)
+		"cam":    tier_color = Color(0.95, 0.62, 0.18)
+		"do_ruc": tier_color = Color(1.0, 0.45, 0.05)
+		"chay":   tier_color = Color(0.55, 0.25, 0.10)
 	_result_label.add_theme_color_override("font_color", tier_color)
 
 
@@ -211,4 +242,20 @@ func _on_retry_pressed() -> void:
 	_instruct_label.visible = true
 	_zone_label.text = "Sẵn sàng..."
 	_zone_label.add_theme_color_override("font_color", Color.WHITE)
+	_zone_label.modulate = Color.WHITE
+	_label_pulse = 0.0
 	_forge.start_phase(0)
+	_update_heat_bar_thresholds()
+
+
+func _update_heat_bar_thresholds() -> void:
+	var low_frac: float  = _forge.SWEET_SPOT_LOW  / 100.0
+	var peak_frac: float = _forge.SWEET_SPOT_PEAK / 100.0
+	var burn_frac: float = _forge.burn_point      / 100.0
+
+	_heat_bar.set_thresholds(low_frac, peak_frac, burn_frac)
+
+	_lbl_eff_lanh.custom_minimum_size.x   = BAR_WIDTH * low_frac
+	_lbl_eff_cam.custom_minimum_size.x    = BAR_WIDTH * (peak_frac - low_frac)
+	_lbl_eff_do_ruc.custom_minimum_size.x = BAR_WIDTH * (burn_frac - peak_frac)
+	_lbl_eff_chay.custom_minimum_size.x   = BAR_WIDTH * (1.0 - burn_frac)

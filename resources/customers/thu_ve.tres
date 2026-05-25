@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="NPCData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/NPCData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+npc_id = "thu_ve"
+npc_name = "Thủ Vệ Vùng Biên"
+budget_range = Vector2i(500, 1200)
+budget_min = 500
+budget_max = 1200
+patience = 2
+preferred_weapon_tags = Array[String](["bua_chien", "giao_dai", "khien_dong", "tot"])
+disliked_weapon_tags = Array[String](["curse_nhe", "curse_nang"])
+preferred_tags = Array[String](["bua_chien", "giao_dai", "khien_dong", "tot"])
+disliked_tags = Array[String](["curse_nhe", "curse_nang"])
+walk_speed = 80.0
+min_day = 1
+min_weapon_rarity = 1

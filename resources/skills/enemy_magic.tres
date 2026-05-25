@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="SkillData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/SkillData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skill_id = "enemy_magic"
+skill_name = "Ma Lực"
+stamina_cost = 0
+effect = "DAMAGE"
+damage_multiplier = 0.0
+damage_mult = 0.0
+dice = 0
+use_magic = true
+magic_mult = 1.5

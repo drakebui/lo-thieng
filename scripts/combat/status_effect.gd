@@ -85,15 +85,13 @@ static func create_skip_turn() -> StatusEffect:
 # --- Queries ---
 
 func get_display_name() -> String:
-	match type:
-		Type.BURN: return "Cháy"
-		Type.FREEZE: return "Băng Giá"
-		Type.POISON: return "Độc"
-		Type.DEF_UP: return "Phòng Thủ Tăng"
-		Type.ATK_DOWN: return "Tấn Công Giảm"
-		Type.STATS_UP: return "Toàn Stat Tăng"
-		Type.SKIP_TURN: return "Mất Lượt"
-	return ""
+	var names := {
+		Type.BURN: "Cháy", Type.FREEZE: "Băng Giá",
+		Type.POISON: "Độc", Type.DEF_UP: "Phòng Thủ Tăng",
+		Type.ATK_DOWN: "Tấn Công Giảm", Type.STATS_UP: "Toàn Stat Tăng",
+		Type.SKIP_TURN: "Mất Lượt",
+	}
+	return names.get(type, "")
 
 
 func is_debuff() -> bool:

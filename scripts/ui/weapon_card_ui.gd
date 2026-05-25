@@ -5,6 +5,8 @@
 #   innate_skill, innate_skill_desc
 extends Control
 
+const _FORGE_CONVERTER := preload("res://scripts/forge/weapon_data.gd")
+
 const CARD_WIDTH  := 1200.0
 const CARD_HEIGHT := 720.0
 
@@ -223,9 +225,10 @@ func setup(data: Dictionary) -> void:
 	var magic: int   = maxi(0, int(base_magic * mult) + bonus)
 	var spd:   int   = base_speed
 
-	var base_price := atk * 120 + magic * 80 + 500
-	var price_min  := int(base_price * 0.85 * price_mult)
-	var price_max  := int(base_price * 1.15 * price_mult)
+	var rar_tier: int = _FORGE_CONVERTER.PREFIX_RARITY.get(prefix_key, 2)
+	var sell_val   := _FORGE_CONVERTER.weapon_sell_value(atk, magic, spd, rar_tier, price_mult)
+	var price_min  := int(sell_val * 0.85)
+	var price_max  := int(sell_val * 1.15)
 
 	# Cập nhật border và accent theo nguyên tố
 	_apply_card_style(Color(elem_color.r * 0.65, elem_color.g * 0.65, elem_color.b * 0.65))

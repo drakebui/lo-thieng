@@ -1,4 +1,5 @@
 # scripts/systems/NPCDatabase.gd
+# FULL-GAME REFERENCE: không dùng trong runtime demo 4 ngày.
 # Chứa toàn bộ 20 NPCs: 6 VIP + 2 Antagonist + 12 Recurring
 # Dùng: NPCDatabase.get_npc("co_long_gio")
 #        NPCDatabase.get_npcs_by_type(NPCData.NPCType.VIP)

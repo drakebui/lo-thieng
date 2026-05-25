@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="DebtCheckpoint" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/DebtCheckpoint.gd" id="1_6q0bg"]
+
+[resource]
+script = ExtResource("1_6q0bg")
+id = "c1_mat_bang"
+title = "Tiền mặt bằng lò"
+agent_id = "nguoi_thu_no"
+amount_gold = 3000
+trigger_day = 1
+deadline_day = 4
+penalty_gold = 300
+late_days_before_harass = 2
+on_time_reward = {}
+agent_name = "Người Thu Nợ — Chợ Ngoài"
+agent_description = "Kẻ này đại diện cho chủ cũ của mảnh đất lò. Không cần biết ngươi là ai — chỉ cần đúng hạn, đủ tiền."
+agent_quote = "Tôi sẽ quay lại ngày thứ 4. Đủ tiền là xong."
+is_paid = false
+is_late = false

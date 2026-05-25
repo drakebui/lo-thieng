@@ -282,10 +282,10 @@ C4  █████████████████████████�
 - [ ] C2 tease: sau khi trả C1 → agent úp mở "tuần tới có người khác đến" 🟡
 
 ### Tutorial (4 ngày scripted)
-- [ ] Ngày 1: Bà Trùm intro cutscene → hướng dẫn Forge → 1 khách cố định → C1 agent scene 🔴
-- [ ] Ngày 2: Free play + tooltip mặc cả (lần đầu bargain) 🔴
-- [ ] Ngày 3: Free play + Cô Lộng Gió quest intro (tùy chọn) 🟡
-- [ ] Ngày 4: Deadline reminder (sáng) → trả nợ (chiều) → resolution scene 🔴
+- [x] Ngày 1: Bà Trùm intro cutscene → hướng dẫn Forge → 1 khách cố định → C1 agent scene 🔴
+- [x] Ngày 2: Free play + tooltip mặc cả (lần đầu bargain) 🔴
+- [x] Ngày 3: Free play + Cô Lộng Gió quest intro (tùy chọn) 🟡
+- [x] Ngày 4: Deadline reminder (sáng) → trả nợ (chiều) → resolution scene 🔴
 
 ### Save/Load
 - [ ] Chỉ lưu tại xưởng ban đêm (Planning phase)
@@ -481,6 +481,427 @@ extends Resource
 - [ ] Main Menu + HUD + Pause + Game Over
 - [ ] Audio minimal (3 tracks + 20 SFX)
 - [ ] Bug fix + QA 4-day loop
+
+---
+
+## NGÀY 1 — SCRIPTED TUTORIAL PLAN `[DEMO]`
+
+> Ngày 1 là ngày 100% scripted. Player không có free action ngoài những gì được hướng dẫn.
+> Mỗi step đều có prompt / highlight / arrow chỉ dẫn. Tutorial kết thúc tự nhiên vào cuối Ngày 1.
+
+---
+
+### 1. Controls & Input Map
+
+| Input Action | Key mặc định | Khi nào dùng |
+|---|---|---|
+| `move_up` | W / ↑ | Di chuyển (Exploration + Workshop) |
+| `move_down` | S / ↓ | Di chuyển |
+| `move_left` | A / ← | Di chuyển |
+| `move_right` | D / → | Di chuyển |
+| `interact` | E | Tương tác NPC / Object (Workshop) |
+| `inventory` | I | Mở/đóng Inventory overlay |
+| `confirm` | Enter | Xác nhận lựa chọn |
+| `cancel` | Escape | Hủy / đóng UI |
+| `pump_bellows` | Space (hold) | Bơm bễ lò — Phase 1 |
+| `hammer_hit` | Space / Enter | Nhát búa — Phase 2 |
+| `menu` | Escape | Pause menu (disabled trong cutscene) |
+
+**Lưu ý implementation:**
+- `pump_bellows` và `hammer_hit` dùng chung Space nhưng context khác nhau → kiểm tra `current_phase`
+- `interact` E chỉ active khi player trong range 48px của object có `Interactable` component
+- `cancel` Escape không hoạt động trong dialogue / cutscene (phải nhấn nút UI hoặc confirm)
+
+---
+
+### 2. Movement System
+
+#### Workshop Hub (CharacterBody2D trong xưởng)
+```
+Speed:         100 px/s (đi bộ bình thường)
+			   50 px/s (khi gần furniture/NPC — để không giật camera)
+Direction:     8 hướng (normalize vector để không chạy xiên nhanh hơn)
+Collision:     CharacterBody2D + move_and_slide()
+Stamina cost:  KHÔNG tốn stamina khi ở xưởng
+Camera:        Camera2D follow player, limit boundary theo room size
+Tilemap:       16×16 tile, room ~20×15 tile
+```
+
+#### Exploration Scene (CharacterBody2D trên map ngoài)
+```
+Speed:         120 px/s (đường đồng bằng / tile thường)
+			   70 px/s  (tile địa hình khó: cỏ cao, bùn — TileMap custom data "slow")
+Direction:     8 hướng (cùng normalize)
+Collision:     CharacterBody2D + move_and_slide()
+Stamina cost:  -1 stamina mỗi 3 giây đang di chuyển (Timer chạy khi is_moving)
+Stamina = 0:   Disable movement, show label "Hết thể lực!"
+			   Force-show nút "Quay về xưởng" (không thể tiếp tục)
+Camera:        Camera2D follow + smooth (drag 0.2), clamp theo map boundary
+Tilemap:       ~50×40 tile (V1 Đồng Mây), mixed terrain
+```
+
+#### Stamina Drain Logic (Pseudo-code)
+```gdscript
+# Trong ExplorationScene._process(delta):
+if velocity.length() > 0:
+	_stamina_timer += delta
+	if _stamina_timer >= STAMINA_DRAIN_INTERVAL:  # 3.0 giây
+		_stamina_timer = 0.0
+		GameManager.travel_stamina -= 1
+		if GameManager.travel_stamina <= 0:
+			_on_stamina_depleted()
+```
+
+---
+
+### 3. Interaction System
+
+#### Cách hoạt động
+- Mỗi interactable object là Node2D có script `interactable.gd` + Area2D (radius 48px)
+- Khi player vào range → emit `player_entered` → show icon "E" (Label hoặc Sprite) trên object
+- Khi player ra khỏi range → ẩn icon
+- Player nhấn `E` → gọi `interactable.interact(player)` trên object gần nhất theo priority
+
+#### Priority (khi nhiều object cùng range)
+```
+1. NPC (cao nhất)
+2. Lò rèn / Kệ hàng / Hòm đồ
+3. Zone exit (cửa ra ngoài)
+```
+
+#### Interactable Objects trong Workshop Hub
+
+| Object | Action khi interact |
+|---|---|
+| Lò rèn | Mở ForgeScene (nếu có nguyên liệu) |
+| Kệ trưng bày (3 kệ) | Mở ShelfUI: chọn weapon đặt lên / lấy xuống |
+| Hòm đồ / Kho | Mở InventoryUI overlay |
+| Cửa ra ngoài | Mở RegionSelectUI → vào ExplorationScene |
+| Sổ kế toán / Bàn | Mở PlanningScreen (chỉ active ban đêm) |
+| NPC (khi có mặt) | Trigger dialogue |
+
+#### Visual Feedback
+- Icon "E" nổi nhấp nháy (AnimationPlayer, 0.5s loop) khi player trong range
+- Khi tutorial lock (Ngày 1): object bị lock hiện icon mờ + tooltip "Chưa tới lúc"
+- Object đang selected (cursor lên): viền highlight 1px màu vàng
+
+---
+
+### 4. Kịch Bản Ngày 1 — Từng Bước (Scripted Flow)
+
+#### MORNING — Mở màn + Học Forge
+
+**[B1] Màn đen → OpeningSequence.tscn**
+```
+Thứ tự hiển thị:
+  1. Scene card: "Thành phố Thợ Rèn, năm thứ 3 sau Đại Chiến Phương Bắc..."
+  2. Narration (text fade in): "Ngươi thừa hưởng lò rèn từ cha — kèm theo một món nợ..."
+  3. Scene card: Hình ảnh lò rèn cũ kỹ, đêm tối
+  4. Dialogue Bà Trùm Hắc Nguyệt (sprite trái, textbox dưới):
+     "Con thừa hưởng được lò rèn của cha. Nhưng tiền mặt bằng thì không ai cho không."
+     "4 ngày. 3,000 vàng. Đó là điều duy nhất ta cần từ con."
+  5. Nút [Bắt đầu] → vào WorkshopHub (Ngày 1, MORNING)
+
+Input bị lock: chỉ có nút [Tiếp] / [Bắt đầu]
+Thời gian ước tính: ~90 giây đọc
+```
+
+**[B2] WorkshopHub MORNING — Tutorial Mode ON**
+```
+Trạng thái: Tutorial lock (chỉ lò rèn có thể interact)
+Tất cả object khác: icon mờ, không phản hồi E
+
+Overlay xuất hiện (không block gameplay):
+  Arrow chỉ vào lò rèn + text: "Hãy đến lò rèn và rèn vũ khí đầu tiên của ngươi."
+
+Player di chuyển đến lò rèn → nhấn E → vào ForgeScene
+```
+
+**[B3] ForgeScene — Phase 1: Nung**
+```
+Tooltip panel xuất hiện (góc trên phải, không block):
+  Tiêu đề: "PHASE 1 — NUNG"
+  Nội dung: "Giữ [Space] để bơm bễ. Đưa nhiệt độ vào vùng xanh (60–80%)."
+  [Đã hiểu] button → đóng tooltip, bắt đầu mini-game
+
+Heat Bar:
+  - Thanh dọc bên trái, 0-100%
+  - Sweet spot: 60-80% (viền xanh nhấp nháy)
+  - Acceptable: 40-59% và 81-90% (màu vàng)
+  - Bad: 0-39% và 91-100% (màu đỏ)
+  - Timer: 15 giây (ngày 1 rộng hơn để học)
+  - Player giữ Space: tăng +3%/giây; nhả: giảm -1.5%/giây
+
+Kết quả:
+  - 60-80% → "Hoàn hảo! (+20% chất lượng)"
+  - 40-59% hoặc 81-90% → "Ổn (+0%)"  
+  - Ngoài range → "Kém (-20%)"
+  - Hiện kết quả 2 giây → Phase 2
+```
+
+**[B4] ForgeScene — Phase 2: Rèn búa**
+```
+Tooltip panel:
+  Tiêu đề: "PHASE 2 — RÈN"
+  Nội dung: "Nhấn [Space] khi thanh đến vùng PERFECT (xanh). 5 nhát búa quyết định chất lượng!"
+  [Đã hiểu] → bắt đầu
+
+Rhythm Bar (5 nhát):
+  - Mỗi nhát: marker di chuyển từ trái sang phải (speed tăng dần nhát 1→5)
+  - Zones: PERFECT (20% giữa), GOOD (30% hai bên), MISS (ngoài)
+  - Score: PERFECT +2, GOOD +1, MISS -1
+  - Visual feedback mỗi nhát: flash màu + âm thanh khác nhau
+  - Ngày 1: speed marker chậm hơn 30% so với Ngày 2+
+
+Kết quả điểm:
+  ≥ 7 → Prefix Tier A ("Bén Ngọt" hoặc "Kiên Cố")
+  4-6 → Prefix Tier B ("Nặng Tay")
+  1-3 → Prefix Tier C ("Huyền Bí")
+  ≤ 0 → Curse affix + Prefix Tier D
+  → Advance Phase 3
+```
+
+**[B5] ForgeScene — Phase 3: Tôi luyện**
+```
+Auto-resolve (không input):
+  - Animation: nhúng vũ khí vào nguyên tố (Hỏa hoặc Gió — random Ngày 1)
+  - Particle effect lửa/gió bao quanh vũ khí
+  - Duration: 3 giây animation
+
+WeaponCardUI xuất hiện:
+  - Tên vũ khí: "[Prefix] [Phôi] của [Suffix]" (vd: "Kiếm Bén Ngọt của Hỏa")
+  - Stats: ATK / DEF / Speed
+  - Skill 1 (từ prefix), Skill 2 (từ suffix)
+  - Giá ước tính: X vàng
+  - Curse badge (nếu có)
+  - Nút [Cất vào kho] → weapon vào InventorySystem, về WorkshopHub
+```
+
+**[B6] WorkshopHub — C1 Trigger Scene**
+```
+Cutscene nhỏ (không vào scene khác):
+  - Người Thu Nợ Chợ Ngoài xuất hiện ở cửa (sprite + footstep SFX)
+  - Dialogue (textbox):
+    "Tôi đại diện chủ nhà đất. Tiền thuê mặt bằng lò rèn: 3,000 vàng."
+    "Hạn cuối: 4 ngày nữa. Trễ thì cộng thêm 300 vàng phạt."
+  
+DebtNoticeUI popup:
+  - Tiêu đề: "Checkpoint C1 — Tiền Mặt Bằng Lò"
+  - Số tiền: 3,000G | Hạn: Ngày 4 chiều | Phạt trễ: +300G
+  - Nút [Đã hiểu] → đóng popup
+  
+Tutorial lock: giờ unlock thêm cửa ra ngoài (explore) và kệ hàng
+Nhắc nhở: "Buổi trưa ngắn — Rèn thêm hoặc chờ đến chiều."
+Phase advance hint: arrow chỉ vào khu "kệ hàng" + "cửa shop"
+```
+
+---
+
+#### NOON — Tự do hạn chế
+
+**[B7] WorkshopHub NOON**
+```
+Unlock: Lò rèn (rèn thêm nếu muốn)
+Lock: Cửa ra ngoài (chưa mở vùng đất Ngày 1)
+
+Hint box nhỏ (không blocking, góc dưới phải):
+  "Buổi trưa: Có thể rèn thêm vũ khí. Bấm phím bất kỳ để chuyển sang Chiều."
+
+  → Nếu player rèn thêm: cho phép (optional)
+  → Nếu player đến kệ hàng: hint "Chiều mới mở cửa bán được!"
+  → Sau 60 giây thực hoặc player tự advance: chuyển AFTERNOON
+
+Advance trigger:
+  - Nút [Sang buổi chiều] xuất hiện sau 30 giây (tutorial: không bắt ở lại lâu)
+```
+
+---
+
+#### AFTERNOON — Mở shop lần đầu
+
+**[B8] WorkshopHub AFTERNOON — Học đặt hàng lên kệ**
+```
+Tutorial overlay:
+  Arrow chỉ vào kệ trưng bày + text:
+  "Đặt vũ khí lên kệ trước khi mở cửa!"
+
+Player đến kệ → nhấn E → ShelfUI:
+  - Grid 3 slot (kệ A, B, C)
+  - Inventory panel bên phải: danh sách vũ khí trong kho
+  - Player kéo/click weapon vào slot kệ
+  - Tooltip: "Weapon đặt trên kệ mới được bán. Có thể đặt tối đa 3 vũ khí."
+  - Nút [Xong] → đóng ShelfUI
+
+Sau khi đặt ≥ 1 weapon → nút [Mở cửa] xuất hiện (highlight màu vàng)
+```
+
+**[B9] ShopScene — Bán hàng lần đầu (khách scripted)**
+```
+Cảnh shop:
+  - Layout 16×12 tile: 3 kệ, quầy thu ngân, cửa ra vào
+  - Player đứng sau quầy (vị trí cố định Ngày 1)
+  
+Hiệp Khách Lang Bạt bước vào (scripted, không random):
+  - Animation đi vào từ cửa
+  - Browse: nhìn lần lượt các kệ (3 giây/kệ)
+  - Tiến đến quầy
+
+Dialogue scripted:
+  Hiệp Khách: "Cửa hàng mới à. Kiếm đó giá bao nhiêu?"
+  → NegotiationUI xuất hiện
+
+NegotiationUI Tutorial:
+  Tooltip: "Kéo slider để đặt giá. 4 vùng: Quá Cao / Hơi Cao / Vừa / Quá Thấp."
+  Tooltip nhỏ: "Đặt vào vùng 'Vừa' để chốt deal ngay. 'Hơi Cao' có thể thương lượng."
+  [Đã hiểu] → bắt đầu
+
+4-zone slider:
+  - Quá Cao (đỏ): khách từ chối ngay
+  - Hơi Cao (vàng): khách mặc cả (còn 1-2 lần)
+  - Vừa (xanh): khách đồng ý ngay
+  - Quá Thấp (xám): bán lỗ, khách vui nhưng player thiệt
+
+Kết quả Ngày 1 (scripted):
+  - Nếu player chọn "Vừa": Hiệp Khách đồng ý, gold +X, dialogue "Tốt lắm, sẽ trở lại."
+  - Nếu "Hơi Cao": Hiệp Khách mặc cả 1 lần, player điều chỉnh → chốt
+  - Nếu "Quá Cao": Hiệp Khách từ chối, dialogue "Đắt quá." → tutorial note xuất hiện
+
+Sau khi bán xong:
+  - Sale SFX + gold animation +X
+  - Nút [Đóng cửa] xuất hiện
+  - Ngày 1 chỉ có 1 khách scripted → không spawn thêm
+```
+
+**[B10] Kết thúc Shop → về WorkshopHub**
+```
+- Fade transition về WorkshopHub (NIGHT phase tự động sau khi đóng cửa)
+```
+
+---
+
+#### NIGHT — Kế hoạch + Ngủ
+
+**[B11] Night Phase — Day Summary + Debt Tracker**
+```
+DaySummaryUI xuất hiện tự động:
+  ┌─────────────────────────────┐
+  │  KẾT THÚC NGÀY 1            │
+  │                             │
+  │  Vũ khí bán được: 1         │
+  │  Gold kiếm được: +X vàng    │
+  │  Gold hiện có: Y vàng       │
+  │                             │
+  │  📋 Checkpoint C1           │
+  │  Cần: 3,000G | Còn: Z ngày  │
+  │  Hiện có: Y vàng            │
+  │  Còn thiếu: W vàng          │
+  │                             │
+  │  [Nghỉ ngơi → Sang Ngày 2]  │
+  └─────────────────────────────┘
+
+Hint nếu còn thiếu nhiều (W > 2,500G):
+  "Ngày mai hãy thử ra ngoài kiếm nguyên liệu và rèn thêm!"
+
+Player nhấn [Nghỉ ngơi]:
+  - Save game tự động (SaveSystem.save())
+  - Fade to black
+  - DayCycle.advance_to_next_day() → Ngày 2 MORNING
+  - Travel stamina restore về 14
+  - Tutorial lock TẮT → Ngày 2 là free play
+```
+
+---
+
+### 5. Tutorial Tooltip System
+
+#### Rules
+- Mỗi tooltip chỉ hiện **đúng 1 lần** per mechanic mới
+- Theo dõi bằng Dictionary trong GameManager: `tutorial_flags`
+- Tooltip **không block toàn màn hình** — chỉ block input liên quan đến mechanic đó
+- Luôn có nút **[Đã hiểu]** (không có auto-close timer trừ scene card)
+- Tooltip xuất hiện **trước** khi player cần dùng mechanic (preemptive, không reactive)
+
+#### Flags cần implement trong GameManager
+```gdscript
+var tutorial_flags := {
+	"opening_seen":       false,  # Intro cutscene
+	"forge_phase1_shown": false,  # Heat bar tooltip
+	"forge_phase2_shown": false,  # Rhythm tooltip
+	"debt_notice_shown":  false,  # C1 trigger popup
+	"shelf_shown":        false,  # Đặt hàng lên kệ
+	"bargain_shown":      false,  # NegotiationUI 4 zone
+	"inventory_shown":    false,  # Mở inventory (I key)
+	"explore_shown":      false,  # Tutorial vùng đất (Ngày 2)
+	"combat_shown":       false,  # Combat action menu (Ngày 2)
+	"stamina_shown":      false,  # Cảnh báo stamina thấp
+}
+```
+
+#### Vị trí hiển thị tooltip
+```
+Forge Phase 1/2:  Góc trên phải màn hình, 300×120px panel
+NegotiationUI:    Bên trái slider, 280×100px
+Explore/Combat:   Góc dưới giữa, không che action menu
+Shelf/Inventory:  Góc trên trái, 280×80px
+```
+
+---
+
+### 6. Implementation Checklist — Ngày 1 Tutorial
+
+#### Scripts cần viết / bổ sung
+- [ ] `opening_debt_scene.gd` — đủ 3 scene_card + 2 Ba_Trum dialogue + nút Bắt đầu 🔴
+- [ ] `workshop_hub.gd` — `tutorial_step` variable, lock/unlock object theo step 🔴
+- [ ] `forge_session_ui.gd` — hiện tooltip Phase 1 trước khi bắt đầu heat bar 🔴
+- [ ] `forge_session_ui.gd` — hiện tooltip Phase 2 trước khi bắt đầu rhythm 🔴
+- [ ] `shop_scene.gd` — Ngày 1 spawn Hiệp Khách scripted thay vì random 🔴
+- [ ] `negotiation_ui.gd` — hiện tooltip 4-zone lần đầu (check `tutorial_flags.bargain_shown`) 🔴
+- [ ] `day_cycle.gd` — morning_tutorial_done flag để advance NOON đúng lúc 🔴
+- [ ] `game_manager.gd` — `tutorial_flags` dict, save/load cùng game state 🔴
+- [ ] `interactable.gd` — component dùng chung: Area2D 48px, show/hide icon E, priority 🔴
+- [ ] `player_controller.gd` — CharacterBody2D 8-direction, normalize velocity 🔴
+- [ ] `player_controller.gd` — stamina timer drain (exploration mode) 🔴
+- [ ] `day_summary_ui.gd` — hiện gold earned, weapon count, debt tracker widget 🔴
+
+#### Data cần tạo
+- [ ] Lời thoại Bà Trùm intro (5 dòng) trong `GuideBook.gd` hoặc resource 🔴
+- [ ] Lời thoại Người Thu Nợ C1 (3 dòng) 🔴
+- [ ] Lời thoại Hiệp Khách scripted Ngày 1 (3 dòng) 🔴
+- [ ] Tutorial tooltip texts (8 tooltips) — String constants hoặc resource 🟡
+
+#### Scenes / UI cần tạo
+- [ ] Tutorial arrow indicator (Node2D + AnimationPlayer) — reusable 🟡
+- [ ] Tooltip panel (reusable Control node) — tiêu đề + body + nút Đã hiểu 🟡
+- [ ] `ShelfUI.tscn` — 3 slot grid + inventory panel bên phải 🔴
+- [ ] `DaySummaryUI.tscn` — gold earned + weapons sold + debt tracker 🔴
+
+#### Input Map (Project Settings → Input Map)
+- [ ] Thêm action `pump_bellows` → Space 🔴
+- [ ] Thêm action `hammer_hit` → Space, Enter 🔴
+- [ ] Thêm action `interact` → E 🔴
+- [ ] Thêm action `inventory` → I 🔴
+- [ ] Thêm action `confirm` → Enter, Space 🔴
+- [ ] Thêm action `cancel` → Escape 🔴
+- [ ] Thêm action `move_up/down/left/right` → WASD + Arrow keys 🔴
+
+---
+
+### 7. Ngày 2-4 — Tutorial Fade-out Plan
+
+> Từ Ngày 2, tutorial chuyển sang contextual hints (chỉ hiện khi mechanic xuất hiện lần đầu).
+
+| Ngày | Tutorial Level | Mechanic mới giới thiệu |
+|---|---|---|
+| Ngày 1 | 100% scripted | Forge 3 phase, Shop cơ bản, Debt C1 |
+| Ngày 2 | Hint-only (lần đầu) | Exploration + Combat + Mặc cả nâng cao |
+| Ngày 3 | Hint-only (lần đầu) | NPC dialogue, Inventory filter |
+| Ngày 4 | Không có tutorial | Free play + Debt deadline pressure |
+
+**Ngày 2 contextual hints (chỉ hiện 1 lần):**
+- Khi vào ExplorationScene lần đầu: "Di chuyển bằng WASD. Stamina sẽ giảm theo thời gian."
+- Khi gặp enemy lần đầu: "Tấn công từ phía sau để đánh trước với +30% damage!"
+- Khi vào CombatScene lần đầu: "Mỗi lượt chọn 1 action: Tấn công / Skill / Chạy."
+- Khi mặc cả lần đầu với khách random: "Hãy quan sát loại khách — mỗi loại có ngưỡng giá khác nhau."
 
 ---
 

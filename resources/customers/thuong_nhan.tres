@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="NPCData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/NPCData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+npc_id = "thuong_nhan"
+npc_name = "Thương Nhân Xa Xứ"
+budget_range = Vector2i(300, 900)
+budget_min = 300
+budget_max = 900
+patience = 3
+preferred_weapon_tags = Array[String](["thuong", "tot"])
+disliked_weapon_tags = Array[String](["perfect", "khi_phach"])
+preferred_tags = Array[String](["thuong", "tot"])
+disliked_tags = Array[String](["perfect", "khi_phach"])
+walk_speed = 85.0
+min_day = 4
+min_weapon_rarity = 2

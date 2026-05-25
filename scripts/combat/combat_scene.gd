@@ -4,7 +4,15 @@ extends Control
 
 const HP_BAR_W := 500.0
 const HP_BAR_H := 48.0
-const _ENEMY_CYCLE: Array[String] = ["soi", "nguoi_da", "ma_rung"]
+const _ENEMY_CYCLE: Array[String] = [
+	"soi_dong_co_t1",
+	"bandit_tre_t1",
+	"soi_gia_t2",
+]
+const SPRITE_SHEET_PATH := "res://assets/sprites/players/sprite sheet_Nấm.png"
+const FRAME_W := 768
+const FRAME_H := 448
+const SPRITE_RENDER_SCALE := 0.54
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NODES
@@ -19,7 +27,7 @@ var _p_hp_lbl:     Label
 var _p_sta_pips:   Array[ColorRect] = []
 var _p_status_lbl: Label
 var _p_stat_lbl:   Label
-var _p_sprite:     ColorRect
+var _p_sprite:     AnimatedSprite2D
 var _p_color:      Color = Color(0.28, 0.42, 0.62)  # màu gốc sprite player
 
 # Enemy panel
@@ -95,14 +103,14 @@ func _ready() -> void:
 	_manager.hit_landed.connect(_on_hit_landed)
 	_manager.combat_ended.connect(_on_combat_ended)
 
-	var initial_enemy := "soi"
+	var initial_enemy := "soi_dong_co_t1"
 	if not GameManager.pending_combat_enemy.is_empty():
 		initial_enemy                     = GameManager.pending_combat_enemy
 		GameManager.pending_combat_enemy  = ""
 	_setup_mock_combat(initial_enemy)
 
 
-# Helper: add child với anchor tỉ lệ (không dùng VBoxContainer).
+# Helper: add child vào root (self) với anchor tỉ lệ.
 func _add_anchored(node: Control, al: float, at: float, ar: float, ab: float) -> void:
 	node.anchor_left   = al;  node.anchor_top    = at
 	node.anchor_right  = ar;  node.anchor_bottom = ab
@@ -111,109 +119,165 @@ func _add_anchored(node: Control, al: float, at: float, ar: float, ab: float) ->
 	add_child(node)
 
 
+# Helper: add child vào một parent Control bất kỳ với anchor tỉ lệ.
+func _add_anchored_to(
+	parent: Control,
+	node: Control,
+	al: float,
+	at: float,
+	ar: float,
+	ab: float
+) -> void:
+	node.anchor_left   = al;  node.anchor_top    = at
+	node.anchor_right  = ar;  node.anchor_bottom = ab
+	node.offset_left   = 0;   node.offset_top    = 0
+	node.offset_right  = 0;   node.offset_bottom = 0
+	parent.add_child(node)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # BUILD UI
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _build_battle_area() -> Control:
-	var area := HBoxContainer.new()
-	area.add_theme_constant_override("separation", 0)
-	area.add_child(_build_player_panel())
+	var area := Control.new()
+	area.clip_contents = true
 
-	var mid := VBoxContainer.new()
-	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mid.alignment = BoxContainer.ALIGNMENT_CENTER
-	mid.add_theme_constant_override("separation", 16)
-	var title := Label.new()
-	title.text = "⚔  COMBAT"
-	title.add_theme_font_size_override("font_size", 72)
-	title.add_theme_color_override("font_color", Color(0.95, 0.82, 0.5))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	mid.add_child(title)
-	area.add_child(mid)
+	var bg := ColorRect.new()
+	bg.color = Color(0.10, 0.08, 0.07)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	area.add_child(bg)
 
-	area.add_child(_build_enemy_panel())
+	# Enemy info: góc trên-trái (giống Pokémon — tên + HP enemy phía trên trái)
+	_add_anchored_to(area, _build_enemy_info_panel(), 0.02, 0.03, 0.50, 0.52)
+
+	# Enemy sprite: góc trên-phải
+	_add_anchored_to(area, _build_enemy_sprite_area(), 0.48, 0.0, 1.0, 0.58)
+
+	# Player sprite: góc dưới-trái (như Pokémon — player đứng dưới trái nhìn sang phải)
+	_add_anchored_to(area, _build_player_sprite_area(), 0.0, 0.42, 0.55, 1.0)
+
+	# Player info: góc dưới-phải
+	_add_anchored_to(area, _build_player_info_panel(), 0.50, 0.50, 0.98, 0.98)
+
 	return area
 
 
-func _build_player_panel() -> Control:
-	var panel := VBoxContainer.new()
-	panel.custom_minimum_size.x = 640
-	panel.add_theme_constant_override("separation", 14)
+func _build_player_sprite_area() -> Control:
+	var wrap := Control.new()
+	wrap.clip_contents = false
+	_p_sprite = _build_player_sprite()
+	_p_sprite.flip_h = false
+	_p_sprite.play("idle")
+	wrap.add_child(_p_sprite)
+	# AnimatedSprite2D là Node2D → không tự center trong Control
+	# Dùng resized để đặt tâm sprite vào giữa vùng chứa
+	wrap.resized.connect(func(): _p_sprite.position = wrap.size * 0.5)
+	return wrap
 
-	var sp_wrap := CenterContainer.new()
-	_p_sprite = ColorRect.new()
-	_p_sprite.custom_minimum_size = Vector2(110, 180)
-	_p_sprite.color = Color(0.28, 0.42, 0.62)
-	sp_wrap.add_child(_p_sprite)
-	panel.add_child(sp_wrap)
+
+func _build_player_info_panel() -> Control:
+	var panel := VBoxContainer.new()
+	panel.add_theme_constant_override("separation", 10)
 
 	_p_name_lbl = Label.new()
 	_p_name_lbl.text = "Thợ Rèn"
-	_p_name_lbl.add_theme_font_size_override("font_size", 56)
+	_p_name_lbl.add_theme_font_size_override("font_size", 52)
 	_p_name_lbl.add_theme_color_override("font_color", Color(0.88, 0.82, 0.68))
-	_p_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_p_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	panel.add_child(_p_name_lbl)
 
 	panel.add_child(_build_hp_bar(true))
 	panel.add_child(_build_stamina_bar())
 
 	_p_status_lbl = Label.new()
-	_p_status_lbl.add_theme_font_size_override("font_size", 36)
+	_p_status_lbl.add_theme_font_size_override("font_size", 32)
 	_p_status_lbl.add_theme_color_override("font_color", Color(0.85, 0.72, 0.42))
-	_p_status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_p_status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_p_status_lbl.text = ""
 	panel.add_child(_p_status_lbl)
 
 	_p_stat_lbl = Label.new()
-	_p_stat_lbl.add_theme_font_size_override("font_size", 36)
+	_p_stat_lbl.add_theme_font_size_override("font_size", 32)
 	_p_stat_lbl.add_theme_color_override("font_color", Color(0.62, 0.78, 0.92))
-	_p_stat_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_p_stat_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_p_stat_lbl.text = ""
 	panel.add_child(_p_stat_lbl)
 
 	return panel
 
 
-func _build_enemy_panel() -> Control:
-	var panel := VBoxContainer.new()
-	panel.custom_minimum_size.x = 640
-	panel.add_theme_constant_override("separation", 14)
+func _build_player_sprite() -> AnimatedSprite2D:
+	var sprite := AnimatedSprite2D.new()
+	var frames := SpriteFrames.new()
+	var texture := load(SPRITE_SHEET_PATH) as Texture2D
+	if texture == null:
+		push_error("Không load được sprite sheet player: %s" % SPRITE_SHEET_PATH)
+		return sprite
 
-	var sp_wrap := CenterContainer.new()
+	var defs: Array[Dictionary] = [
+		{"name": "idle", "row": 0, "count": 4, "fps": 6.0, "loop": true},
+		{"name": "walk", "row": 1, "count": 4, "fps": 8.0, "loop": true},
+	]
+
+	for definition: Dictionary in defs:
+		var anim_name: String = definition["name"]
+		var row: int = definition["row"]
+		var frame_count: int = definition["count"]
+		frames.add_animation(anim_name)
+		frames.set_animation_speed(anim_name, definition["fps"])
+		frames.set_animation_loop(anim_name, definition["loop"])
+		for col in frame_count:
+			var atlas := AtlasTexture.new()
+			atlas.atlas = texture
+			atlas.region = Rect2(col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H)
+			frames.add_frame(anim_name, atlas)
+
+	sprite.sprite_frames = frames
+	sprite.scale = Vector2(SPRITE_RENDER_SCALE, SPRITE_RENDER_SCALE)
+	return sprite
+
+
+func _build_enemy_sprite_area() -> Control:
+	var wrap := CenterContainer.new()
 	_e_sprite = ColorRect.new()
-	_e_sprite.custom_minimum_size = Vector2(130, 180)
+	_e_sprite.custom_minimum_size = Vector2(160, 200)
 	_e_sprite.color = Color(0.55, 0.25, 0.12)
-	sp_wrap.add_child(_e_sprite)
-	panel.add_child(sp_wrap)
+	wrap.add_child(_e_sprite)
+	return wrap
+
+
+func _build_enemy_info_panel() -> Control:
+	var panel := VBoxContainer.new()
+	panel.add_theme_constant_override("separation", 10)
 
 	_e_name_lbl = Label.new()
 	_e_name_lbl.text = "???"
-	_e_name_lbl.add_theme_font_size_override("font_size", 56)
+	_e_name_lbl.add_theme_font_size_override("font_size", 52)
 	_e_name_lbl.add_theme_color_override("font_color", Color(0.88, 0.48, 0.32))
-	_e_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_e_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	panel.add_child(_e_name_lbl)
 
 	panel.add_child(_build_hp_bar(false))
 
 	_e_intent_lbl = Label.new()
-	_e_intent_lbl.add_theme_font_size_override("font_size", 44)
+	_e_intent_lbl.add_theme_font_size_override("font_size", 40)
 	_e_intent_lbl.add_theme_color_override("font_color", Color(0.95, 0.72, 0.28))
-	_e_intent_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_e_intent_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_e_intent_lbl.text = ""
 	panel.add_child(_e_intent_lbl)
 
 	_e_status_lbl = Label.new()
-	_e_status_lbl.add_theme_font_size_override("font_size", 36)
+	_e_status_lbl.add_theme_font_size_override("font_size", 32)
 	_e_status_lbl.add_theme_color_override("font_color", Color(0.85, 0.72, 0.42))
-	_e_status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_e_status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_e_status_lbl.text = ""
 	panel.add_child(_e_status_lbl)
 
 	_e_stat_lbl = Label.new()
-	_e_stat_lbl.add_theme_font_size_override("font_size", 36)
+	_e_stat_lbl.add_theme_font_size_override("font_size", 32)
 	_e_stat_lbl.add_theme_color_override("font_color", Color(0.92, 0.68, 0.62))
-	_e_stat_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_e_stat_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_e_stat_lbl.text = ""
 	panel.add_child(_e_stat_lbl)
 
@@ -381,27 +445,21 @@ func _build_result_overlay() -> Control:
 
 func _setup_mock_combat(enemy_key: String) -> void:
 	_active_enemy_key = enemy_key
-	var p: PlayerCombatUnit
+	var p := PlayerCombatUnit.new()
+	p.setup_player("Thợ Rèn")
 	if GameManager.has_any_equipped():
-		p = PlayerCombatUnit.new()
-		p.setup_player("Thợ Rèn")
 		for i in GameManager.equipped_weapons.size():
 			var w: Dictionary = GameManager.equipped_weapons[i]
 			if not w.is_empty():
 				p.equip_weapon(i, w)
-	else:
-		p = PlayerCombatUnit.make_for_test()
 
-	# Ưu tiên ENEMY_TEMPLATES; nếu không có thì tra EnemyDatabase (vùng đất)
 	var tmpl: Dictionary
-	if CombatManager.ENEMY_TEMPLATES.has(enemy_key):
-		tmpl = CombatManager.ENEMY_TEMPLATES[enemy_key]
+	var ed: EnemyData = EnemyDatabase.get_enemy(enemy_key)
+	if ed != null:
+		tmpl = ed.to_template()
 	else:
-		var ed: EnemyData = EnemyDatabase.get_enemy(enemy_key)
-		if ed != null:
-			tmpl = ed.to_template()
-		else:
-			tmpl = CombatManager.ENEMY_TEMPLATES["soi"]  # fallback
+		var fallback: EnemyData = EnemyDatabase.get_enemy("soi_dong_co_t1")
+		tmpl = fallback.to_template() if fallback != null else {}
 
 	var e := EnemyCombatUnit.from_template(tmpl)
 	_e_color        = e.color
@@ -414,6 +472,8 @@ func _setup_mock_combat(enemy_key: String) -> void:
 	_result_overlay.visible = false
 	_append_log("> Trận chiến bắt đầu! [%s]" % e.archetype.to_upper())
 	_append_log("> %s xuất hiện!" % e.combatant_name)
+	if not GameManager.has_any_equipped():
+		_append_log("> Bạn đang chiến đấu tay không.")
 
 	_manager.start_combat(p, e)
 
@@ -468,13 +528,16 @@ func _on_combatant_updated(is_player: bool) -> void:
 
 # Flash sprite đỏ + số -HP nổi lên khi bị đánh
 func _on_hit_landed(target_is_player: bool, damage: int, is_crit: bool) -> void:
-	var sprite  := _p_sprite if target_is_player else _e_sprite
-	var restore := _p_color  if target_is_player else _e_color
-	var flash   := Color(1.0, 0.75, 0.05) if is_crit else Color(1.0, 0.22, 0.18)
+	var flash := Color(1.0, 0.75, 0.05) if is_crit else Color(1.0, 0.22, 0.18)
 	var tw := create_tween()
-	tw.tween_property(sprite, "color", flash, 0.06)
-	tw.tween_property(sprite, "color", flash, 0.10)
-	tw.tween_property(sprite, "color", restore, 0.28)
+	if target_is_player:
+		tw.tween_property(_p_sprite, "modulate", flash, 0.06)
+		tw.tween_property(_p_sprite, "modulate", flash, 0.10)
+		tw.tween_property(_p_sprite, "modulate", Color.WHITE, 0.28)
+	else:
+		tw.tween_property(_e_sprite, "color", flash, 0.06)
+		tw.tween_property(_e_sprite, "color", flash, 0.10)
+		tw.tween_property(_e_sprite, "color", _e_color, 0.28)
 	_spawn_damage_number(target_is_player, damage, is_crit)
 
 
@@ -483,27 +546,31 @@ func _on_combat_ended(result: String, data: Dictionary) -> void:
 	match result:
 		"win":
 			var gold: int = data.get("gold", 30)
+			GameManager.add_gold(gold)
 			var dropped_loot: Array[Dictionary] = _roll_enemy_loot(_active_enemy_key)
 			_store_exploration_win(dropped_loot)
 			_result_title.text = "CHIẾN THẮNG"
 			_result_title.add_theme_color_override("font_color", Color(0.95, 0.86, 0.2))
 			_result_body.text = _loot_result_body(gold, dropped_loot)
+			_result_body.text += "\nKhông tốn thêm thể lực"
 			_retry_btn.visible = false
 		"lose":
+			var penalty: int = int(GameManager.gold * 0.20)
+			GameManager.gold = max(0, GameManager.gold - penalty)
+			GameManager.gold_changed.emit(GameManager.gold)
+			var stamina_spent: int = GameManager.consume_flee_stamina(4)
 			_prepare_exploration_return()
 			_result_title.text = "THẤT BẠI"
 			_result_title.add_theme_color_override("font_color", Color(0.82, 0.22, 0.18))
-			_result_body.text  = "Mất 30% vàng mang theo\nNhấn R để thử lại"
+			_result_body.text  = "Mất 20% vàng (%dG)" % penalty
+			_result_body.text += "\nTốn thêm %d thể lực" % stamina_spent
+			_result_body.text += "\nNhấn R để thử lại"
 			_retry_btn.visible = true
 		"run":
-			var stamina_spent: int = GameManager.consume_flee_stamina(1)
 			_prepare_exploration_return()
 			_result_title.text = "BỎ CHẠY"
 			_result_title.add_theme_color_override("font_color", Color(0.72, 0.72, 0.72))
-			var stamina_line: String = ""
-			if stamina_spent > 0:
-				stamina_line = "\nTốn %d thể lực" % stamina_spent
-			_result_body.text  = "Bạn đã rời khỏi trận.%s\nNhấn R để đánh lại" % stamina_line
+			_result_body.text  = "Bạn đã rời khỏi trận.\nKhông tốn thêm thể lực\nNhấn R để đánh lại"
 			_retry_btn.visible = true
 	# Hiện nút quay lại nếu đến từ exploration
 	if not GameManager.post_combat_return.is_empty():
@@ -601,7 +668,7 @@ func _on_action_btn_pressed(idx: int) -> void:
 	var action: Dictionary
 
 	match idx:
-		0: action = { "type": "skill", "skill": CombatManager.SKILLS["basic_attack"] }
+		0: action = { "type": "skill", "skill": _manager.get_skill("basic_attack") }
 		1: action = { "type": "skill", "skill": p.skill1 }
 		2: action = { "type": "skill", "skill": p.skill2 }
 		3: action = { "type": "run" }
@@ -736,7 +803,14 @@ func _append_log(text: String) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _spawn_damage_number(target_is_player: bool, damage: int, is_crit: bool = false) -> void:
-	var sprite := _p_sprite if target_is_player else _e_sprite
+	var sprite_gpos: Vector2
+	var sprite_size: Vector2
+	if target_is_player:
+		sprite_gpos = _p_sprite.global_position
+		sprite_size = Vector2(110, 180)
+	else:
+		sprite_gpos = _e_sprite.global_position
+		sprite_size = _e_sprite.size
 
 	var lbl := Label.new()
 	lbl.text = ("!%d!" % damage) if is_crit else ("-%d" % damage)
@@ -746,8 +820,8 @@ func _spawn_damage_number(target_is_player: bool, damage: int, is_crit: bool = f
 	lbl.add_theme_color_override("font_color", color)
 	add_child(lbl)
 
-	var center := sprite.global_position + sprite.size * 0.5
-	lbl.position = center + Vector2(-30.0, -sprite.size.y * 0.25)
+	var center := sprite_gpos + sprite_size * 0.5
+	lbl.position = center + Vector2(-30.0, -sprite_size.y * 0.25)
 
 	var rise := 160.0 if is_crit else 120.0
 	var tw := create_tween()
