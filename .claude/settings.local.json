@@ -56,7 +56,17 @@
       "Bash(cp '/Users/minhchau/Downloads/Weapon /Bua.png' /Users/minhchau/lo-thieng-demo-2/assets/weapons/icons/bua_chien_sketch.png)",
       "Bash(cp '/Users/minhchau/Downloads/Weapon /Thuong Logo.png' /Users/minhchau/lo-thieng-demo-2/assets/weapons/icons/giao_dai.png)",
       "Bash(cp \"/Users/minhchau/Downloads/Hoả Tâm _ Assets/ForgeSession/NL Pick/slot1.png\" \"/Users/minhchau/lo-thieng-demo-2/assets/UI/forge/nguyen_lieu/slot1.png\")",
-      "Bash(cp \"/Users/minhchau/Downloads/Hoả Tâm _ Assets/ForgeSession/NL Pick/slot2.png\" \"/Users/minhchau/lo-thieng-demo-2/assets/UI/forge/nguyen_lieu/slot2.png\")"
+      "Bash(cp \"/Users/minhchau/Downloads/Hoả Tâm _ Assets/ForgeSession/NL Pick/slot2.png\" \"/Users/minhchau/lo-thieng-demo-2/assets/UI/forge/nguyen_lieu/slot2.png\")",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(xargs '-I{}' sh -c 'size=$\\(wc -c < \"{}\" 2>/dev/null\\); [ \"$size\" -gt 52428800 ] && echo \"$size {}\"')",
+      "Bash(GIT_CURL_VERBOSE=1 git push origin main)",
+      "Bash(git count-objects *)",
+      "Bash(git config *)",
+      "Bash(gh repo *)",
+      "Bash(xargs '-I{}' sh -c 'f=\"{}\"; s=$\\(wc -c < \"$f\" 2>/dev/null || echo 0\\); echo \"$s $f\"')"
     ]
   }
 }

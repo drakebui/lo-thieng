@@ -3096,3 +3096,31 @@
 - Enemy chase abandon là `700.0`, vision cone range là `600.0`, waypoint range là `randi_range(-8, 8)`.
 - `gdlint` pass cho: `scripts/regions/exploration_scene.gd`.
 - `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
+
+## Session 119 — 2026-05-25
+
+### Task đã làm
+- [GitHub Upload + Codex Audit] Commit toàn bộ dự án (383 files, 25,890 dòng thêm), loại .psd khỏi git, đánh giá feedback Codex và lập plan Tier 1–5 — DONE
+
+### Files tạo mới
+- Không có
+
+### Files đã sửa
+- .gitignore — thêm `*.psd` để loại source art file Photoshop (>100MB, vượt giới hạn GitHub)
+- NOTES.md — thêm log session
+
+### Vấn đề gặp phải
+- `Forge stage prototype.psd` (105.78MB) bị GitHub từ chối do vượt giới hạn 100MB; đã loại khỏi commit và thêm `*.psd` vào .gitignore.
+- Push tiếp theo gặp GitHub Internal Server Error 500 (server-side); commit `eb3db4a` chỉ tồn tại local, chưa push thành công.
+
+### Chưa làm được
+- Chưa push thành công lên GitHub; cần thử lại sau.
+- Chưa bắt đầu Tier 1 (fix gdlint + cập nhật CLAUDE.md).
+
+### Cần Engineering Lead chú ý
+- Commit `eb3db4a` (383 files) tồn tại local, **chưa push** lên `origin/main`.
+- Codex audit xác nhận 4 lỗi gdlint: `CustomerTagSystem.gd:35`, `forge_recipe_book_ui.gd:12`, `forge_recipe_book_ui.gd:23`, `AudioManager.gd:12`.
+- Autoload thực tế là 8 (không phải 6 như CLAUDE.md): thêm `DayCycle.gd` và `DebtSystem.gd`.
+- `workshop_hub.gd` cần tách thành sub-controllers trước khi thêm feature mới.
+- Day/phase API có 3 entry point song song — cần chuẩn hóa về `DayCycle.advance_phase()`.
+- Plan: Tier 1 (gdlint + docs) → Tier 2 (phase API) → Tier 3 (hub refactor) → Tier 4 (save audit) → Tier 5 (workshop visual).
