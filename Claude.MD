@@ -11,7 +11,7 @@
 - Data-driven: Items, NPCs, Quests, Skills là .tres resource files, KHÔNG hard-code
 - Nodes giao tiếp qua signals hoặc EventBus autoload
 - Mỗi region, NPC, UI panel là 1 scene độc lập
-- Chỉ dùng autoload cho: EventBus, GameManager, AudioManager, SaveSystem
+- Chỉ dùng autoload cho: EventBus, GameManager, DayCycle, DebtSystem, SaveSystem, AudioManager, SceneManager, InventorySystem
 
 ## Quy ước đặt tên
 - Tên file script: snake_case.gd (vd: forge_manager.gd)
@@ -47,10 +47,12 @@
 ## Autoloads (Singletons toàn game)
 - EventBus.gd         — Trung tâm signals, mọi giao tiếp cross-system
 - GameManager.gd      — Game state, ngày hiện tại, tiền, reputation
+- DayCycle.gd         — Quản lý phase trong ngày (MORNING / NOON / AFTERNOON / NIGHT), cung cấp advance_phase() là API chuẩn cho toàn game
+- DebtSystem.gd       — Theo dõi và trigger các checkpoint nợ (C1–C4), kết nối với GameManager và EventBus
 - SaveSystem.gd       — Lưu/đọc file JSON
 - AudioManager.gd     — Nhạc nền và hiệu ứng âm thanh
+- SceneManager.gd     — Chuyển scene có transition
 - InventorySystem.gd  — Quản lý kho và túi đồ
-- QuestSystem.gd      — Theo dõi tiến trình quest
 
 ## 6 Hệ thống chính (theo GDD)
 1. Forge System (USP cốt lõi): 3 phase — Nung / Rèn Búa / Tôi Luyện

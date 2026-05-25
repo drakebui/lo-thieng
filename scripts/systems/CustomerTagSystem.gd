@@ -32,7 +32,8 @@ const CUSTOMER_TYPE_TAGS := {
 	},
 	"ThichKhach": {
 		"label":       "Thích Khách",
-		"desc":        "Thích vũ khí nhẹ, song đao, sát thương nhanh. Phôi: Song Đao, Liềm Song, Côn, Nỏ.",
+		"desc":        "Thích vũ khí nhẹ, song đao, sát thương nhanh. "
+			+ "Phôi: Song Đao, Liềm Song, Côn, Nỏ.",
 		"blank_ids":   ["phoi_song_dao", "phoi_liem_song", "phoi_con_hai_khuc", "phoi_no_ban"],
 		"score_bonus": 30,
 	},

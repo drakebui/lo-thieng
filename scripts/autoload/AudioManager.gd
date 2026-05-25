@@ -2,12 +2,6 @@ extends Node
 
 const SFX_POOL_SIZE := 8
 
-var music_volume: float = 0.8
-var sfx_volume: float = 1.0
-
-var _music_player: AudioStreamPlayer
-var _sfx_pool: Array[AudioStreamPlayer] = []
-
 # Bảng tra key → đường dẫn file âm thanh
 const SFX_PATHS: Dictionary = {
 	# --- Combat ---
@@ -37,6 +31,12 @@ const SFX_PATHS: Dictionary = {
 	# "button_click":  "res://assets/audio/sfx/ui/button_click.wav",
 	# "menu_open":     "res://assets/audio/sfx/ui/menu_open.wav",
 }
+
+var music_volume: float = 0.8
+var sfx_volume: float = 1.0
+
+var _music_player: AudioStreamPlayer
+var _sfx_pool: Array[AudioStreamPlayer] = []
 
 # Cache stream đã load để tránh load lại nhiều lần
 var _sfx_cache: Dictionary = {}

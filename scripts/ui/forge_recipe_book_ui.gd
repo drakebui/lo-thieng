@@ -9,7 +9,9 @@ const DEFAULT_RECIPES: Array[Dictionary] = [
 		"materials": [{"item": "Quặng Sắt", "qty": 2}],
 		"linh_luc": "Tùy chọn",
 		"description": "Vũ khí cơ bản, dễ rèn, phù hợp cho cả chiến binh lẫn thương nhân mới vào nghề.",
-		"forge_tips": "Phase Nung: giữ vùng Cam để có multiplier ×1.2.\nPhase Búa: nhắm prefix 'Kiệt Tác' trở lên.\nPhase Tôi: không bắt buộc chọn linh lực.",
+		"forge_tips": "Phase Nung: giữ vùng Cam để có multiplier ×1.2.\n"
+			+ "Phase Búa: nhắm prefix 'Kiệt Tác' trở lên.\n"
+			+ "Phase Tôi: không bắt buộc chọn linh lực.",
 	},
 	{
 		"name": "Giáo Dài",
@@ -20,7 +22,8 @@ const DEFAULT_RECIPES: Array[Dictionary] = [
 		],
 		"linh_luc": "Tùy chọn",
 		"description": "Vũ khí tầm xa, lợi thế khi đánh trước. Cần tay nghề ổn định.",
-		"forge_tips": "Phase Búa: giáo dài nhạy với nhịp gõ — đừng vội.\nPhase Tôi: chọn linh lực để tăng tầm kiểm soát.",
+		"forge_tips": "Phase Búa: giáo dài nhạy với nhịp gõ — đừng vội.\n"
+			+ "Phase Tôi: chọn linh lực để tăng tầm kiểm soát.",
 	},
 	{
 		"name": "Gậy Phép",

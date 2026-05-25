@@ -3124,3 +3124,28 @@
 - `workshop_hub.gd` cần tách thành sub-controllers trước khi thêm feature mới.
 - Day/phase API có 3 entry point song song — cần chuẩn hóa về `DayCycle.advance_phase()`.
 - Plan: Tier 1 (gdlint + docs) → Tier 2 (phase API) → Tier 3 (hub refactor) → Tier 4 (save audit) → Tier 5 (workshop visual).
+
+## Session 120 — 2026-05-25
+
+### Task đã làm
+- [Tier 1] Fix gdlint style errors + cập nhật CLAUDE.md autoload count — DONE
+
+### Files tạo mới
+- Không có
+
+### Files đã sửa
+- scripts/systems/CustomerTagSystem.gd — wrap dòng mô tả `ThichKhach` quá 100 ký tự.
+- scripts/ui/forge_recipe_book_ui.gd — wrap 2 dòng `forge_tips` quá 100 ký tự.
+- scripts/autoload/AudioManager.gd — đưa `SFX_PATHS` lên trước các biến để đúng thứ tự khai báo const/var.
+- CLAUDE.md — cập nhật danh sách autoload thực tế gồm `DayCycle.gd`, `DebtSystem.gd`, `SceneManager.gd`, bỏ `QuestSystem.gd` khỏi danh sách autoload hiện tại.
+- NOTES.md — thêm log session 120.
+
+### Vấn đề gặp phải
+- Prompt vừa giới hạn không sửa ngoài 3 `.gd` và `CLAUDE.md`, vừa yêu cầu cập nhật `NOTES.md`; đã cập nhật `NOTES.md` theo quy tắc kết thúc session.
+
+### Chưa làm được
+- Không có.
+
+### Cần Engineering Lead chú ý
+- `gdlint scripts/systems/CustomerTagSystem.gd scripts/ui/forge_recipe_book_ui.gd scripts/autoload/AudioManager.gd` pass: `Success: no problems found`.
+- `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
