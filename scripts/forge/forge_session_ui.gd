@@ -233,6 +233,35 @@ func _build_phase1_ui() -> Control:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(title)
 
+	var info_row := HBoxContainer.new()
+	info_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(info_row)
+
+	var blank_label := Label.new()
+	blank_label.text = GameManager.selected_blank.get("name", "Phôi")
+	blank_label.add_theme_font_size_override("font_size", 48)
+	blank_label.add_theme_color_override("font_color", Color(0.90, 0.78, 0.45))
+	blank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info_row.add_child(blank_label)
+
+	var plus_label := Label.new()
+	plus_label.text = "  +  "
+	plus_label.add_theme_font_size_override("font_size", 48)
+	plus_label.add_theme_color_override("font_color", Color(0.90, 0.78, 0.45))
+	plus_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info_row.add_child(plus_label)
+
+	var rarity: int = GameManager.selected_material.get("rarity", 1)
+	var material_label := Label.new()
+	material_label.text = "%s  %s" % [
+		GameManager.selected_material.get("name", "Nguyên liệu"),
+		"★".repeat(rarity),
+	]
+	material_label.add_theme_font_size_override("font_size", 48)
+	material_label.add_theme_color_override("font_color", Color(0.90, 0.78, 0.45))
+	material_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info_row.add_child(material_label)
+
 	# Gom toàn bộ UI active — ẩn khi phase xong để nhường chỗ cho result
 	_p1_active_box = VBoxContainer.new()
 	_p1_active_box.add_theme_constant_override("separation", 40)
@@ -440,6 +469,11 @@ func _on_phase1_done(tier: String) -> void:
 	elif p1_min == "cam" and tier == "lanh":
 		tier = "cam"
 	_p1_tier = tier
+	match tier:
+		"cam", "do_ruc":
+			AudioManager.play_sfx_key("skill_fire")
+		"chay":
+			AudioManager.play_sfx_key("player_hurt")
 	_p1_active_box.visible = false
 	_p1_result_box.visible = true
 

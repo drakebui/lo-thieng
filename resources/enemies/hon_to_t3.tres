@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "hon_to_t3"
+enemy_name = "Hồn Tổ"
+archetype = "boss"
+tier = 3
+hp = 130
+atk = 16
+def_stat = 8
+magic = 12
+speed = 4
+drop_gold = 180
+color = Color(0.62, 0.52, 0.38, 1)
+region = "LangTo"
+crit_rate = 0.20
+loot_items = Array[Dictionary]([{"item_id": "di_thach", "chance": 0.25}, {"item_id": "manh_thieng", "chance": 0.15}, {"item_id": "tro_lo_to", "chance": 0.50}])

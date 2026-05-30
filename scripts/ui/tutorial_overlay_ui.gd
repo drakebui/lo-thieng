@@ -15,11 +15,16 @@ const DIALOGUE_STEP_SEPARATION := 6
 const DIALOGUE_TEXT_TEXTURE_PATH := "res://assets/UI/dialogue/Dialogue Text.png"
 const DIALOGUE_NAME_TEXTURE_PATH := "res://assets/UI/dialogue/Dialogue Name.png"
 const PLAYER_PORTRAIT_PATH := "res://assets/sprites/characters/nam_full_size_transparent.png"
-const NPC_PORTRAIT_PATH := "res://assets/sprites/characters/Cô Lộng Gió .png"
+const DEFAULT_NPC_PORTRAIT_PATH := ""
 const CO_LONG_GIO_PORTRAIT_PATH := "res://assets/sprites/characters/Cô Lộng Gió .png"
+const BA_TRUM_HAC_NGUYET_PORTRAIT_PATH := "res://assets/sprites/characters/Bà Hắc Nguyệt 1.png"
 const ACTIVE_PORTRAIT_MODULATE := Color(1.0, 1.0, 1.0, 1.0)
 const INACTIVE_PORTRAIT_MODULATE := Color(0.46, 0.46, 0.46, 0.46)
 const PLAYER_SPEAKERS: Array[String] = ["Người Giữ Lò", "Nấm", "Thợ Rèn"]
+const CHARACTER_PORTRAITS: Dictionary = {
+	"Cô Lộng Gió": CO_LONG_GIO_PORTRAIT_PATH,
+	"Bà Trùm Hắc Nguyệt": BA_TRUM_HAC_NGUYET_PORTRAIT_PATH,
+}
 
 const C_PANEL_BG := Color(0.025, 0.018, 0.012, 0.92)
 const C_PANEL_BORDER := Color(0.62, 0.42, 0.18, 0.86)
@@ -61,6 +66,22 @@ func _ready() -> void:
 	visible = false
 	_build_ui()
 	get_viewport().size_changed.connect(_on_viewport_size_changed)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not visible:
+		return
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	var key := event as InputEventKey
+	if _step_box.visible:
+		if key.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER, KEY_E]:
+			get_viewport().set_input_as_handled()
+			_on_next_pressed()
+	elif _section_box.visible:
+		if key.keycode == KEY_ESCAPE:
+			get_viewport().set_input_as_handled()
+			_on_close_pressed()
 
 
 func _on_viewport_size_changed() -> void:
@@ -129,7 +150,7 @@ func _build_ui() -> void:
 	_set_panel_size(PANEL_SIZE)
 	_panel.add_theme_stylebox_override("panel", _make_panel_style())
 
-	_npc_side = _make_portrait_side(NPC_PORTRAIT_PATH, "NPC")
+	_npc_side = _make_portrait_side(DEFAULT_NPC_PORTRAIT_PATH, "NPC")
 	_npc_portrait = _npc_side.get_child(0) as TextureRect
 	_npc_name_lbl = _npc_side.get_child(1) as Label
 	_dialogue_row.add_child(_npc_side)
@@ -296,7 +317,9 @@ func _make_portrait_side(texture_path: String, display_name: String) -> VBoxCont
 	box.add_theme_constant_override("separation", 8)
 
 	var portrait := TextureRect.new()
-	portrait.texture = load(texture_path) as Texture2D
+	if not texture_path.is_empty():
+		portrait.texture = load(texture_path) as Texture2D
+	portrait.visible = portrait.texture != null
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	box.add_child(portrait)
@@ -374,14 +397,12 @@ func _is_player_speaker(speaker: String) -> bool:
 	return PLAYER_SPEAKERS.has(speaker)
 
 
-func _portrait_path_for_speaker(speaker: String) -> String:
-	match speaker:
-		"Cô Lộng Gió":
-			return CO_LONG_GIO_PORTRAIT_PATH
-		_:
-			if _is_player_speaker(speaker):
-				return PLAYER_PORTRAIT_PATH
-			return NPC_PORTRAIT_PATH
+func _portrait_path_for_speaker(speaker: String, explicit_path: String = "") -> String:
+	if not explicit_path.is_empty():
+		return explicit_path
+	if _is_player_speaker(speaker):
+		return PLAYER_PORTRAIT_PATH
+	return CHARACTER_PORTRAITS.get(speaker, DEFAULT_NPC_PORTRAIT_PATH)
 
 
 func _dialogue_partner_speaker(current_speaker: String) -> String:
@@ -400,8 +421,14 @@ func _apply_dialogue_speaker(step: Dictionary) -> void:
 	var speaker: String = step.get("speaker", step.get("title", ""))
 	var is_player := _is_player_speaker(speaker)
 	var partner := _dialogue_partner_speaker(speaker)
+	var npc_portrait_path := _portrait_path_for_speaker(partner, step.get("portrait", ""))
 	_player_portrait.texture = load(PLAYER_PORTRAIT_PATH) as Texture2D
-	_npc_portrait.texture = load(_portrait_path_for_speaker(partner)) as Texture2D
+	if npc_portrait_path.is_empty():
+		_npc_portrait.texture = null
+	else:
+		_npc_portrait.texture = load(npc_portrait_path) as Texture2D
+	_player_portrait.visible = _player_portrait.texture != null
+	_npc_portrait.visible = _npc_portrait.texture != null
 	_player_side.modulate = ACTIVE_PORTRAIT_MODULATE if is_player else INACTIVE_PORTRAIT_MODULATE
 	_npc_side.modulate = INACTIVE_PORTRAIT_MODULATE if is_player else ACTIVE_PORTRAIT_MODULATE
 	_player_name_lbl.text = "Người Giữ Lò"

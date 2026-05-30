@@ -32,6 +32,7 @@ const SUB_SCENE_CONFIG: Dictionary = {
 		"tier_filter": [1],
 		"respawn": false,
 		"is_loop": false,
+		"gather_count": 2,
 	},
 	"LOOP_A": {
 		"label": "Hoang Dã",
@@ -40,6 +41,7 @@ const SUB_SCENE_CONFIG: Dictionary = {
 		"tier_filter": [1],
 		"respawn": true,
 		"is_loop": true,
+		"gather_count": 3,
 	},
 	"LOOP_B": {
 		"label": "Biên Giới",
@@ -48,6 +50,7 @@ const SUB_SCENE_CONFIG: Dictionary = {
 		"tier_filter": [1, 2],
 		"respawn": true,
 		"is_loop": true,
+		"gather_count": 3,
 	},
 	"STORY_2": {
 		"label": "Linh Thiêng",
@@ -56,6 +59,7 @@ const SUB_SCENE_CONFIG: Dictionary = {
 		"tier_filter": [],
 		"respawn": false,
 		"is_loop": false,
+		"gather_count": 1,
 	},
 	"LOOP_C": {
 		"label": "Sâu Thẳm",
@@ -64,6 +68,7 @@ const SUB_SCENE_CONFIG: Dictionary = {
 		"tier_filter": [2, 3],
 		"respawn": true,
 		"is_loop": true,
+		"gather_count": 3,
 	},
 	"LANDMARK": {
 		"label": "Di Tích",
@@ -72,6 +77,7 @@ const SUB_SCENE_CONFIG: Dictionary = {
 		"tier_filter": [3, 4],
 		"respawn": false,
 		"is_loop": false,
+		"gather_count": 0,
 	},
 }
 
@@ -125,9 +131,12 @@ var _enemy_nodes:  Array[CharacterBody2D] = []
 var _enemy_states: Dictionary = {}
 var _pending_meta: Dictionary = {}
 var _obstacle_rects: Array[Rect2] = []
+var _near_gather_idx: int = -1
+var _gather_nodes: Array[Node2D] = []
 
 # HUD
 var _hint_lbl:    Label
+var _quest_lbl:   Label = null
 var _move_hint_lbl: Label = null
 var _lbl_stamina: Label
 var _lbl_bag:     Label
@@ -185,6 +194,7 @@ func _ready() -> void:
 	_build_exit_zone()
 	_build_hud(meta)
 	_build_special_npcs()
+	_build_gather_nodes()
 	if not GameManager.has_tutorial_seen(FLAG_MOVE_HINT_SEEN):
 		_move_hint_lbl.visible = true
 		_move_hint_lbl.modulate.a = 1.0
@@ -198,6 +208,9 @@ func _ready() -> void:
 	_consume_pending_loot()
 
 	GameManager.travel_stamina_changed.connect(func(_c: int, _m: int) -> void: _refresh_hud())
+	EventBus.quest_started.connect(func(_quest_id: String) -> void: _refresh_hud())
+	EventBus.quest_completed.connect(func(_quest_id: String) -> void: _refresh_hud())
+	EventBus.quest_updated.connect(_refresh_hud)
 	EventBus.region_entered.emit(_region_id)
 
 
@@ -230,6 +243,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_leave_region()
 			elif _near_co_long_gio:
 				_open_co_long_gio_dialogue()
+			elif _near_gather_idx >= 0:
+				_collect_gather(_near_gather_idx)
 			elif _near_exit_right:
 				_advance_sub_scene()
 		KEY_ESCAPE:
@@ -694,6 +709,8 @@ func _leave_region() -> void:
 		GameManager.clear_hand()
 		GameManager.clear_exploration_state()
 		EventBus.region_exited.emit(_region_id)
+		if GameManager.is_region_cleared(_region_id):
+			GameManager.unlock_next_region_after(_region_id)
 		SceneManager.go_to(PATH_WORKSHOP)
 	else:
 		# Về sub-scene trước.
@@ -812,6 +829,7 @@ func _open_co_long_gio_dialogue() -> void:
 	# Mark đúng lần hiện tại — không mark lần 2 trước khi lần 1 xong.
 	if GameManager.has_tutorial_seen(FLAG_CO_LONG_GIO_MET):
 		GameManager.mark_tutorial_seen(FLAG_CO_LONG_GIO_SECOND)
+		GameManager.trigger_quest_event(FLAG_CO_LONG_GIO_SECOND)
 	else:
 		GameManager.mark_tutorial_seen(FLAG_CO_LONG_GIO_MET)
 
@@ -883,6 +901,14 @@ func _build_hud(meta: Dictionary) -> void:
 	bag_btn.pressed.connect(_toggle_bag_overlay)
 	hud.add_child(bag_btn)
 
+	_quest_lbl = Label.new()
+	_quest_lbl.position = Vector2(1120, 8)
+	_quest_lbl.size = Vector2(vp.x - 1300, 32)
+	_quest_lbl.add_theme_font_size_override("font_size", 18)
+	_quest_lbl.add_theme_color_override("font_color", Color(1.0, 0.84, 0.36))
+	_quest_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	hud.add_child(_quest_lbl)
+
 	var return_btn := Button.new()
 	return_btn.text = "← Về Xưởng"
 	return_btn.position = Vector2(vp.x - 166, 6)
@@ -932,6 +958,10 @@ func _refresh_hud() -> void:
 		GameManager.hand_inventory.size(),
 		GameManager.MAX_HAND_SLOTS,
 	]
+	if _quest_lbl != null:
+		var quest_text := GameManager.get_quest_hud_text()
+		_quest_lbl.text = quest_text
+		_quest_lbl.visible = not quest_text.is_empty()
 	if _bag_overlay != null and _bag_overlay.visible:
 		_refresh_bag_overlay()
 
@@ -1389,6 +1419,138 @@ func _item_to_hand_entry(item: ItemData) -> Dictionary:
 	}
 	hand_item.merge(item.effect_data)
 	return hand_item
+
+
+func _build_gather_nodes() -> void:
+	var count: int = _scene_cfg.get("gather_count", 0)
+	if count == 0:
+		return
+	var gather_key := "gather_seed_" + _scene_visited_key
+	if not GameManager.exploration_state.has(gather_key):
+		GameManager.exploration_state[gather_key] = int(Time.get_ticks_usec())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(GameManager.exploration_state[gather_key])
+	var collected_key := "gather_collected_" + _scene_visited_key
+	var collected: Array = GameManager.exploration_state.get(collected_key, [])
+	var pool: Array[ItemData] = []
+	for item in ItemDatabase.get_items_by_type(ItemData.ItemType.MATERIAL):
+		if item.effect_data.get("region", "") == _region_id:
+			pool.append(item)
+	if pool.is_empty():
+		pool = ItemDatabase.get_items_by_type(ItemData.ItemType.MATERIAL)
+	var occupied: Dictionary = {}
+	for i in _gather_nodes.size():
+		pass
+	for i in count:
+		var tries := 0
+		var gx := 0
+		var gy := 0
+		var ok := false
+		while tries < 60 and not ok:
+			tries += 1
+			gx = rng.randi_range(4, COLS - 5)
+			gy = rng.randi_range(4, ROWS - 5)
+			var gv := Vector2i(gx, gy)
+			if occupied.has(gv):
+				continue
+			var cx := COLS / 2
+			var cy := ROWS / 2
+			if abs(gx - cx) < 4 and abs(gy - cy) < 4:
+				continue
+			var rect := Rect2(Vector2(gx * TILE, gy * TILE), Vector2(TILE, TILE))
+			var blocked := false
+			for obs in _obstacle_rects:
+				if obs.intersects(rect):
+					blocked = true
+					break
+			if blocked:
+				continue
+			ok = true
+			occupied[gv] = true
+		if not ok:
+			continue
+		var is_collected: bool = i < collected.size() and bool(collected[i])
+		var item: ItemData = pool[rng.randi() % pool.size()]
+		var world_pos := Vector2(gx * TILE + TILE * 0.5, gy * TILE + TILE * 0.5)
+		var node := _spawn_gather_node(i, item, world_pos, is_collected)
+		_gather_nodes.append(node)
+
+
+func _spawn_gather_node(
+		idx: int, item: ItemData, pos: Vector2, is_collected: bool
+) -> Node2D:
+	var area := Area2D.new()
+	area.position = pos
+	area.collision_layer = 0
+	area.collision_mask = 1
+	area.monitoring = true
+	area.set_meta("gather_idx", idx)
+	area.set_meta("item_id", item.item_id)
+	area.set_meta("collected", is_collected)
+	add_child(area)
+
+	var visual := ColorRect.new()
+	visual.size = Vector2(56, 56)
+	visual.position = Vector2(-28, -28)
+	visual.color = (
+		Color(0.25, 0.25, 0.20, 0.5) if is_collected
+		else Color(0.35, 0.58, 0.20, 0.85)
+	)
+	area.add_child(visual)
+
+	var col := CollisionShape2D.new()
+	var shape := CircleShape2D.new()
+	shape.radius = 80.0
+	col.shape = shape
+	area.add_child(col)
+
+	area.body_entered.connect(func(body: Node2D) -> void:
+		if body != _player or area.get_meta("collected", false):
+			return
+		_near_gather_idx = area.get_meta("gather_idx", -1)
+		_hint_lbl.text = "[E]  Nhặt nguyên liệu (%s)" % item.item_name
+		_hint_lbl.visible = true
+	)
+	area.body_exited.connect(func(body: Node2D) -> void:
+		if body != _player:
+			return
+		if _near_gather_idx == area.get_meta("gather_idx", -1):
+			_near_gather_idx = -1
+			_hint_lbl.visible = false
+	)
+	return area
+
+
+func _collect_gather(idx: int) -> void:
+	if idx < 0 or idx >= _gather_nodes.size():
+		return
+	var node := _gather_nodes[idx]
+	if node.get_meta("collected", false):
+		return
+	node.set_meta("collected", true)
+	var visual := node.get_child(0) as ColorRect
+	if visual != null:
+		visual.color = Color(0.25, 0.25, 0.20, 0.5)
+	var collected_key := "gather_collected_" + _scene_visited_key
+	var collected: Array = GameManager.exploration_state.get(collected_key, [])
+	while collected.size() <= idx:
+		collected.append(false)
+	collected[idx] = true
+	GameManager.exploration_state[collected_key] = collected
+	_near_gather_idx = -1
+	_hint_lbl.visible = false
+	var item_id: String = node.get_meta("item_id", "")
+	var item: ItemData = ItemDatabase.get_item(item_id)
+	if item == null:
+		return
+	var hand_item := _item_to_hand_entry(item)
+	if GameManager.add_to_hand(hand_item):
+		_hint_lbl.text = "[Nhặt: %s]" % item.item_name
+		_hint_lbl.visible = true
+		_refresh_hud()
+	else:
+		_hint_lbl.text = "Túi đầy!"
+		_hint_lbl.visible = true
 
 
 func _open_pause_menu() -> void:

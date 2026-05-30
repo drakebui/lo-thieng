@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "phu_thuy_thanh_t2"
+enemy_name = "Phù Thủy Thành"
+archetype = "caster"
+tier = 2
+hp = 65
+atk = 5
+def_stat = 3
+magic = 14
+speed = 5
+drop_gold = 100
+color = Color(0.28, 0.45, 0.80, 1)
+region = "ThanhNgoc"
+crit_rate = 0.15
+loot_items = Array[Dictionary]([{"item_id": "ngoc_tho", "chance": 0.20}, {"item_id": "soi_vang", "chance": 0.35}])

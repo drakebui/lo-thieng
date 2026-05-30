@@ -6,6 +6,8 @@ signal phase2_completed(score: int, prefix_tier: String)
 signal phase3_completed(weapon_result: Dictionary)
 signal weapon_forged(weapon_data)
 signal weapon_sold(weapon_data, price: int)
+signal quest_started(quest_id: String)
+signal quest_updated
 signal quest_completed(quest_id: String)
 signal artifact_collected(artifact_id: int)
 signal combat_started(enemy_data)

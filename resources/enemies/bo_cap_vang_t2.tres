@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "bo_cap_vang_t2"
+enemy_name = "Bò Cạp Vàng"
+archetype = "aggressive"
+tier = 2
+hp = 75
+atk = 13
+def_stat = 4
+magic = 0
+speed = 7
+drop_gold = 85
+color = Color(0.88, 0.72, 0.18, 1)
+region = "BaiCat"
+crit_rate = 0.20
+loot_items = Array[Dictionary]([{"item_id": "xuong_ca", "chance": 0.45}, {"item_id": "ho_phach", "chance": 0.25}, {"item_id": "da_vang", "chance": 0.10}])

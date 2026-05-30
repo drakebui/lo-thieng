@@ -1,4 +1,3 @@
-# gdlint: disable=max-file-lines
 extends Node2D
 
 const TILE := 64
@@ -18,18 +17,13 @@ const DAY_CARD_FLAG_PREFIX := "day_scene_card_seen_"
 # Scene path
 const PATH_FORGE := "res://scenes/forge/WeaponBuilder.tscn"
 const PATH_SHOP  := "res://scenes/shop/ShopScene.tscn"
-const PATH_DEBT_NOTICE := "res://scenes/ui/DebtNoticeUI.tscn"
-const PATH_DEBT_PAYMENT := "res://scenes/ui/DebtPaymentUI.tscn"
 const PATH_INVENTORY := "res://scenes/ui/InventoryUI.tscn"
 const PATH_PAUSE_MENU := "res://scenes/ui/PauseMenu.tscn"
 const PATH_GAME_OVER := "res://scenes/ui/GameOver.tscn"
 const DAY_SCENE_CARD_SCRIPT := "res://scripts/ui/day_scene_card_ui.gd"
-const TUTORIAL_OVERLAY_SCRIPT := "res://scripts/ui/tutorial_overlay_ui.gd"
+const WORKSHOP_TUTORIAL_CONTROLLER_SCRIPT := "res://scripts/main/workshop_tutorial_controller.gd"
+const WORKSHOP_DEBT_CONTROLLER_SCRIPT := "res://scripts/main/workshop_debt_controller.gd"
 const FORGE_RECIPE_BOOK_SCRIPT := "res://scripts/ui/forge_recipe_book_ui.gd"
-const DEBT_C1_ID := "c1_mat_bang"
-const DEBT_C2_ID := "c2_dan_duong"
-const DEBT_C3_ID := "c3_thue_lon"
-const DEBT_C4_ID := "c4_no_goc"
 
 # Zone IDs
 const ZONE_FORGE := "forge"
@@ -41,6 +35,7 @@ const ZONE_DEBT_AGENT := "debt_agent"
 const ZONE_DEBT_AGENT_C2 := "debt_agent_c2"
 const ZONE_DEBT_AGENT_C3 := "debt_agent_c3"
 const ZONE_DEBT_AGENT_C4 := "debt_agent_c4"
+const ZONE_VISITOR_CLG := "visitor_co_long_gio"
 
 # Vị trí các zone — tính động theo viewport trong _init_layout()
 var cols: int
@@ -58,43 +53,21 @@ var shop_size:    Vector2
 var forge_book_center: Vector2
 var forge_book_size: Vector2
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STATE
-# ══════════════════════════════════════════════════════════════════════════════
-
-var tutorial_step: int = 0
-
 var _player:    CharacterBody2D
 var _near_zone: String = ""
 
 var _region_select: CanvasLayer   # lazy-load
 var _day_summary:   CanvasLayer   # lazy-load
-var _debt_notice:   DebtNoticeUI   # lazy-load
-var _debt_payment:  DebtPaymentUI  # lazy-load
 var _inventory_ui:  InventoryUI    # lazy-load
 var _combat_loadout: CombatLoadoutUI # lazy-load
 var _pause_menu: Node = null
 var _game_over_ui: Node = null
 var _day_card_overlay: DaySceneCardUI = null
-var _debt_agent_marker: Node2D = null
-var _debt_agent_c2: Node2D = null
-var _debt_agent_c3: Node2D = null
-var _debt_agent_c4: Node2D = null
-var _tutorial_overlay: TutorialOverlayUI = null
+var _tutorial_ctrl: WorkshopTutorialController = null
+var _debt_ctrl: WorkshopDebtController = null
+var _debt_agents: Dictionary = {}
 var _forge_recipe_book_ui: ForgeRecipeBookUI = null
-var _sticky_hint_zone: String = ""
-var _sticky_hint_text: String = ""
-var _last_debt_check_day: int = 0
-var _tutorial_locked_zones: Dictionary = {}
-var _tutorial_noon_timer: SceneTreeTimer = null
-var _tutorial_noon_remaining: int = 60
-var _tutorial_advance_btn: Button = null
-var _arrow_node: Node2D = null
-var _arrow_tween: Tween = null
-
-# ══════════════════════════════════════════════════════════════════════════════
-# LIFECYCLE
-# ══════════════════════════════════════════════════════════════════════════════
+var _visitor_clg: Node2D = null
 
 func _init_layout() -> void:
 	var vp := get_viewport_rect().size
@@ -126,6 +99,8 @@ func _ready() -> void:
 	_build_room()
 	_build_player()
 	_build_zones()
+	_ensure_debt_controller()
+	_ensure_tutorial_controller()
 	add_child(preload("res://scenes/ui/HUD.tscn").instantiate())
 	_connect_signals()
 	_ensure_game_over_ui()
@@ -134,14 +109,18 @@ func _ready() -> void:
 		var stats := GameManager.pending_day_summary_stats.duplicate()
 		GameManager.pending_day_summary_stats = {}
 		if GameManager.current_day == 0 and not GameManager.has_tutorial_seen("explore_phase_seen"):
-			_show_tutorial(GuideBook.get_explore_steps(), "explore_phase_seen")
-			_tutorial_overlay.completed.connect(func() -> void: _open_day_summary(stats), CONNECT_ONE_SHOT)
+			_tutorial_ctrl.show_tutorial_then(
+				GuideBook.get_explore_steps(),
+				"explore_phase_seen",
+				func() -> void: _open_day_summary(stats)
+			)
 		else:
 			_open_day_summary(stats)
 	_sync_debt_overlays()
 	if not _show_day_start_card_if_needed():
-		_sync_tutorial_script()
-	_sync_day1_scripted_tutorial()
+		_tutorial_ctrl.sync_script()
+	_tutorial_ctrl.sync_day1_scripted()
+	_build_hub_visitors()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -178,10 +157,6 @@ func _is_debug_reset_key(key: InputEventKey) -> bool:
 		and key.keycode == KEY_R
 	)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# BUILD — room
-# ══════════════════════════════════════════════════════════════════════════════
 
 func _build_room() -> void:
 	# Nền tường
@@ -312,10 +287,6 @@ func _zone_label(text: String, pos: Vector2, col: Color) -> void:
 	add_child(lbl)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# BUILD — player
-# ══════════════════════════════════════════════════════════════════════════════
-
 func _build_player() -> void:
 	var scr: GDScript = load("res://scripts/shop/player_shop.gd")
 	_player          = scr.new() as CharacterBody2D
@@ -323,10 +294,6 @@ func _build_player() -> void:
 	_player.position = Vector2(TILE * cols * 0.5, TILE * rows * 0.5)
 	add_child(_player)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# BUILD — interactive zones (Area2D)
-# ══════════════════════════════════════════════════════════════════════════════
 
 func _build_zones() -> void:
 	_make_zone(ZONE_FORGE, forge_center, forge_size)
@@ -354,53 +321,38 @@ func _make_zone(id: String, center: Vector2, sz: Vector2) -> void:
 	area.body_exited.connect(_on_zone_exited.bind(id))
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SIGNALS
-# ══════════════════════════════════════════════════════════════════════════════
-
 func _connect_signals() -> void:
 	GameManager.phase_changed.connect(_on_phase_changed)
 	GameManager.day_changed.connect(_on_day_changed)
 	EventBus.shop_closed.connect(_on_shop_closed_for_summary)
 	EventBus.guide_book_opened.connect(_open_guide_book)
 	EventBus.forge_book_opened.connect(_open_forge_recipe_book)
-	EventBus.weapon_forged.connect(_on_tutorial_weapon_forged)
 
 
 func _on_phase_changed(_phase: GameManager.GamePhase) -> void:
 	_sync_debt_agent_scene()
 	_sync_debt_payment()
-	_sync_day1_scripted_tutorial()
+	_tutorial_ctrl.sync_day1_scripted()
 
 
 func _on_day_changed(_day: int) -> void:
-	if _day != 0:
-		_clear_sticky_hint()
+	_tutorial_ctrl.handle_day_changed(_day)
 	_sync_debt_agent_scene()
-	_sync_day1_scripted_tutorial()
+	_tutorial_ctrl.sync_day1_scripted()
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ZONE CALLBACKS
-# ══════════════════════════════════════════════════════════════════════════════
 
 func _on_zone_entered(body: Node2D, zone_id: String) -> void:
 	if body != _player:
 		return
 	_near_zone        = zone_id
-	if _sticky_hint_zone != "" and zone_id != _sticky_hint_zone:
-		return
-	_request_hint("[E]   " + _hint_text(zone_id))
+	_tutorial_ctrl.on_zone_entered(zone_id, _hint_text(zone_id))
 
 
 func _on_zone_exited(body: Node2D, zone_id: String) -> void:
 	if body != _player or _near_zone != zone_id:
 		return
 	_near_zone        = ""
-	if _sticky_hint_zone != "":
-		_restore_sticky_hint()
-		return
-	_clear_hint()
+	_tutorial_ctrl.on_zone_exited()
 
 
 func _hint_text(zone_id: String) -> String:
@@ -414,40 +366,136 @@ func _hint_text(zone_id: String) -> String:
 		ZONE_DEBT_AGENT_C2: "Nói chuyện với Tay Sai Rừng",
 		ZONE_DEBT_AGENT_C3: "Nói chuyện với Thương Nhân Sa Mạc",
 		ZONE_DEBT_AGENT_C4: "Nói chuyện với Bà Trùm Hắc Nguyệt",
+		ZONE_VISITOR_CLG: "Trò chuyện với Cô Lộng Gió",
 	}
 	return String(hints.get(zone_id, ""))
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ZONE ACTIONS
-# ══════════════════════════════════════════════════════════════════════════════
-
 func _activate_zone(zone_id: String) -> void:
-	if _tutorial_overlay != null and _tutorial_overlay.visible:
+	if not _tutorial_ctrl.can_activate_zone(zone_id):
 		return
-	if _is_tutorial_zone_locked(zone_id):
-		_request_hint("Chưa tới lúc.")
-		return
-	if not _tutorial_allows_zone(zone_id):
-		return
-	if zone_id == _sticky_hint_zone:
-		_clear_sticky_hint()
 	match zone_id:
 		ZONE_FORGE: _go_forge()
 		ZONE_BED:   _go_sleep()
 		ZONE_EXIT:  _go_explore()
 		ZONE_SHOP:  _go_shop()
 		ZONE_FORGE_BOOK: EventBus.forge_book_opened.emit()
-		ZONE_DEBT_AGENT: _talk_to_debt_agent()
-		ZONE_DEBT_AGENT_C2: _talk_to_c2_agent()
-		ZONE_DEBT_AGENT_C3: _talk_to_c3_agent()
-		ZONE_DEBT_AGENT_C4: _talk_to_c4_agent()
+		ZONE_DEBT_AGENT: _debt_ctrl.talk_to_debt_agent()
+		ZONE_DEBT_AGENT_C2: _debt_ctrl.talk_to_c2_agent()
+		ZONE_DEBT_AGENT_C3: _debt_ctrl.talk_to_c3_agent()
+		ZONE_DEBT_AGENT_C4: _debt_ctrl.talk_to_c4_agent()
+		ZONE_VISITOR_CLG: _talk_to_hub_visitor_clg()
+
+
+func _build_hub_visitors() -> void:
+	if GameManager.current_day < 3:
+		return
+	var met: bool = GameManager.has_tutorial_seen("co_long_gio_met")
+	var hub_met: bool = GameManager.has_tutorial_seen("co_long_gio_hub_met")
+	if met and hub_met:
+		return
+	if _visitor_clg != null:
+		return
+	var cx: float = cols * TILE * 0.5
+	var cy: float = rows * TILE * 0.5
+
+	var npc := Node2D.new()
+	npc.name = "CoLongGioHub"
+	npc.position = Vector2(cx, cy - TILE * 1.5)
+	npc.z_index = 30
+	add_child(npc)
+	_visitor_clg = npc
+
+	var visual := ColorRect.new()
+	visual.size = Vector2(38, 54)
+	visual.position = Vector2(-19, -27)
+	visual.color = Color(0.62, 0.82, 0.92)
+	npc.add_child(visual)
+
+	var sash := ColorRect.new()
+	sash.size = Vector2(30, 8)
+	sash.position = Vector2(-15, -4)
+	sash.color = Color(0.94, 0.82, 0.42)
+	npc.add_child(sash)
+
+	var name_lbl := Label.new()
+	name_lbl.text = "Cô Lộng Gió"
+	name_lbl.position = Vector2(-78, -64)
+	name_lbl.size = Vector2(156, 28)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 18)
+	name_lbl.add_theme_color_override("font_color", Color(0.80, 0.94, 1.0))
+	npc.add_child(name_lbl)
+
+	var body_col := CollisionShape2D.new()
+	var body_shape := RectangleShape2D.new()
+	body_shape.size = Vector2(38, 54)
+	body_col.shape = body_shape
+
+	var static_body := StaticBody2D.new()
+	static_body.collision_layer = 2
+	static_body.collision_mask = 0
+	static_body.add_child(body_col)
+	npc.add_child(static_body)
+
+	var talk_area := Area2D.new()
+	talk_area.collision_layer = 0
+	talk_area.collision_mask = 1
+	talk_area.monitoring = true
+	npc.add_child(talk_area)
+
+	var talk_col := CollisionShape2D.new()
+	var talk_shape := CircleShape2D.new()
+	talk_shape.radius = float(TILE) * 1.5
+	talk_col.shape = talk_shape
+	talk_area.add_child(talk_col)
+
+	talk_area.body_entered.connect(func(body: Node2D) -> void:
+		if body != _player:
+			return
+		_near_zone = ZONE_VISITOR_CLG
+		_tutorial_ctrl.on_zone_entered(ZONE_VISITOR_CLG, _hint_text(ZONE_VISITOR_CLG))
+	)
+	talk_area.body_exited.connect(func(body: Node2D) -> void:
+		if body != _player or _near_zone != ZONE_VISITOR_CLG:
+			return
+		_near_zone = ""
+		_tutorial_ctrl.on_zone_exited()
+	)
+
+
+func _talk_to_hub_visitor_clg() -> void:
+	if _visitor_clg == null:
+		return
+	var met: bool = GameManager.has_tutorial_seen("co_long_gio_met")
+	if not met:
+		_tutorial_ctrl.show_tutorial_then(
+			GuideBook.get_co_long_gio_first_dialogue(),
+			"co_long_gio_hub_met",
+			func() -> void:
+				GameManager.mark_tutorial_seen("co_long_gio_met")
+				_visitor_clg.queue_free()
+				_visitor_clg = null
+				_near_zone = ""
+		)
+	else:
+		_tutorial_ctrl.show_tutorial_then(
+			GuideBook.get_co_long_gio_second_dialogue(),
+			"co_long_gio_hub_met",
+			func() -> void:
+				_visitor_clg.queue_free()
+				_visitor_clg = null
+				_near_zone = ""
+		)
 
 
 func _go_forge() -> void:
-	if _should_show_tutorial_before_forge():
-		_show_tutorial(GuideBook.get_day0_forge_steps(), "day0_forge_phase_seen")
-		_tutorial_overlay.completed.connect(_go_forge, CONNECT_ONE_SHOT)
+	if _tutorial_ctrl.should_show_before_forge():
+		_tutorial_ctrl.show_tutorial_then(
+			GuideBook.get_day0_forge_steps(),
+			"day0_forge_phase_seen",
+			_go_forge
+		)
 		return
 	if GameManager.current_phase == GameManager.GamePhase.MORNING:
 		_advance_phase_from(GameManager.GamePhase.MORNING)
@@ -455,18 +503,21 @@ func _go_forge() -> void:
 
 
 func _go_shop() -> void:
-	if _is_day1_tutorial_active() and tutorial_step < 3:
-		_request_hint("Chiều mới mở cửa bán hàng.")
+	if _tutorial_ctrl.is_day1_active() and _tutorial_ctrl.tutorial_step < 3:
+		_tutorial_ctrl.request_hint("Chiều mới mở cửa bán hàng.")
 		return
-	if _should_show_c1_debt_agent():
-		_show_c1_debt_notice()
+	if _debt_ctrl.should_show_c1_debt_agent():
+		_debt_ctrl.show_c1_debt_notice()
 		return
-	if _should_show_tutorial_before_shop():
-		_show_tutorial(GuideBook.get_day0_shop_phase_steps(), "day0_shop_phase_seen")
-		_tutorial_overlay.completed.connect(_go_shop, CONNECT_ONE_SHOT)
+	if _tutorial_ctrl.should_show_before_shop():
+		_tutorial_ctrl.show_tutorial_then(
+			GuideBook.get_day0_shop_phase_steps(),
+			"day0_shop_phase_seen",
+			_go_shop
+		)
 		return
 	if GameManager.current_day <= 1 and InventorySystem.get_weapons().is_empty():
-		_request_hint("Hãy bày vũ khí lên kệ trước khi mở cửa tiệm!")
+		_tutorial_ctrl.request_hint("Hãy bày vũ khí lên kệ trước khi mở cửa tiệm!")
 		return
 	# Đảm bảo mở shop luôn bước vào buổi chiều, kể cả khi bỏ qua rèn.
 	if GameManager.current_phase == GameManager.GamePhase.MORNING:
@@ -477,73 +528,16 @@ func _go_shop() -> void:
 	SceneManager.go_to(PATH_SHOP)
 
 
-func _talk_to_debt_agent() -> void:
-	if not _should_show_c1_debt_agent():
-		return
-	var c1 := DebtSystem.get_checkpoint(DEBT_C1_ID)
-	if c1 == null:
-		return
-	if GameManager.has_tutorial_seen("ntn_day1_dialogue_seen"):
-		_open_debt_notice(c1)
-		return
-	_ensure_tutorial_overlay()
-	_tutorial_overlay.show_steps(GuideBook.get_ntn_day1_dialogue())
-	GameManager.mark_tutorial_seen("ntn_day1_dialogue_seen")
-	_tutorial_overlay.completed.connect(func() -> void: _open_debt_notice(c1), CONNECT_ONE_SHOT)
-
-
-func _talk_to_c2_agent() -> void:
-	if _is_demo_runtime():
-		return
-	var c2 := DebtSystem.get_checkpoint(DEBT_C2_ID)
-	if c2 == null or c2.is_paid or GameManager.current_day < c2.trigger_day:
-		return
-	if GameManager.has_tutorial_seen("tay_sai_rung_dialogue_seen"):
-		_open_debt_notice(c2)
-		return
-	_ensure_tutorial_overlay()
-	_tutorial_overlay.show_steps(GuideBook.get_tay_sai_rung_dialogue())
-	GameManager.mark_tutorial_seen("tay_sai_rung_dialogue_seen")
-	_tutorial_overlay.completed.connect(func() -> void: _open_debt_notice(c2), CONNECT_ONE_SHOT)
-
-
-func _talk_to_c3_agent() -> void:
-	if _is_demo_runtime():
-		return
-	var c3 := DebtSystem.get_checkpoint(DEBT_C3_ID)
-	if c3 == null or c3.is_paid or GameManager.current_day < c3.trigger_day:
-		return
-	if GameManager.has_tutorial_seen("thuong_nhan_dialogue_seen"):
-		_open_debt_notice(c3)
-		return
-	_ensure_tutorial_overlay()
-	_tutorial_overlay.show_steps(GuideBook.get_thuong_nhan_dialogue())
-	GameManager.mark_tutorial_seen("thuong_nhan_dialogue_seen")
-	_tutorial_overlay.completed.connect(func() -> void: _open_debt_notice(c3), CONNECT_ONE_SHOT)
-
-
-func _talk_to_c4_agent() -> void:
-	if _is_demo_runtime():
-		return
-	var c4 := DebtSystem.get_checkpoint(DEBT_C4_ID)
-	if c4 == null or c4.is_paid or GameManager.current_day < c4.trigger_day:
-		return
-	if GameManager.has_tutorial_seen("ba_trum_c4_dialogue_seen"):
-		_open_debt_notice(c4)
-		return
-	_ensure_tutorial_overlay()
-	_tutorial_overlay.show_steps(GuideBook.get_ba_trum_c4_dialogue())
-	GameManager.mark_tutorial_seen("ba_trum_c4_dialogue_seen")
-	_tutorial_overlay.completed.connect(func() -> void: _open_debt_notice(c4), CONNECT_ONE_SHOT)
-
-
 func _go_explore() -> void:
 	if GameManager.travel_stamina <= 0:
-		_request_hint("Hết thể lực — hãy nghỉ ngơi trước!")
+		_tutorial_ctrl.request_hint("Hết thể lực — hãy nghỉ ngơi trước!")
 		return
-	if _should_show_tutorial_before_explore():
-		_show_tutorial(GuideBook.get_explore_steps(), "explore_phase_seen")
-		_tutorial_overlay.completed.connect(_go_explore, CONNECT_ONE_SHOT)
+	if _tutorial_ctrl.should_show_before_explore():
+		_tutorial_ctrl.show_tutorial_then(
+			GuideBook.get_explore_steps(),
+			"explore_phase_seen",
+			_go_explore
+		)
 		return
 	_open_region_select()
 
@@ -551,20 +545,21 @@ func _go_explore() -> void:
 func _go_sleep() -> void:
 	if GameManager.current_phase != GameManager.GamePhase.NIGHT:
 		if GameManager.current_day < 2:
-			_request_hint("Chưa đến giờ nghỉ — hãy hoàn thành công việc trong ngày!")
+			_tutorial_ctrl.request_hint("Chưa đến giờ nghỉ — hãy hoàn thành công việc trong ngày!")
 			return
 		_force_advance_to_night()
 	if GameManager.current_day == 0 and not GameManager.has_tutorial_seen("explore_phase_seen"):
-		_show_tutorial(GuideBook.get_explore_steps(), "explore_phase_seen")
-		_tutorial_overlay.completed.connect(_go_sleep, CONNECT_ONE_SHOT)
+		_tutorial_ctrl.show_tutorial_then(
+			GuideBook.get_explore_steps(),
+			"explore_phase_seen",
+			_go_sleep
+		)
 		return
 	_open_day_summary()
 
 
 func _force_advance_to_night() -> void:
-	# Skip thẳng tới NIGHT mà không trigger side effect của các phase trung gian.
-	GameManager.current_phase = GameManager.GamePhase.NIGHT
-	GameManager.phase_changed.emit(GameManager.GamePhase.NIGHT)
+	DayCycle.force_to_night()
 
 
 func _on_shop_closed_for_summary(stats: Dictionary) -> void:
@@ -579,10 +574,6 @@ func _advance_phase_from(expected_phase: GameManager.GamePhase) -> void:
 		return
 	DayCycle.advance_phase()
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# OVERLAYS — lazy-load
-# ══════════════════════════════════════════════════════════════════════════════
 
 func _open_region_select() -> void:
 	if _region_select == null:
@@ -619,6 +610,47 @@ func _set_combat_loadout(weapons: Array) -> void:
 			GameManager.equipped_weapons.append(weapons[i])
 		else:
 			GameManager.equipped_weapons.append({})
+
+
+func _ensure_tutorial_controller() -> void:
+	if _tutorial_ctrl != null:
+		return
+	_ensure_debt_controller()
+	var script: GDScript = load(WORKSHOP_TUTORIAL_CONTROLLER_SCRIPT)
+	_tutorial_ctrl = script.new() as WorkshopTutorialController
+	_tutorial_ctrl.hub = self
+	_tutorial_ctrl.layout = _get_tutorial_layout()
+	_tutorial_ctrl.advance_phase_requested.connect(_on_tutorial_advance_phase_requested)
+	_tutorial_ctrl.debt_agent_sync_requested.connect(_sync_debt_agent_scene)
+	_tutorial_ctrl.debt_notice_requested.connect(_debt_ctrl.open_debt_notice)
+	add_child(_tutorial_ctrl)
+
+
+func _ensure_debt_controller() -> void:
+	if _debt_ctrl != null:
+		return
+	var script: GDScript = load(WORKSHOP_DEBT_CONTROLLER_SCRIPT)
+	_debt_ctrl = script.new() as WorkshopDebtController
+	_debt_ctrl.setup(self)
+	_debt_ctrl.setup_layout(TILE, cols, shop_center)
+	_debt_ctrl.debt_agent_spawn_requested.connect(_on_debt_agent_spawn_requested)
+	_debt_ctrl.debt_agent_cleared.connect(_on_debt_agent_cleared)
+	add_child(_debt_ctrl)
+
+
+func _get_tutorial_layout() -> Dictionary:
+	return {
+		"TILE": TILE,
+		"forge_center": forge_center,
+		"bed_center": bed_center,
+		"exit_center": exit_center,
+		"shop_center": shop_center,
+		"forge_book_center": forge_book_center,
+	}
+
+
+func _on_tutorial_advance_phase_requested() -> void:
+	DayCycle.advance_phase()
 
 
 func _open_day_summary(stats: Dictionary = {}) -> void:
@@ -671,368 +703,16 @@ func _on_day_start_card_closed() -> void:
 		return
 	_day_card_overlay = null
 	_sync_debt_overlays()
-	_sync_tutorial_script()
-
-
-func _sync_tutorial_script() -> void:
-	if GameManager.current_day == 0:
-		_sync_day0_tutorial()
-	elif GameManager.current_day == 2:
-		_sync_day2_tutorial()
-	elif GameManager.current_day == 3:
-		_sync_day3_tutorial()
-	elif GameManager.current_day == 4:
-		_sync_day4_tutorial()
-
-
-func _sync_day1_scripted_tutorial() -> void:
-	if not _is_day1_tutorial_active():
-		_set_tutorial_step(4)
-		return
-	if GameManager.current_phase == GameManager.GamePhase.AFTERNOON:
-		_set_tutorial_step(3)
-	elif GameManager.has_tutorial_seen("debt_notice_shown"):
-		_set_tutorial_step(2)
-	elif GameManager.has_tutorial_seen("day1_forge_done"):
-		_set_tutorial_step(1)
-	else:
-		_set_tutorial_step(0)
-
-
-func _is_day1_tutorial_active() -> bool:
-	return (
-		GameManager.current_day == 1
-		and GameManager.has_tutorial_seen("opening_seen")
-	)
-
-
-func _set_tutorial_step(step: int) -> void:
-	if not _is_day1_tutorial_active() and step < 4:
-		step = 4
-	if tutorial_step == step and step != 1:
-		return
-	tutorial_step = step
-	EventBus.tutorial_step_changed.emit(tutorial_step)
-	_hide_tutorial_advance_button()
-
-	match tutorial_step:
-		0:
-			_set_tutorial_locks([ZONE_BED, ZONE_EXIT, ZONE_SHOP, ZONE_FORGE_BOOK])
-			_request_hint("Đến lò rèn và rèn vũ khí đầu tiên của ngươi.")
-			_show_tutorial_arrow(forge_center, "Lò Rèn")
-		1:
-			_set_tutorial_locks([ZONE_BED, ZONE_EXIT, ZONE_SHOP, ZONE_FORGE_BOOK])
-			_request_hint("Người Thu Nợ đang chờ ở cửa tiệm.")
-			_show_tutorial_arrow(shop_center + Vector2(-TILE * 1.5, 0.0), "Người Thu Nợ")
-			_sync_debt_agent_scene()
-			_show_day1_debt_notice()
-		2:
-			_set_tutorial_locks([ZONE_EXIT, ZONE_SHOP])
-			_request_hint("Buổi trưa: Rèn thêm hoặc chờ đến chiều.")
-			_hide_tutorial_arrow()
-			_show_tutorial_advance_button()
-			_start_tutorial_noon_timer()
-		3:
-			_set_tutorial_locks([ZONE_EXIT, ZONE_BED])
-			_request_hint("Đặt vũ khí lên kệ trước khi mở cửa!")
-			_show_tutorial_arrow(shop_center, "Mở Tiệm")
-		_:
-			_set_tutorial_locks([])
-			_clear_hint()
-			_hide_tutorial_arrow()
-
-
-func _set_tutorial_locks(zone_ids: Array) -> void:
-	_tutorial_locked_zones.clear()
-	for zone_id: String in zone_ids:
-		_tutorial_locked_zones[zone_id] = true
-	_apply_interactable_locks()
-
-
-func _apply_interactable_locks() -> void:
-	for node in get_tree().get_nodes_in_group("interactable"):
-		if not node.has_method("set_locked"):
-			continue
-		var zone_id := String(node.get_meta("zone_id", ""))
-		node.set_locked(_tutorial_locked_zones.has(zone_id))
-
-
-func _is_tutorial_zone_locked(zone_id: String) -> bool:
-	return _tutorial_locked_zones.has(zone_id)
-
-
-func _on_tutorial_weapon_forged(_weapon_data) -> void:
-	if _is_day1_tutorial_active() and tutorial_step == 0:
-		_set_tutorial_step(1)
-
-
-func _show_day1_debt_notice() -> void:
-	if GameManager.has_tutorial_seen("debt_notice_shown"):
-		return
-	var c1 := DebtSystem.get_checkpoint(DEBT_C1_ID)
-	if c1 == null:
-		return
-	_open_debt_notice(c1)
-
-
-func _on_day1_debt_notice_closed() -> void:
-	GameManager.mark_tutorial("debt_notice_shown")
-	_set_tutorial_step(2)
-
-
-func _show_tutorial_advance_button() -> void:
-	if _tutorial_advance_btn == null:
-		_tutorial_advance_btn = Button.new()
-		_tutorial_advance_btn.position = Vector2(get_viewport_rect().size.x - 220, 92)
-		_tutorial_advance_btn.size = Vector2(220, 48)
-		_tutorial_advance_btn.add_theme_font_size_override("font_size", 20)
-		_tutorial_advance_btn.pressed.connect(_advance_day1_to_afternoon)
-		add_child(_tutorial_advance_btn)
-	_update_noon_btn_text()
-	_tutorial_advance_btn.visible = true
-
-
-func _update_noon_btn_text() -> void:
-	if _tutorial_advance_btn == null:
-		return
-	_tutorial_advance_btn.text = "Sang chiều (%ds)" % _tutorial_noon_remaining
-
-
-func _hide_tutorial_advance_button() -> void:
-	if _tutorial_advance_btn != null:
-		_tutorial_advance_btn.visible = false
-
-
-func _zone_center(zone_id: String) -> Vector2:
-	match zone_id:
-		ZONE_FORGE:      return forge_center
-		ZONE_BED:        return bed_center
-		ZONE_EXIT:       return exit_center
-		ZONE_SHOP:       return shop_center
-		ZONE_FORGE_BOOK: return forge_book_center
-	return Vector2.ZERO
-
-
-func _show_tutorial_arrow(world_pos: Vector2, hint_text: String) -> void:
-	if _arrow_node == null:
-		_arrow_node = Node2D.new()
-		_arrow_node.z_index = 50
-		var lbl := Label.new()
-		lbl.name = "ArrowLabel"
-		lbl.add_theme_font_size_override("font_size", 24)
-		lbl.add_theme_color_override("font_color", Color(1.0, 0.90, 0.15))
-		lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.85))
-		lbl.add_theme_constant_override("shadow_offset_x", 2)
-		lbl.add_theme_constant_override("shadow_offset_y", 2)
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lbl.custom_minimum_size = Vector2(240, 0)
-		lbl.position = Vector2(-120.0, 0.0)
-		_arrow_node.add_child(lbl)
-		add_child(_arrow_node)
-
-	(_arrow_node.get_node("ArrowLabel") as Label).text = "▼  " + hint_text
-	_arrow_node.position = world_pos + Vector2(0.0, -float(TILE) - 20.0)
-	_arrow_node.visible = true
-
-	if _arrow_tween != null:
-		_arrow_tween.kill()
-	_arrow_tween = create_tween()
-	_arrow_tween.set_loops()
-	_arrow_tween.tween_property(
-		_arrow_node, "position:y",
-		world_pos.y - float(TILE) - 6.0, 0.45
-	).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
-	_arrow_tween.tween_property(
-		_arrow_node, "position:y",
-		world_pos.y - float(TILE) - 26.0, 0.45
-	).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
-
-
-func _hide_tutorial_arrow() -> void:
-	if _arrow_tween != null:
-		_arrow_tween.kill()
-		_arrow_tween = null
-	if _arrow_node != null:
-		_arrow_node.visible = false
-
-
-func _start_tutorial_noon_timer() -> void:
-	if _tutorial_noon_timer != null:
-		return
-	_tutorial_noon_remaining = 60
-	_tick_tutorial_noon_timer()
-
-
-func _tick_tutorial_noon_timer() -> void:
-	_tutorial_noon_timer = get_tree().create_timer(1.0)
-	await _tutorial_noon_timer.timeout
-	_tutorial_noon_timer = null
-	if not (_is_day1_tutorial_active() and tutorial_step == 2):
-		return
-	_tutorial_noon_remaining -= 1
-	_update_noon_btn_text()
-	if _tutorial_noon_remaining <= 0:
-		_advance_day1_to_afternoon()
-	else:
-		_tick_tutorial_noon_timer()
-
-
-func _advance_day1_to_afternoon() -> void:
-	if GameManager.current_phase != GameManager.GamePhase.NOON:
-		return
-	_tutorial_noon_remaining = 0
-	_tutorial_noon_timer = null
-	DayCycle.advance_phase()
-
-
-func _sync_day0_tutorial() -> void:
-	if GameManager.current_phase == GameManager.GamePhase.MORNING \
-			and not GameManager.has_tutorial_seen("ba_trum_intro_seen"):
-		_show_tutorial(GuideBook.get_ba_trum_intro_steps(), "ba_trum_intro_seen")
-		_tutorial_overlay.completed.connect(_sync_day0_tutorial, CONNECT_ONE_SHOT)
-		return
-	if GameManager.current_phase == GameManager.GamePhase.MORNING \
-			and GameManager.has_tutorial_seen("ba_trum_intro_seen") \
-			and not GameManager.has_tutorial_seen("day0_intro_seen"):
-		_show_tutorial(GuideBook.get_day0_intro_steps(), "day0_intro_seen")
-	elif _is_day0_forge_required():
-		_set_sticky_hint(ZONE_FORGE, "→ Quay lại Lò Rèn để hoàn thành vũ khí")
-	elif GameManager.current_phase == GameManager.GamePhase.NOON \
-			and GameManager.has_tutorial_seen("day0_forge_done") \
-			and not GameManager.has_tutorial_seen("first_forge_complete_seen"):
-		_show_tutorial(GuideBook.get_first_forge_complete_steps(), "first_forge_complete_seen")
-		_tutorial_overlay.completed.connect(_sync_day0_tutorial, CONNECT_ONE_SHOT)
-	elif GameManager.current_phase == GameManager.GamePhase.NOON \
-			and GameManager.has_tutorial_seen("day0_forge_done") \
-			and not GameManager.has_tutorial_seen("day0_shop_hint_seen"):
-		_show_tutorial(GuideBook.get_day0_shop_hint_steps(), "day0_shop_hint_seen")
-
-func _sync_day2_tutorial() -> void:
-	if GameManager.current_phase != GameManager.GamePhase.MORNING:
-		return
-	if GameManager.has_tutorial_seen("day2_freeplay_seen"):
-		return
-	_show_tutorial(GuideBook.get_day2_intro_steps(), "day2_freeplay_seen")
-
-
-func _sync_day3_tutorial() -> void:
-	if GameManager.current_phase != GameManager.GamePhase.MORNING:
-		return
-	if GameManager.has_tutorial_seen("day3_co_long_gio_seen"):
-		return
-	var has_met := GameManager.has_tutorial_seen("co_long_gio_met")
-	_show_tutorial(GuideBook.get_day3_intro_steps(has_met), "day3_co_long_gio_seen")
-
-
-func _sync_day4_tutorial() -> void:
-	if GameManager.current_phase != GameManager.GamePhase.MORNING:
-		return
-	if GameManager.has_tutorial_seen("day4_deadline_seen"):
-		return
-	_show_tutorial(GuideBook.get_day4_intro_steps(), "day4_deadline_seen")
-
-
-func _show_tutorial(steps: Array[Dictionary], flag: String) -> void:
-	_ensure_tutorial_overlay()
-	_tutorial_overlay.show_steps(steps)
-	if flag == "day0_intro_seen":
-		_tutorial_overlay.completed.connect(
-			func() -> void: _set_sticky_hint(ZONE_FORGE, "→ Lò Rèn đang chờ bạn"),
-			CONNECT_ONE_SHOT
-		)
-	elif flag == "day0_shop_hint_seen":
-		_tutorial_overlay.completed.connect(
-			func() -> void: _set_sticky_hint(ZONE_SHOP, "→ Mang vũ khí vào Tiệm để bán"),
-			CONNECT_ONE_SHOT
-		)
-	GameManager.mark_tutorial_seen(flag)
-
-
-func _ensure_tutorial_overlay() -> void:
-	if _tutorial_overlay != null:
-		return
-	var script: GDScript = load(TUTORIAL_OVERLAY_SCRIPT)
-	_tutorial_overlay = script.new() as TutorialOverlayUI
-	add_child(_tutorial_overlay)
+	_tutorial_ctrl.sync_script()
 
 
 func _open_guide_book() -> void:
-	_ensure_tutorial_overlay()
-	_tutorial_overlay.show_sections(GuideBook.get_sections())
-
-
-func _request_hint(text: String) -> void:
-	EventBus.hint_requested.emit(text)
-
-
-func _clear_hint() -> void:
-	EventBus.hint_requested.emit("")
-
-
-func _set_sticky_hint(zone_id: String, text: String) -> void:
-	_sticky_hint_zone = zone_id
-	_sticky_hint_text = text
-	_request_hint(text)
-	var pos := _zone_center(zone_id)
-	if pos != Vector2.ZERO:
-		_show_tutorial_arrow(pos, text.trim_prefix("→ ").strip_edges())
-
-
-func _clear_sticky_hint() -> void:
-	_sticky_hint_zone = ""
-	_sticky_hint_text = ""
-	_clear_hint()
-	_hide_tutorial_arrow()
-
-
-func _restore_sticky_hint() -> void:
-	_request_hint(_sticky_hint_text)
-
-
-func _should_show_tutorial_before_forge() -> bool:
-	return GameManager.current_day == 0 \
-		and not GameManager.has_tutorial_seen("day0_forge_phase_seen")
-
-
-func _should_show_tutorial_before_shop() -> bool:
-	return GameManager.current_day == 0 \
-		and not GameManager.has_tutorial_seen("day0_shop_phase_seen")
-
-
-func _is_day0_forge_required() -> bool:
-	return GameManager.current_day == 0 \
-		and GameManager.current_phase == GameManager.GamePhase.NOON \
-		and not GameManager.has_tutorial_seen("day0_forge_done")
-
-
-func _should_show_tutorial_before_explore() -> bool:
-	return GameManager.current_day >= 1 \
-		and not GameManager.has_tutorial_seen("explore_phase_seen")
-
-
-func _tutorial_allows_zone(zone_id: String) -> bool:
-	if GameManager.current_day != 0:
-		return true
-	var allowed := true
-	if GameManager.current_phase == GameManager.GamePhase.MORNING:
-		allowed = zone_id in [ZONE_FORGE, ZONE_FORGE_BOOK]
-		if not allowed:
-			_request_hint("Tutorial ngày 0: hãy vào Lò Rèn trước.")
-	elif GameManager.current_phase == GameManager.GamePhase.NOON:
-		if not GameManager.has_tutorial_seen("day0_forge_done"):
-			allowed = zone_id in [ZONE_FORGE, ZONE_FORGE_BOOK]
-			if not allowed:
-				_request_hint("Tutorial: quay lại Lò Rèn và lưu vũ khí vào túi trước.")
-		elif not GameManager.has_tutorial_seen("day0_customer_done"):
-			allowed = zone_id in [ZONE_SHOP, ZONE_FORGE, ZONE_FORGE_BOOK]
-			if not allowed:
-				_request_hint("Tutorial: hãy mở tiệm và bán vũ khí trước khi làm việc khác.")
-	return allowed
+	_tutorial_ctrl.open_guide_book()
 
 
 func _open_inventory() -> void:
 	if GameManager.current_phase == GameManager.GamePhase.NIGHT:
-		_request_hint("Không mở kho lúc nghỉ đêm.")
+		_tutorial_ctrl.request_hint("Không mở kho lúc nghỉ đêm.")
 		return
 	if _inventory_ui == null:
 		var scene := load(PATH_INVENTORY) as PackedScene
@@ -1042,218 +722,58 @@ func _open_inventory() -> void:
 
 
 func _sync_debt_overlays() -> void:
-	_sync_debt_agent_scene()
-	if GameManager.current_phase == GameManager.GamePhase.MORNING:
-		if _should_show_c1_debt_agent():
-			return
-		if _last_debt_check_day != GameManager.current_day:
-			_last_debt_check_day = GameManager.current_day
-			DebtSystem.check_day(GameManager.current_day)
-	_sync_debt_payment()
+	_debt_ctrl.sync_overlays()
 
 
 func _sync_debt_payment() -> void:
-	if GameManager.current_phase != GameManager.GamePhase.NIGHT:
-		return
-	var debt_id := _get_payable_debt_id()
-	if debt_id == "":
-		return
-	_open_debt_payment(debt_id)
-
-
-func _ensure_debt_notice() -> void:
-	if _debt_notice != null:
-		return
-	var scene := load(PATH_DEBT_NOTICE) as PackedScene
-	_debt_notice = scene.instantiate() as DebtNoticeUI
-	add_child(_debt_notice)
-
-
-func _show_c1_debt_notice() -> void:
-	_talk_to_debt_agent()
-
-
-func _open_debt_notice(checkpoint: DebtCheckpoint) -> void:
-	checkpoint.has_notified = true
-	_ensure_debt_notice()
-	_debt_notice.show_checkpoint(checkpoint)
-	if _is_day1_tutorial_active() and tutorial_step == 1:
-		if not _debt_notice.notice_closed.is_connected(_on_day1_debt_notice_closed):
-			_debt_notice.notice_closed.connect(_on_day1_debt_notice_closed, CONNECT_ONE_SHOT)
-	if GameManager.has_tutorial_seen("day1_loop_seen"):
-		return
-	if not _debt_notice.notice_closed.is_connected(_on_ntn_notice_closed):
-		_debt_notice.notice_closed.connect(_on_ntn_notice_closed, CONNECT_ONE_SHOT)
-
-
-func _on_ntn_notice_closed() -> void:
-	if not GameManager.has_tutorial_seen("day1_loop_seen"):
-		_show_tutorial(GuideBook.get_day1_post_ntn_steps(), "day1_loop_seen")
-
-
-func _open_debt_payment(checkpoint_id: String = DEBT_C1_ID) -> void:
-	if _debt_payment == null:
-		var scene := load(PATH_DEBT_PAYMENT) as PackedScene
-		_debt_payment = scene.instantiate() as DebtPaymentUI
-		add_child(_debt_payment)
-	_debt_payment.show_payment(checkpoint_id)
+	_debt_ctrl.sync_payment()
 
 
 func _sync_debt_agent_scene() -> void:
-	_ensure_debt_agent_marker()
+	_debt_ctrl.sync_agent_scene()
 
 
-func _should_show_c1_debt_agent() -> bool:
-	var checkpoint := DebtSystem.get_checkpoint(DEBT_C1_ID)
-	if checkpoint == null:
-		return false
-	return (
-		not checkpoint.is_paid
-		and GameManager.current_day == checkpoint.trigger_day
-		and GameManager.current_phase in [GameManager.GamePhase.MORNING, GameManager.GamePhase.NOON]
-	)
-
-
-func _ensure_debt_agent_marker() -> void:
-	var show_c1 := _should_show_c1_debt_agent()
-	if show_c1 and _debt_agent_marker == null:
-		var agent: DebtAgentNode = DebtAgentNode.new()
-		agent.name = "NguoiThuNoC1"
-		agent.position = shop_center + Vector2(-TILE * 1.5, 0)
-		agent.z_index = 30
-		agent.player_entered.connect(_on_debt_agent_entered.bind(ZONE_DEBT_AGENT))
-		agent.player_exited.connect(_on_debt_agent_exited.bind(ZONE_DEBT_AGENT))
-		add_child(agent)
-		_debt_agent_marker = agent
-	if not show_c1:
-		_clear_debt_agent_marker()
-	if _is_demo_runtime():
-		_clear_debt_agent_c2()
-		_clear_debt_agent_c3()
-		_clear_debt_agent_c4()
+func _on_debt_agent_spawn_requested(
+		zone_id: String,
+		node_name: String,
+		display_name: String,
+		pos: Vector2
+) -> void:
+	if _debt_agents.has(zone_id):
 		return
-
-	var c2 := DebtSystem.get_checkpoint(DEBT_C2_ID)
-	if c2 != null:
-		if c2.is_paid:
-			_clear_debt_agent_c2()
-		elif GameManager.current_day >= c2.trigger_day and _debt_agent_c2 == null:
-			var c2_agent: DebtAgentNode = DebtAgentNode.new()
-			c2_agent.name = "TaySaiRungC2"
-			c2_agent.display_name = "Tay Sai Rừng"
-			c2_agent.position = Vector2(cols * TILE / 2.0, 8.0 * TILE)
-			c2_agent.z_index = 30
-			c2_agent.player_entered.connect(_on_debt_agent_c2_entered)
-			c2_agent.player_exited.connect(_on_debt_agent_c2_exited)
-			add_child(c2_agent)
-			_debt_agent_c2 = c2_agent
-
-	var c3 := DebtSystem.get_checkpoint(DEBT_C3_ID)
-	if c3 != null:
-		if c3.is_paid:
-			_clear_debt_agent_c3()
-		elif GameManager.current_day >= c3.trigger_day and _debt_agent_c3 == null:
-			var c3_agent: DebtAgentNode = DebtAgentNode.new()
-			c3_agent.name = "ThuongNhanC3"
-			c3_agent.display_name = "Thương Nhân Sa Mạc"
-			c3_agent.position = Vector2(cols * TILE / 2.0, 12.0 * TILE)
-			c3_agent.z_index = 30
-			c3_agent.player_entered.connect(_on_debt_agent_entered.bind(ZONE_DEBT_AGENT_C3))
-			c3_agent.player_exited.connect(_on_debt_agent_exited.bind(ZONE_DEBT_AGENT_C3))
-			add_child(c3_agent)
-			_debt_agent_c3 = c3_agent
-
-	var c4 := DebtSystem.get_checkpoint(DEBT_C4_ID)
-	if c4 != null:
-		if c4.is_paid:
-			_clear_debt_agent_c4()
-		elif GameManager.current_day >= c4.trigger_day and _debt_agent_c4 == null:
-			var c4_agent: DebtAgentNode = DebtAgentNode.new()
-			c4_agent.name = "BaTrumHacNguyetC4"
-			c4_agent.display_name = "Bà Trùm Hắc Nguyệt"
-			c4_agent.position = Vector2(cols * TILE / 2.0, 16.0 * TILE)
-			c4_agent.z_index = 30
-			c4_agent.player_entered.connect(_on_debt_agent_entered.bind(ZONE_DEBT_AGENT_C4))
-			c4_agent.player_exited.connect(_on_debt_agent_exited.bind(ZONE_DEBT_AGENT_C4))
-			add_child(c4_agent)
-			_debt_agent_c4 = c4_agent
+	var agent: DebtAgentNode = DebtAgentNode.new()
+	agent.name = node_name
+	agent.display_name = display_name
+	agent.position = pos
+	agent.z_index = 30
+	agent.player_entered.connect(_on_debt_agent_entered.bind(zone_id))
+	agent.player_exited.connect(_on_debt_agent_exited.bind(zone_id))
+	add_child(agent)
+	_debt_agents[zone_id] = agent
 
 
-func _clear_debt_agent_marker() -> void:
-	if _debt_agent_marker == null:
+func _on_debt_agent_cleared(zone_id: String) -> void:
+	if not _debt_agents.has(zone_id):
 		return
-	if _near_zone == ZONE_DEBT_AGENT:
+	if _near_zone == zone_id:
 		_near_zone = ""
-		_clear_hint()
-	_debt_agent_marker.queue_free()
-	_debt_agent_marker = null
-
-
-func _clear_debt_agent_c2() -> void:
-	if _debt_agent_c2 == null:
-		return
-	if _near_zone == ZONE_DEBT_AGENT_C2:
-		_near_zone = ""
-		_clear_hint()
-	_debt_agent_c2.queue_free()
-	_debt_agent_c2 = null
-
-
-func _clear_debt_agent_c3() -> void:
-	if _debt_agent_c3 == null:
-		return
-	if _near_zone == ZONE_DEBT_AGENT_C3:
-		_near_zone = ""
-		_clear_hint()
-	_debt_agent_c3.queue_free()
-	_debt_agent_c3 = null
-
-
-func _clear_debt_agent_c4() -> void:
-	if _debt_agent_c4 == null:
-		return
-	if _near_zone == ZONE_DEBT_AGENT_C4:
-		_near_zone = ""
-		_clear_hint()
-	_debt_agent_c4.queue_free()
-	_debt_agent_c4 = null
+		_tutorial_ctrl.clear_hint()
+	var agent := _debt_agents[zone_id] as Node2D
+	if agent != null:
+		agent.queue_free()
+	_debt_agents.erase(zone_id)
 
 
 func _on_debt_agent_entered(zone_id: String) -> void:
 	_near_zone = zone_id
-	_request_hint("[E]   " + _hint_text(zone_id))
+	_tutorial_ctrl.request_hint("[E]   " + _hint_text(zone_id))
 
 
 func _on_debt_agent_exited(zone_id: String) -> void:
 	if _near_zone != zone_id:
 		return
 	_near_zone = ""
-	_clear_hint()
-
-
-func _on_debt_agent_c2_entered() -> void:
-	_on_debt_agent_entered(ZONE_DEBT_AGENT_C2)
-
-
-func _on_debt_agent_c2_exited() -> void:
-	_on_debt_agent_exited(ZONE_DEBT_AGENT_C2)
-
-
-func _get_payable_debt_id() -> String:
-	var day := GameManager.current_day
-	for checkpoint in DebtSystem.checkpoints:
-		if checkpoint.is_paid:
-			continue
-		if checkpoint.trigger_day > day:
-			continue
-		if _is_demo_runtime() and checkpoint.id != DEBT_C1_ID:
-			continue
-		return checkpoint.id
-	return ""
-
-
-func _is_demo_runtime() -> bool:
-	return GameManager.current_day <= GameManager.DEMO_LAST_DAY
+	_tutorial_ctrl.clear_hint()
 
 
 func _open_pause_menu() -> void:
@@ -1268,5 +788,5 @@ func _debug_reset_game() -> void:
 	# Reset nhanh để test debt flow trong editor/dev build.
 	SaveSystem.delete_save()
 	GameManager.init_new_game()
-	_last_debt_check_day = 0
+	_debt_ctrl.reset_day_check()
 	_sync_debt_overlays()

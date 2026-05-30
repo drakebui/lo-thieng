@@ -37,6 +37,19 @@ const DEFAULT_RECIPES: Array[Dictionary] = [
 		"forge_tips": "Phase Tôi: BẮT BUỘC chọn Linh Lực (Hỏa/Sét/Băng) để unlock skill bẩm sinh.",
 	},
 ]
+const SPECIAL_ARTIFACT_RECIPE_ID := "artifact_forging_01"
+const SPECIAL_ARTIFACT_RECIPE: Dictionary = {
+	"id": SPECIAL_ARTIFACT_RECIPE_ID,
+	"name": "Rèn Di Vật: Mảnh Gió Đầu Tiên",
+	"blank": "Phôi đặc biệt",
+	"materials": [
+		{"item": "Gỗ Cổ Thụ", "qty": 1},
+		{"item": "Pha Lê Rừng", "qty": 1},
+	],
+	"linh_luc": "Gió / Linh",
+	"description": "Công thức đặc biệt mở sau khi lần theo dấu vết Di Vật đầu tiên.",
+	"forge_tips": "Dùng nguyên liệu Rừng Trăm Hồn và giữ chất lượng nền ổn định.",
+}
 
 var _root: Control
 var _tabs: TabContainer
@@ -59,6 +72,8 @@ func _ready() -> void:
 
 func show_book() -> void:
 	_recipes = DEFAULT_RECIPES.duplicate(true)
+	if GameManager.has_unlocked_recipe(SPECIAL_ARTIFACT_RECIPE_ID):
+		_recipes.append(SPECIAL_ARTIFACT_RECIPE.duplicate(true))
 	_refresh_slots()
 	if _slot_list.get_child_count() > 0:
 		_select_slot(_slot_list.get_child(0) as Button, _recipes[0])

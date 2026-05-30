@@ -29,6 +29,12 @@ func advance_phase() -> void:
 		DebtSystem.check_day(GameManager.current_day)
 
 
+func force_to_night() -> void:
+	# Bỏ qua side effect của các phase trung gian khi player ngủ sớm.
+	GameManager.current_phase = GameManager.GamePhase.NIGHT
+	GameManager.phase_changed.emit(GameManager.GamePhase.NIGHT)
+
+
 func get_phase_name() -> String:
 	match GameManager.current_phase:
 		GameManager.GamePhase.MORNING:

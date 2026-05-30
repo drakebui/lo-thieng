@@ -16,7 +16,7 @@ enum QuestStatus { LOCKED, AVAILABLE, ACTIVE, COMPLETED, FAILED }
 # Objectives — mỗi objective là 1 Dictionary
 # Format: { "type": "forge_prefix", "value": "Kiet_Tac", "count": 1, "current": 0 }
 # Types: forge_prefix, sell_weapon, kill_enemy, collect_item,
-#        pay_gold, reach_reputation, own_artifacts, talk_npc
+#        pay_gold, reach_reputation, own_artifacts, talk_npc, clear_region
 @export var objectives: Array[Dictionary] = []
 
 # Hint hiện khi player kẹt

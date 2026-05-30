@@ -3149,3 +3149,207 @@
 ### Cần Engineering Lead chú ý
 - `gdlint scripts/systems/CustomerTagSystem.gd scripts/ui/forge_recipe_book_ui.gd scripts/autoload/AudioManager.gd` pass: `Success: no problems found`.
 - `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
+
+## Session 121 — 2026-05-25
+
+### Task đã làm
+- [Tier 2] Chuẩn hóa Day/Phase API về DayCycle làm entry point chính — DONE
+
+### Files tạo mới
+- Không có
+
+### Files đã sửa
+- scripts/autoload/DayCycle.gd — thêm `force_to_night()` để chuyển thẳng sang NIGHT khi player ngủ sớm, bỏ qua side effect phase trung gian.
+- scripts/main/workshop_hub.gd — `_force_advance_to_night()` chuyển sang gọi `DayCycle.force_to_night()`.
+- scripts/autoload/GameManager.gd — thêm comment deprecation cho `advance_day()`, giữ nguyên function để tránh vỡ reference ẩn.
+- NOTES.md — thêm log session 121.
+
+### Vấn đề gặp phải
+- File context trong repo là `Claude.MD` thay vì đúng casing `CLAUDE.md`; đã đọc `Claude.MD` theo yêu cầu tương ứng.
+
+### Chưa làm được
+- Không có.
+
+### Cần Engineering Lead chú ý
+- `DayCycle.advance_phase()` không đổi logic.
+- `GameManager.advance_day()` chưa bị xóa, chỉ đánh dấu deprecated.
+- `gdlint scripts/autoload/DayCycle.gd scripts/main/workshop_hub.gd scripts/autoload/GameManager.gd` pass: `Success: no problems found`.
+- `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
+
+## Session 122 — 2026-05-25
+
+### Task đã làm
+- [Tier 3a] Tách tutorial flow khỏi `workshop_hub.gd` sang `WorkshopTutorialController` — DONE
+
+### Files tạo mới
+- scripts/main/workshop_tutorial_controller.gd — controller riêng cho tutorial overlay, locks, hints, sticky hints, arrow, noon timer và day scripted tutorial.
+- scripts/main/workshop_tutorial_controller.gd.uid — UID metadata Godot tạo cho script mới.
+
+### Files đã sửa
+- scripts/main/workshop_hub.gd — khởi tạo `_tutorial_ctrl`, chuyển các điểm gọi tutorial sang controller, nhận signal advance phase/debt sync/debt notice từ controller.
+- NOTES.md — thêm log session 122.
+
+### Vấn đề gặp phải
+- `gdlint` báo controller vượt giới hạn public methods; đã thu hẹp các helper không cần hub gọi thành private thay vì disable rule.
+
+### Chưa làm được
+- Chưa làm Tier 3b `WorkshopDebtController` theo đúng thứ tự tách từng phần.
+- Chưa chạy runtime trong Godot; validation hiện tại là `gdlint` và `static_check`.
+
+### Cần Engineering Lead chú ý
+- `workshop_hub.gd` giảm từ 1270 dòng xuống 942 dòng.
+- `WorkshopTutorialController` phát signal `advance_phase_requested` để hub vẫn là nơi gọi `DayCycle.advance_phase()`.
+- Controller phát thêm `debt_agent_sync_requested` và `debt_notice_requested` để giữ side effect cũ của day 1 debt tutorial mà chưa tách Debt controller.
+- `gdlint scripts/main/workshop_tutorial_controller.gd scripts/main/workshop_hub.gd` pass: `Success: no problems found`.
+- `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
+
+## Session 123 — 2026-05-25
+
+### Task đã làm
+- [Forge Phase 1] Thêm info panel phôi/nguyên liệu và SFX kết quả nung — DONE
+
+### Files tạo mới
+- Không có
+
+### Files đã sửa
+- scripts/forge/forge_session_ui.gd — thêm hàng info phôi + nguyên liệu + sao rarity trong `_build_phase1_ui()`, thêm SFX kết quả trong `_on_phase1_done()`.
+- NOTES.md — thêm log session 123.
+
+### Vấn đề gặp phải
+- Không có.
+
+### Chưa làm được
+- Chưa chạy runtime trong Godot; validation hiện tại là `gdlint` và `static_check`.
+
+### Cần Engineering Lead chú ý
+- SFX Phase 1: `cam`/`do_ruc` gọi `AudioManager.play_sfx_key("skill_fire")`, `chay` gọi `AudioManager.play_sfx_key("player_hurt")`, `lanh` không phát SFX.
+- Info panel đọc `GameManager.selected_blank` và `GameManager.selected_material` một lần khi build UI, không lưu ref và không update trong `_process`.
+- `gdlint scripts/forge/forge_session_ui.gd` pass: `Success: no problems found`.
+- `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
+
+## Session 124 — 2026-05-25
+
+### Task đã làm
+- [Tier-2 Cleanup] Xóa `GameManager.advance_day()` — DONE
+- [Tier 3b] Tách debt flow khỏi `workshop_hub.gd` sang `WorkshopDebtController` — DONE
+- [Region 2] Mở enemy data cho `RungTramHon` — DONE
+- [Region Unlock Chain] Thêm chain unlock vùng tổng quát — DONE
+
+### Files tạo mới
+- scripts/main/workshop_debt_controller.gd — controller riêng cho debt notice, debt payment, debt agent state và talk flow.
+- resources/enemies/hon_rung_t1.tres — enemy `Hồn Cây` cho Rừng Trăm Hồn.
+- resources/enemies/quy_rung_t1.tres — enemy `Quỷ Rừng` cho Rừng Trăm Hồn.
+- resources/enemies/thu_ma_rung_t2.tres — enemy `Thú Ma Rừng` cho Rừng Trăm Hồn.
+
+### Files đã sửa
+- scripts/main/workshop_hub.gd — thay debt logic bằng `_debt_ctrl`, hub chỉ còn tạo/xóa `DebtAgentNode` từ signal; file còn 685 dòng và đã xóa `max-file-lines` disable.
+- scripts/autoload/GameManager.gd — xóa `advance_day()`, thêm `REGION_UNLOCK_CHAIN` và `unlock_next_region_after()`.
+- scripts/regions/exploration_scene.gd — khi rời vùng đã clear thì gọi `GameManager.unlock_next_region_after(_region_id)`.
+- NOTES.md — thêm log session 124.
+
+### Vấn đề gặp phải
+- `gdlint` báo một dòng dài trong `workshop_debt_controller.gd`; đã bọc lại.
+
+### Chưa làm được
+- Chưa chạy runtime trong Godot; validation hiện tại là `gdlint`, `static_check`, và grep enemy region.
+
+### Cần Engineering Lead chú ý
+- `rg -n "advance_day\\(" scripts data resources scenes` không còn caller/ký hiệu trong code runtime.
+- `rg -n 'region = "RungTramHon"'` xác nhận 3 enemy mới có region đúng.
+- `gdlint scripts/main/workshop_hub.gd scripts/main/workshop_debt_controller.gd scripts/autoload/GameManager.gd scripts/regions/exploration_scene.gd` pass: `Success: no problems found`.
+- `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
+
+## Session 125 — 2026-05-25
+
+### Task đã làm
+- [Tier 4] Save Audit, gom construction save state về `GameManager` — DONE
+
+### Files tạo mới
+- Không có
+
+### Files đã sửa
+- scripts/autoload/GameManager.gd — thêm `build_save_state()` trả về state gameplay, gồm weapons và `debt_checkpoints`, không gồm `tutorial_flags`.
+- scripts/ui/day_summary_ui.gd — `_save_game()` gọi `SaveSystem.save_game(GameManager.build_save_state())`.
+- scripts/ui/pause_menu_ui.gd — xóa `_build_save_state()`, save trực tiếp bằng `GameManager.build_save_state()`.
+- NOTES.md — thêm log session 125.
+
+### Vấn đề gặp phải
+- `gdlint` không nằm trong `PATH`; đã chạy binary user-local `/Users/minhchau/Library/Python/3.9/bin/gdlint`.
+
+### Chưa làm được
+- Không có.
+
+### Cần Engineering Lead chú ý
+- `grep -c "build_save_state" scripts/autoload/GameManager.gd` trả `1`.
+- `grep -rn "build_save_state" scripts/ui/` trả đúng 2 caller.
+- `grep -n "def_stat\\|forged_weapons\\|equipped_weapons\\|debt_checkpoints" scripts/autoload/GameManager.gd` xác nhận save state có `forged_weapons`, `equipped_weapons`, `debt_checkpoints`; `def_stat` vẫn nằm trong starter weapon data.
+- `gdlint scripts/autoload/GameManager.gd scripts/ui/day_summary_ui.gd scripts/ui/pause_menu_ui.gd` pass: `Success: no problems found`.
+- `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
+
+## Session 126 — 2026-05-25
+
+### Task đã làm
+- [Giai đoạn 7] Quest trigger và Quest Log UI skeleton đầu tiên — DONE
+
+### Files tạo mới
+- resources/quests/first_artifact_shard.tres — quest "Tìm mảnh Di Vật đầu tiên", trigger event Cô Lộng Gió lần 2, objective clear Rừng Trăm Hồn LANDMARK, reward recipe `artifact_forging_01`.
+
+### Files đã sửa
+- resources/QuestData.gd — document thêm objective type `clear_region`.
+- scripts/autoload/EventBus.gd — thêm signals `quest_started` và `quest_updated`.
+- scripts/autoload/GameManager.gd — thêm quest state, trigger event, completion khi clear region, reward unlock recipe và HUD text.
+- scripts/autoload/SaveSystem.gd — lưu `quest_statuses`, `active_quest_id`, `unlocked_recipe_ids` ngoài `build_save_state()`.
+- scripts/regions/exploration_scene.gd — trigger quest khi nói chuyện Cô Lộng Gió lần 2 và thêm HUD quest label trong exploration.
+- scripts/ui/hud.gd — thêm HUD quest label cho workshop.
+- scripts/ui/forge_recipe_book_ui.gd — hiển thị công thức đặc biệt khi recipe reward đã unlock.
+- NOTES.md — thêm log session 126.
+
+### Vấn đề gặp phải
+- `gdlint` bắt thứ tự khai báo trong `hud.gd`; đã chuyển var `_lbl_quest` lên trước `@onready`.
+
+### Chưa làm được
+- Chưa chạy runtime trong Godot; validation hiện tại là `gdlint`, `static_check`, grep wiring và `git diff --check`.
+
+### Cần Engineering Lead chú ý
+- `GameManager.build_save_state()` vẫn chỉ có 1 definition; quest fields do `SaveSystem` thêm riêng để giữ contract save audit.
+- Quest completion dựa trên `GameManager.mark_region_cleared("RungTramHon")`, tức khi vào sub-scene `LANDMARK` của Rừng Trăm Hồn.
+- Reward hiện là unlock hiển thị công thức `Rèn Di Vật: Mảnh Gió Đầu Tiên` trong Bí Kíp Rèn, chưa gắn vào hệ crafting thật.
+- `gdlint scripts/autoload/EventBus.gd resources/QuestData.gd scripts/autoload/GameManager.gd scripts/autoload/SaveSystem.gd scripts/regions/exploration_scene.gd scripts/ui/hud.gd scripts/ui/forge_recipe_book_ui.gd` pass: `Success: no problems found`.
+- `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
+
+## Session 125 — 2026-05-25
+
+### Task đã làm
+- [5A] Gather nodes trong Exploration — DONE
+- [5B] Enemy data cho 4 vùng còn lại (NuiThanDo, BaiCat, ThanhNgoc, LangTo) — DONE
+- [6A+6B] Cô Lộng Gió ghé xưởng từ Day 3 — DONE
+
+### Files tạo mới
+- resources/enemies/linh_hoa_t1.tres — Linh Hỏa T1, NuiThanDo
+- resources/enemies/tho_than_do_t2.tres — Thổ Thần Đỏ T2, NuiThanDo
+- resources/enemies/ran_cat_t1.tres — Rắn Cát T1, BaiCat
+- resources/enemies/bo_cap_vang_t2.tres — Bò Cạp Vàng T2, BaiCat
+- resources/enemies/linh_sai_ngoc_t2.tres — Lính Sai Ngọc T2, ThanhNgoc
+- resources/enemies/phu_thuy_thanh_t2.tres — Phù Thủy Thành T2, ThanhNgoc
+- resources/enemies/thu_canh_lang_t2.tres — Thú Canh Làng T2, LangTo
+- resources/enemies/hon_to_t3.tres — Hồn Tổ T3, LangTo (boss)
+
+### Files đã sửa
+- scripts/regions/exploration_scene.gd — thêm `gather_count` vào SUB_SCENE_CONFIG (2/3/3/1/3/0), thêm state `_near_gather_idx`/`_gather_nodes`, thêm `_build_gather_nodes()` + `_spawn_gather_node()` + `_collect_gather()`, hook KEY_E
+- scripts/main/workshop_hub.gd — thêm `ZONE_VISITOR_CLG`, `_visitor_clg`, `_build_hub_visitors()`, `_talk_to_hub_visitor_clg()`; hint text + activate zone wired
+- NOTES.md — thêm log session 125
+
+### Vấn đề gặp phải
+- Không có
+
+### Chưa làm được
+- Chưa chạy runtime trong Godot; validation hiện tại là `gdlint` và `static_check`.
+
+### Cần Engineering Lead chú ý
+- Gather node dùng seed `gather_seed_<scene_visited_key>` lưu trong `exploration_state` để vị trí ổn định qua reload; collected state lưu trong `gather_collected_<scene_visited_key>` là Array[bool].
+- LOOP_A/B/C có `gather_count: 3`, STORY_1: 2, STORY_2: 1, LANDMARK: 0.
+- Cô Lộng Gió chỉ spawn trong hub nếu `current_day >= 3` và chưa có cả 2 flags `co_long_gio_met` + `co_long_gio_hub_met`. Dùng `first_dialogue` nếu chưa gặp ở vùng, `second_dialogue` nếu đã gặp.
+- Tất cả 6 vùng giờ có enemy (DongMay: 3, RungTramHon: 3, NuiThanDo: 2, BaiCat: 2, ThanhNgoc: 2, LangTo: 2).
+- `gdlint scripts/regions/exploration_scene.gd scripts/main/workshop_hub.gd` pass: `Success: no problems found`.
+- `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
+> ⚠️ SESSION KẾT THÚC KHÔNG CÓ BÁO CÁO — 2026-05-25 17:50

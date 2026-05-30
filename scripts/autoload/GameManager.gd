@@ -15,6 +15,8 @@ const MAX_HAND_SLOTS := 12
 const COMBAT_WEAPON_SLOTS := 3
 const DEMO_LAST_DAY := 4
 const GAME_OVER_ZERO_GOLD_THRESHOLD: int = 3
+const FIRST_ARTIFACT_QUEST_ID := "first_artifact_shard"
+const FIRST_ARTIFACT_QUEST_PATH := "res://resources/quests/first_artifact_shard.tres"
 const REGION_ENTRY_COST: Dictionary = {
 	"DongMay":     2,
 	"RungTramHon": 2,
@@ -22,6 +24,13 @@ const REGION_ENTRY_COST: Dictionary = {
 	"BaiCat":      3,
 	"ThanhNgoc":   4,
 	"LangTo":      2,
+}
+const REGION_UNLOCK_CHAIN: Dictionary = {
+	"DongMay": "RungTramHon",
+	"RungTramHon": "NuiThanDo",
+	"NuiThanDo": "BaiCat",
+	"BaiCat": "ThanhNgoc",
+	"ThanhNgoc": "LangTo",
 }
 # Thứ tự điều hướng trong một vùng (player đi từ trái sang phải qua các scene)
 const SUB_SCENE_ORDER: Array[String] = [
@@ -120,6 +129,9 @@ var save_restored:    bool = false
 var day_start_gold:   int = 2000
 var pending_day_summary_stats: Dictionary = {}
 var tutorial_flags: Dictionary = DEFAULT_TUTORIAL_FLAGS.duplicate()
+var quest_statuses: Dictionary = {}
+var active_quest_id: String = ""
+var unlocked_recipe_ids: Array[String] = []
 
 
 func _ready() -> void:
@@ -165,6 +177,9 @@ func init_new_game() -> void:
 	day_start_gold = gold
 	pending_day_summary_stats = {}
 	tutorial_flags = _get_default_tutorial_flags()
+	quest_statuses = {}
+	active_quest_id = ""
+	unlocked_recipe_ids = []
 	clear_hand()
 	clear_exploration_state()
 	current_region_id = ""
@@ -273,6 +288,17 @@ func restore_from_save(data: Dictionary) -> void:
 		tutorial_flags = _merge_tutorial_flags(data["tutorial_flags"] as Dictionary)
 	else:
 		tutorial_flags = _get_default_tutorial_flags()
+	if data.has("quest_statuses") and data["quest_statuses"] is Dictionary:
+		quest_statuses = (data["quest_statuses"] as Dictionary).duplicate()
+	else:
+		quest_statuses = {}
+	active_quest_id = String(data.get("active_quest_id", ""))
+	if data.has("unlocked_recipe_ids"):
+		var loaded_recipes: Array[String] = []
+		loaded_recipes.assign(data["unlocked_recipe_ids"])
+		unlocked_recipe_ids = loaded_recipes
+	else:
+		unlocked_recipe_ids = []
 	ensure_new_game_starter()
 	DebtSystem.refresh_debt_summary()
 
@@ -282,6 +308,34 @@ func restore_from_save(data: Dictionary) -> void:
 	travel_stamina_changed.emit(travel_stamina, max_travel_stamina)
 	phase_changed.emit(current_phase)
 	day_changed.emit(current_day)
+
+
+func build_save_state() -> Dictionary:
+	var debt_states: Array[Dictionary] = []
+	for checkpoint in DebtSystem.checkpoints:
+		debt_states.append({
+			"id": checkpoint.id,
+			"is_paid": checkpoint.is_paid,
+			"is_late": checkpoint.is_late,
+			"has_notified": checkpoint.has_notified,
+		})
+	return {
+		"day": current_day,
+		"current_phase": current_phase,
+		"gold": gold,
+		"reputation": reputation,
+		"smithing_mastery": smithing_mastery,
+		"current_tier": current_tier,
+		"artifact_count": artifact_count,
+		"travel_stamina": travel_stamina,
+		"max_travel_stamina": max_travel_stamina,
+		"unlocked_regions": unlocked_regions,
+		"forged_weapons": forged_weapons,
+		"equipped_weapons": equipped_weapons,
+		"day_start_gold": day_start_gold,
+		"consecutive_zero_gold_days": consecutive_zero_gold_days,
+		"debt_checkpoints": debt_states,
+	}
 
 
 func _restore_current_phase(saved_phase: int) -> void:
@@ -349,14 +403,6 @@ func _check_zero_gold_streak() -> void:
 		EventBus.game_over_triggered.emit("zero_gold_3_days")
 
 
-func advance_day() -> void:
-	current_day += 1
-	day_start_gold = gold
-	_restore_travel_stamina()
-	change_phase(GamePhase.MORNING)
-	day_changed.emit(current_day)
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # TRAVEL STAMINA
 # ══════════════════════════════════════════════════════════════════════════════
@@ -419,6 +465,12 @@ func unlock_region(region_id: String) -> void:
 		region_unlocked.emit(region_id)
 
 
+func unlock_next_region_after(region_id: String) -> void:
+	var next: String = REGION_UNLOCK_CHAIN.get(region_id, "")
+	if not next.is_empty():
+		unlock_region(next)
+
+
 func is_region_unlocked(region_id: String) -> bool:
 	return region_id in unlocked_regions
 
@@ -433,11 +485,113 @@ func mark_region_cleared(region_id: String) -> void:
 	region_clear_flags[region_id] = true
 	if not unlocked_warrior_npcs.has(region_id):
 		unlocked_warrior_npcs.append(region_id)
+	_update_clear_region_quest(region_id)
 	EventBus.region_cleared.emit(region_id)
 
 
 func clear_exploration_state() -> void:
 	exploration_state.clear()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# QUESTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+func trigger_quest_event(event_id: String) -> void:
+	var quest := _load_first_artifact_quest()
+	if quest == null:
+		return
+	if quest.trigger_type != "event" or quest.trigger_value != event_id:
+		return
+	_start_quest(quest)
+
+
+func get_quest_hud_text() -> String:
+	if not active_quest_id.is_empty():
+		var active_quest := _load_first_artifact_quest()
+		if active_quest == null:
+			return ""
+		return "[Quest: %s] %s" % [
+			active_quest.quest_name,
+			active_quest.journal_summary,
+		]
+	if _is_quest_completed(FIRST_ARTIFACT_QUEST_ID):
+		var completed_quest := _load_first_artifact_quest()
+		if completed_quest == null:
+			return ""
+		return "[Quest: %s] Hoàn thành — mở Bí Kíp Rèn đặc biệt" % (
+			completed_quest.quest_name
+		)
+	return ""
+
+
+func has_unlocked_recipe(recipe_id: String) -> bool:
+	return recipe_id in unlocked_recipe_ids
+
+
+func _start_quest(quest: QuestData) -> void:
+	if _is_quest_completed(quest.quest_id):
+		return
+	if quest_statuses.get(quest.quest_id, QuestData.QuestStatus.LOCKED) \
+			== QuestData.QuestStatus.ACTIVE:
+		return
+	quest_statuses[quest.quest_id] = QuestData.QuestStatus.ACTIVE
+	active_quest_id = quest.quest_id
+	EventBus.quest_started.emit(quest.quest_id)
+	EventBus.quest_updated.emit()
+	if _are_quest_objectives_complete(quest):
+		_complete_quest(quest)
+
+
+func _update_clear_region_quest(_region_id: String) -> void:
+	if active_quest_id != FIRST_ARTIFACT_QUEST_ID:
+		return
+	var quest := _load_first_artifact_quest()
+	if quest == null:
+		return
+	if _are_quest_objectives_complete(quest):
+		_complete_quest(quest)
+
+
+func _complete_quest(quest: QuestData) -> void:
+	if _is_quest_completed(quest.quest_id):
+		return
+	quest_statuses[quest.quest_id] = QuestData.QuestStatus.COMPLETED
+	if active_quest_id == quest.quest_id:
+		active_quest_id = ""
+	_grant_quest_reward(quest)
+	EventBus.quest_completed.emit(quest.quest_id)
+	EventBus.quest_updated.emit()
+
+
+func _grant_quest_reward(quest: QuestData) -> void:
+	if quest.reward_recipe_id.is_empty():
+		return
+	if quest.reward_recipe_id not in unlocked_recipe_ids:
+		unlocked_recipe_ids.append(quest.reward_recipe_id)
+
+
+func _are_quest_objectives_complete(quest: QuestData) -> bool:
+	for objective: Dictionary in quest.objectives:
+		match String(objective.get("type", "")):
+			"clear_region":
+				if not is_region_cleared(String(objective.get("value", ""))):
+					return false
+			_:
+				return false
+	return true
+
+
+func _is_quest_completed(quest_id: String) -> bool:
+	return quest_statuses.get(quest_id, QuestData.QuestStatus.LOCKED) \
+		== QuestData.QuestStatus.COMPLETED
+
+
+func _load_first_artifact_quest() -> QuestData:
+	var quest := load(FIRST_ARTIFACT_QUEST_PATH) as QuestData
+	if quest == null:
+		push_warning("Không load được quest: " + FIRST_ARTIFACT_QUEST_PATH)
+	return quest
 
 
 # ══════════════════════════════════════════════════════════════════════════════

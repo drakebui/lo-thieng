@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "tho_than_do_t2"
+enemy_name = "Thổ Thần Đỏ"
+archetype = "defensive"
+tier = 2
+hp = 85
+atk = 11
+def_stat = 8
+magic = 2
+speed = 3
+drop_gold = 90
+color = Color(0.55, 0.20, 0.10, 1)
+region = "NuiThanDo"
+crit_rate = 0.10
+loot_items = Array[Dictionary]([{"item_id": "quang_than", "chance": 0.60}, {"item_id": "da_hoa_son", "chance": 0.30}, {"item_id": "thep_hoa_son", "chance": 0.15}])

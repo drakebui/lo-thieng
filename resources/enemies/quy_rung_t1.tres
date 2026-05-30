@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "quy_rung_t1"
+enemy_name = "Quỷ Rừng"
+archetype = "aggressive"
+tier = 1
+hp = 60
+atk = 10
+def_stat = 3
+magic = 2
+speed = 6
+drop_gold = 70
+color = Color(0.10, 0.20, 0.08, 1)
+region = "RungTramHon"
+crit_rate = 0.20
+loot_items = Array[Dictionary]([{"item_id": "nhua_linh", "chance": 0.45}, {"item_id": "pha_le_rung", "chance": 0.25}])

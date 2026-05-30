@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "ran_cat_t1"
+enemy_name = "Rắn Cát"
+archetype = "aggressive"
+tier = 1
+hp = 45
+atk = 11
+def_stat = 1
+magic = 0
+speed = 9
+drop_gold = 55
+color = Color(0.75, 0.68, 0.30, 1)
+region = "BaiCat"
+crit_rate = 0.25
+loot_items = Array[Dictionary]([{"item_id": "cat_thieng", "chance": 0.55}, {"item_id": "xuong_ca", "chance": 0.40}])

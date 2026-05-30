@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="QuestData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/QuestData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+quest_id = "first_artifact_shard"
+quest_name = "Tìm mảnh Di Vật đầu tiên"
+quest_type = 1
+giver_npc_id = "co_long_gio"
+trigger_type = "event"
+trigger_value = "co_long_gio_second_met"
+objectives = Array[Dictionary]([{"type": "clear_region", "value": "RungTramHon", "count": 1, "current": 0}])
+hint_text = "Cô Lộng Gió nhắc tới dấu vết trong Rừng Trăm Hồn. Hãy đi tới Di Tích cuối vùng."
+reward_recipe_id = "artifact_forging_01"
+description = "Cô Lộng Gió tin rằng mảnh Di Vật đầu tiên đang thức dậy ở nơi sâu nhất của Rừng Trăm Hồn."
+journal_summary = "Khám phá LANDMARK của Rừng Trăm Hồn."

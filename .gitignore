@@ -4,3 +4,6 @@
 
 # Source art files (quá lớn cho GitHub)
 *.psd
+
+# Claude Code local settings (chứa đường dẫn máy cục bộ)
+.claude/settings.local.json

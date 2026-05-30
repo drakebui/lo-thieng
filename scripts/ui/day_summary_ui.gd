@@ -124,33 +124,7 @@ func _continue_next_day() -> void:
 
 
 func _save_game() -> void:
-	var state := {
-		"day": GameManager.current_day,
-		"current_phase": GameManager.current_phase,
-		"gold": GameManager.gold,
-		"reputation": GameManager.reputation,
-		"smithing_mastery": GameManager.smithing_mastery,
-		"current_tier": GameManager.current_tier,
-		"artifact_count": GameManager.artifact_count,
-		"travel_stamina": GameManager.travel_stamina,
-		"max_travel_stamina": GameManager.max_travel_stamina,
-		"unlocked_regions": GameManager.unlocked_regions,
-		"forged_weapons": GameManager.forged_weapons,
-		"equipped_weapons": GameManager.equipped_weapons,
-		"day_start_gold": GameManager.day_start_gold,
-		"tutorial_flags": GameManager.tutorial_flags,
-		"consecutive_zero_gold_days": GameManager.consecutive_zero_gold_days,
-	}
-	var debt_states: Array[Dictionary] = []
-	for checkpoint in DebtSystem.checkpoints:
-		debt_states.append({
-			"id": checkpoint.id,
-			"is_paid": checkpoint.is_paid,
-			"is_late": checkpoint.is_late,
-			"has_notified": checkpoint.has_notified,
-		})
-	state["debt_checkpoints"] = debt_states
-	SaveSystem.save_game(state)
+	SaveSystem.save_game(GameManager.build_save_state())
 
 
 func _refresh_summary() -> void:

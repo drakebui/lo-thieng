@@ -7,6 +7,9 @@ func save_game(game_state: Dictionary) -> void:
 	game_state["tutorial_flags"] = GameManager.tutorial_flags
 	game_state["region_clear_flags"] = GameManager.region_clear_flags
 	game_state["unlocked_warrior_npcs"] = GameManager.unlocked_warrior_npcs
+	game_state["quest_statuses"] = GameManager.quest_statuses
+	game_state["active_quest_id"] = GameManager.active_quest_id
+	game_state["unlocked_recipe_ids"] = GameManager.unlocked_recipe_ids
 	game_state["materials"] = InventorySystem.get_materials()
 	game_state["weapons"] = InventorySystem.get_weapons()
 	var file = FileAccess.open(SAVE_PATH, FileAccess.WRITE)

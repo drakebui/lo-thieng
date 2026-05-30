@@ -1,6 +1,8 @@
 extends CanvasLayer
 
 # Chỉ cập nhật UI, không có game logic.
+var _lbl_quest: Label = null
+
 @onready var _lbl_day := get_node(
 	"VBoxContainer/TopBar/HBoxContainer/DaySlot/_lbl_day"
 ) as Label
@@ -26,6 +28,7 @@ extends CanvasLayer
 
 
 func _ready() -> void:
+	_build_quest_label()
 	_btn_guide_book.pressed.connect(_on_guide_book_pressed)
 	EventBus.gold_changed.connect(_on_gold_changed)
 	EventBus.reputation_changed.connect(_on_reputation_changed)
@@ -33,7 +36,22 @@ func _ready() -> void:
 	EventBus.day_phase_changed.connect(_on_day_phase_changed)
 	EventBus.debt_updated.connect(_on_debt_updated)
 	EventBus.hint_requested.connect(_on_hint_requested)
+	EventBus.quest_started.connect(_on_quest_changed)
+	EventBus.quest_completed.connect(_on_quest_changed)
+	EventBus.quest_updated.connect(_refresh_quest)
 	_refresh_all()
+
+
+func _build_quest_label() -> void:
+	var root := get_node("VBoxContainer") as VBoxContainer
+	_lbl_quest = Label.new()
+	_lbl_quest.name = "_lbl_quest"
+	_lbl_quest.custom_minimum_size = Vector2(0, 28)
+	_lbl_quest.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_quest.add_theme_font_size_override("font_size", 18)
+	_lbl_quest.add_theme_color_override("font_color", Color(1.0, 0.84, 0.36))
+	root.add_child(_lbl_quest)
+	root.move_child(_lbl_quest, 1)
 
 
 func _refresh_all() -> void:
@@ -47,6 +65,7 @@ func _refresh_all() -> void:
 		gm.max_travel_stamina,
 	]
 	_update_debt()
+	_refresh_quest()
 
 
 func _on_gold_changed(value: int) -> void:
@@ -79,6 +98,10 @@ func _on_hint_requested(text: String) -> void:
 	_lbl_hint.text = text
 
 
+func _on_quest_changed(_quest_id: String) -> void:
+	_refresh_quest()
+
+
 func _on_guide_book_pressed() -> void:
 	EventBus.guide_book_opened.emit()
 
@@ -107,3 +130,11 @@ func _update_debt() -> void:
 	else:
 		_lbl_debt.text = ""
 		_lbl_debt.modulate = Color.WHITE
+
+
+func _refresh_quest() -> void:
+	if _lbl_quest == null:
+		return
+	var quest_text := GameManager.get_quest_hud_text()
+	_lbl_quest.text = quest_text
+	_lbl_quest.visible = not quest_text.is_empty()

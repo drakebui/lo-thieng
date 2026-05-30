@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "thu_canh_lang_t2"
+enemy_name = "Thú Canh Làng"
+archetype = "aggressive"
+tier = 2
+hp = 80
+atk = 14
+def_stat = 5
+magic = 0
+speed = 6
+drop_gold = 110
+color = Color(0.42, 0.32, 0.22, 1)
+region = "LangTo"
+crit_rate = 0.18
+loot_items = Array[Dictionary]([{"item_id": "tro_lo_to", "chance": 0.45}, {"item_id": "go_to_nghe", "chance": 0.40}])

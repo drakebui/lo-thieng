@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/EnemyData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enemy_id = "linh_sai_ngoc_t2"
+enemy_name = "Lính Sai Ngọc"
+archetype = "defensive"
+tier = 2
+hp = 90
+atk = 10
+def_stat = 9
+magic = 3
+speed = 4
+drop_gold = 95
+color = Color(0.38, 0.62, 0.72, 1)
+region = "ThanhNgoc"
+crit_rate = 0.10
+loot_items = Array[Dictionary]([{"item_id": "da_ngoc", "chance": 0.50}, {"item_id": "thep_trang", "chance": 0.30}])
