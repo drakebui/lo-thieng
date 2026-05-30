@@ -4,6 +4,7 @@ const SAVE_PATH = "user://save_data.json"
 
 func save_game(game_state: Dictionary) -> void:
 	game_state["saved_at"] = Time.get_datetime_string_from_system()
+	game_state["save_schema_version"] = 1
 	game_state["tutorial_flags"] = GameManager.tutorial_flags
 	game_state["region_clear_flags"] = GameManager.region_clear_flags
 	game_state["unlocked_warrior_npcs"] = GameManager.unlocked_warrior_npcs
@@ -12,6 +13,10 @@ func save_game(game_state: Dictionary) -> void:
 	game_state["unlocked_recipe_ids"] = GameManager.unlocked_recipe_ids
 	game_state["materials"] = InventorySystem.get_materials()
 	game_state["weapons"] = InventorySystem.get_weapons()
+	var active_commissions: Array[String] = []
+	for c in CommissionSystem.get_active():
+		active_commissions.append(c.commission_id)
+	game_state["commissions_active"] = active_commissions
 	var file = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	file.store_string(JSON.stringify(game_state))
 	file.close()
@@ -31,6 +36,10 @@ func load_game() -> Dictionary:
 	InventorySystem.set_weapons(
 		loaded_data.get("weapons", loaded_data.get("forged_weapons", []))
 	)
+	CommissionSystem.reset_state()
+	var active_ids: Array = loaded_data.get("commissions_active", [])
+	if not active_ids.is_empty():
+		CommissionSystem.restore_active_ids(active_ids)
 	return loaded_data
 
 func has_save() -> bool:

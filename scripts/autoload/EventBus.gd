@@ -36,3 +36,14 @@ signal region_cleared(region_id: String)
 signal gathering_node_collected(material: Dictionary)
 signal travel_stamina_depleted()
 signal encounter_triggered(enemy_data: Dictionary)
+signal commission_offered(commission: CommissionData)
+signal commission_accepted(commission_id: String)
+signal commission_fulfilled(
+	commission_id: String,
+	weapon: Dictionary,
+	reward: Dictionary
+)
+signal customer_arrived(customer: Dictionary)
+signal commission_npc_spawn_requested(npc_id: String)
+signal commission_giver_arrived(commission: CommissionData, customer: Dictionary)
+signal commission_npc_dismiss_requested(instance_id: int)

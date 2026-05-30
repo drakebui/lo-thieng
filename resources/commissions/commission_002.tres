@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CommissionData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/CommissionData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+commission_id = "commission_002"
+giver_npc_id = "tho_san"
+reason_text = "Một thợ săn muốn bất kỳ vũ khí hệ Băng đủ tốt để đi qua rừng ma."
+hint_region = "Nguyên liệu lạnh hiếm hơn, nên hãy ưu tiên vật liệu từ vùng có khí âm."
+req_blank = ""
+req_element = "bang"
+req_min_rarity = 2
+reward_gold = 900
+reward_reputation = 1
+reward_affinity = 3
+flavor_accept = "Không cần đẹp, chỉ cần đủ lạnh để dấu chân thú dữ chậm lại."
+flavor_fulfilled = "Hơi lạnh bám vào cán rồi. Với món này, ta có thể vào rừng sâu hơn."

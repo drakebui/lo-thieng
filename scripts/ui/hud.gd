@@ -1,7 +1,17 @@
 extends CanvasLayer
 
 # Chỉ cập nhật UI, không có game logic.
+const _COMMISSION_OFFER_SCENE := preload(
+	"res://scenes/ui/CommissionOfferUI.tscn"
+)
+const _COMMISSION_DELIVERY_SCENE := preload(
+	"res://scenes/ui/CommissionDeliveryUI.tscn"
+)
+
 var _lbl_quest: Label = null
+var _lbl_commission: Label = null
+var _commission_offer_ui: CanvasLayer = null
+var _commission_delivery_ui: CanvasLayer = null
 
 @onready var _lbl_day := get_node(
 	"VBoxContainer/TopBar/HBoxContainer/DaySlot/_lbl_day"
@@ -29,6 +39,9 @@ var _lbl_quest: Label = null
 
 func _ready() -> void:
 	_build_quest_label()
+	_build_commission_label()
+	_spawn_commission_offer_ui()
+	_spawn_commission_delivery_ui()
 	_btn_guide_book.pressed.connect(_on_guide_book_pressed)
 	EventBus.gold_changed.connect(_on_gold_changed)
 	EventBus.reputation_changed.connect(_on_reputation_changed)
@@ -39,7 +52,10 @@ func _ready() -> void:
 	EventBus.quest_started.connect(_on_quest_changed)
 	EventBus.quest_completed.connect(_on_quest_changed)
 	EventBus.quest_updated.connect(_refresh_quest)
+	EventBus.commission_accepted.connect(_on_commission_changed)
+	EventBus.commission_fulfilled.connect(_on_commission_fulfilled)
 	_refresh_all()
+	_refresh_commission_label()
 
 
 func _build_quest_label() -> void:
@@ -138,3 +154,56 @@ func _refresh_quest() -> void:
 	var quest_text := GameManager.get_quest_hud_text()
 	_lbl_quest.text = quest_text
 	_lbl_quest.visible = not quest_text.is_empty()
+
+
+func _build_commission_label() -> void:
+	var root := get_node("VBoxContainer") as VBoxContainer
+	_lbl_commission = Label.new()
+	_lbl_commission.name = "_lbl_commission"
+	_lbl_commission.custom_minimum_size = Vector2(0, 26)
+	_lbl_commission.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_commission.add_theme_font_size_override("font_size", 16)
+	_lbl_commission.add_theme_color_override("font_color",
+		Color(0.74, 0.92, 0.78))
+	_lbl_commission.visible = false
+	root.add_child(_lbl_commission)
+	# Đặt ngay dưới quest label (vị trí 2 sau TopBar và quest_label).
+	root.move_child(_lbl_commission, 2)
+
+
+func _spawn_commission_offer_ui() -> void:
+	if _commission_offer_ui != null:
+		return
+	_commission_offer_ui = _COMMISSION_OFFER_SCENE.instantiate() as CanvasLayer
+	add_child(_commission_offer_ui)
+
+
+func _spawn_commission_delivery_ui() -> void:
+	if _commission_delivery_ui != null:
+		return
+	_commission_delivery_ui = _COMMISSION_DELIVERY_SCENE.instantiate() as CanvasLayer
+	add_child(_commission_delivery_ui)
+
+
+func _on_commission_changed(_commission_id: String) -> void:
+	_refresh_commission_label()
+
+
+func _on_commission_fulfilled(_commission_id: String,
+		_weapon: Dictionary, _reward: Dictionary) -> void:
+	_refresh_commission_label()
+
+
+func _refresh_commission_label() -> void:
+	if _lbl_commission == null:
+		return
+	var active := CommissionSystem.get_active()
+	if active.is_empty():
+		_lbl_commission.text = ""
+		_lbl_commission.visible = false
+		return
+	var c: CommissionData = active[0]
+	_lbl_commission.text = "Đơn hiện tại: %s — %s" % [
+		c.giver_npc_id, c.reason_text,
+	]
+	_lbl_commission.visible = true

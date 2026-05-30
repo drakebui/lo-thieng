@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CommissionData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/CommissionData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+commission_id = "commission_001"
+giver_npc_id = "hiep_khach"
+reason_text = "Một hiệp khách cần kiếm ngắn hệ Hỏa để hộ tống đoàn hàng qua vùng núi lạnh."
+hint_region = "Đồng Mây có phôi kiếm ngắn dễ tìm, còn Hỏa thạch hợp với đơn này."
+req_blank = "kiem_ngan"
+req_element = "hoa"
+req_min_rarity = 1
+reward_gold = 650
+reward_reputation = 1
+reward_affinity = 2
+flavor_accept = "Ta sẽ giữ lời. Rèn cho ta một thanh kiếm bén và ấm như than đỏ."
+flavor_fulfilled = "Đúng thứ ta cần. Lưỡi kiếm này đủ sáng để mở đường trong sương."

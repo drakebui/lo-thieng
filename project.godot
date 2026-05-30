@@ -25,6 +25,7 @@ SaveSystem="*res://scripts/autoload/SaveSystem.gd"
 AudioManager="*res://scripts/autoload/AudioManager.gd"
 SceneManager="*res://scripts/autoload/SceneManager.gd"
 InventorySystem="*res://scripts/autoload/InventorySystem.gd"
+CommissionSystem="*res://scripts/autoload/CommissionSystem.gd"
 
 [display]
 

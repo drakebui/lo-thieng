@@ -60,6 +60,8 @@ var _customers_visited: int = 0
 
 func _ready() -> void:
 	_load_customer_templates()
+	EventBus.commission_npc_spawn_requested.connect(_on_commission_spawn_requested)
+	EventBus.commission_npc_dismiss_requested.connect(_on_commission_dismiss_requested)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -132,6 +134,25 @@ func customer_walk_out(instance_id: int) -> void:
 		_remove_customer(c, "browsed")
 
 
+# Giver commission đi qua queue shop, không gọi trực tiếp scene customer.
+func _on_commission_spawn_requested(npc_id: String) -> void:
+	if not is_open:
+		return
+	var tmpl := _find_template(npc_id)
+	if tmpl == null:
+		push_warning("Commission giver template not found: " + npc_id)
+		return
+	var customer := _instantiate(tmpl)
+	customer["is_commission_giver"] = true
+	_spawn_queue.push_front(customer)
+
+
+func _on_commission_dismiss_requested(instance_id: int) -> void:
+	var c := _find_customer(instance_id)
+	if not c.is_empty():
+		_remove_customer(c, "commission_fulfilled")
+
+
 # Trả về danh sách khách đang trong shop (read-only copy).
 func get_customers_in_shop() -> Array[Dictionary]:
 	return _in_shop.duplicate()
@@ -153,6 +174,7 @@ func _process(delta: float) -> void:
 			_in_shop.append(customer)
 			_customers_visited += 1
 			customer_arrived.emit(customer)
+			EventBus.customer_arrived.emit(customer)
 			_stagger_timer = STAGGER_INTERVAL
 
 
@@ -328,7 +350,7 @@ func _find_template(npc_id: String) -> NPCData:
 	for tmpl in customer_templates:
 		if tmpl.npc_id == npc_id:
 			return tmpl
-	return _pick_weighted_template()
+	return null
 
 
 # ══════════════════════════════════════════════════════════════════════════════

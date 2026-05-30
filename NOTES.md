@@ -3353,3 +3353,110 @@
 - `gdlint scripts/regions/exploration_scene.gd scripts/main/workshop_hub.gd` pass: `Success: no problems found`.
 - `python3 scripts/tools/static_check.py` pass: `0 FAIL, 0 WARN`.
 > ⚠️ SESSION KẾT THÚC KHÔNG CÓ BÁO CÁO — 2026-05-25 17:50
+> ⚠️ SESSION KẾT THÚC KHÔNG CÓ BÁO CÁO — 2026-05-31 03:36
+
+## Session 127 — 2026-05-31
+
+### Task đã làm
+- [Commission Phase A] Nền tảng khớp đơn — DONE
+- [Commission Milestone A] Smoke logic review + gdlint — DONE
+- [Commission Phase B] Vòng lặp tối thiểu + save/load — DONE
+- [Commission Milestone B] Flow review + validation — DONE
+
+### Files tạo mới
+- resources/CommissionData.gd — Resource class cho commission, gồm request/reward/flavor fields theo prompt.
+- scripts/systems/weapon_spec.gd — chuẩn hóa tag runtime và matching qua `WeaponSpec.satisfies()`.
+- resources/commissions/commission_001.tres — sample đơn `kiem_ngan` + `hoa` rarity 1.
+- resources/commissions/commission_002.tres — sample đơn bất kỳ phôi + `bang` rarity 2.
+- scripts/tools/commission_smoke_test.gd — dev-only smoke test cho milestone A.
+- scripts/autoload/CommissionSystem.gd — MVP autoload quản lý offers/active/fulfill và hint khi weapon/customer khớp.
+
+### Files đã sửa
+- scripts/forge/forge_session_ui.gd — dòng 913-914, thêm `rarity_tier` vào weapon Dictionary sau khi tôi luyện.
+- scripts/autoload/EventBus.gd — dòng 39-46, thêm signals commission và `customer_arrived`.
+- scripts/shop/shop_manager.gd — dòng 155-156, re-broadcast `customer_arrived` qua EventBus.
+- scripts/autoload/SaveSystem.gd — dòng 7 và 16-46, thêm schema version và persist/restore active commission IDs.
+- project.godot — dòng 28, đăng ký `CommissionSystem` sau `InventorySystem`.
+- NOTES.md — thêm log session 127.
+
+### Vấn đề gặp phải
+- `docs/COMMISSION_SYSTEM_BRIEF.md` không tồn tại trong repo; đã suy `CommissionData` fields từ prompt và các field Phase B sử dụng.
+
+### Chưa làm được
+- Không có. Phase C không thực hiện theo đúng scope task.
+
+### Cần Engineering Lead chú ý
+- Review `resources/CommissionData.gd` vì brief gốc bị thiếu, đặc biệt field `req_phase2_prefix`.
+- `CommissionSystem.fulfill()` hiện chỉ cộng gold như skeleton prompt; reputation/affinity đang nằm trong reward payload nhưng chưa apply vào state.
+- Chưa chạy runtime bằng Godot engine; validation hiện tại: `gdlint` pass, `python3 scripts/tools/static_check.py` pass `0 FAIL, 0 WARN`, `git diff --check` pass.
+
+---
+
+## Session 128 — 2026-05-31
+
+### Task đã làm
+- [Commission Review] Engineering Lead rà soát output session 127 — DONE
+- [Commission Fix 1] Sửa `WeaponSpec.satisfies()` fragile matching — DONE
+- [Commission Fix 2] Sửa save/load fire signal sai khi restore — DONE
+- [Commission Fix 3] Hoàn thiện `fulfill()` reputation + affinity signal — DONE
+- [Commission Phase B UI] Tạo CommissionOfferUI + HUD label đơn hiện tại — DONE
+- [Commission Bug Fix] Queue commission khi 2 offer fire liên tiếp — DONE
+
+### Files tạo mới
+- scripts/ui/commission_offer_ui.gd — Panel hiện đơn mới, có Accept/Skip + queue cho multi-offer.
+- scenes/ui/CommissionOfferUI.tscn — Scene wrapper (CanvasLayer + script).
+
+### Files đã sửa
+- scripts/systems/weapon_spec.gd — toàn file: chuyển từ flat-tag matching sang direct field comparison; `tags_of()` giờ prefix theo loại (`blank:`, `element:`, `prefix:`, `rarity:`) để hiển thị không bị collision.
+- scripts/autoload/CommissionSystem.gd — thêm `restore_active_ids(ids)` không fire signal; `fulfill()` apply reputation qua `GameManager.add_reputation()` và emit `EventBus.npc_affinity_changed` cho NPC giver.
+- scripts/autoload/SaveSystem.gd — `load_game()` thay `roll_daily_offers + accept` bằng `restore_active_ids` để tránh popup UI khi load.
+- scripts/ui/hud.gd — lazy spawn CommissionOfferUI; thêm `_lbl_commission` label "Đơn hiện tại:"; lắng nghe `commission_accepted` và `commission_fulfilled`.
+- NOTES.md — thêm session 128.
+
+### Vấn đề gặp phải
+- Codex Phase B không kèm UI accept đơn → milestone B "Nhận 1 đơn ở Đêm → thấy trên HUD" không thể test cho tới khi UI được build trong session này.
+- WeaponSpec phiên bản Codex flatten raw value vào 1 tag list → false positive khi 2 field khác loại trùng string (vd: blank_id "hoa" sẽ match req_element "hoa"). Đã refactor sang direct field comparison theo đúng spec brief Mục 3.
+- Save/load của Codex re-fire `commission_offered` cho mỗi đơn đã accept khi load → popup UI nhầm. Thay bằng `restore_active_ids()` chỉ thao tác trong `_active`.
+
+### Chưa làm được
+- Phase C (shop fulfillment flow) — vẫn theo scope ban đầu, chưa thực hiện.
+- Affinity reward emit signal nhưng chưa có autoload tổng quản lý affinity NPC; cần thiết kế NpcAffinitySystem khi sang Phase C hoặc khi animate UI NPC.
+
+### Cần Engineering Lead chú ý
+- `CommissionOfferUI` tự spawn trong `hud.gd._ready()` — nếu HUD chạy đồng thời nhiều scene (transition) sẽ có duplicate UI listener. Hiện chấp nhận vì user flow không trigger; cần kiểm khi đến Phase C.
+- `_lbl_commission` chỉ hiện đơn đầu tiên trong `_active`; nếu sau này cho phép nhiều đơn cùng lúc, cần list view riêng.
+- Validation: `python3 scripts/tools/static_check.py` pass `0 FAIL, 0 WARN`. Chưa chạy runtime bằng Godot engine.
+
+---
+
+## Session 129 — 2026-05-31
+
+### Task đã làm
+- [Commission Phase C1] Force-spawn NPC giver vào shop qua EventBus — DONE
+- [Commission Milestone C1] Tự kiểm flow `shop_opened → spawn_requested → customer_arrived → giver_arrived` — DONE
+- [Commission Phase C2] Delivery UI "Giao đơn" với chọn weapon từ inventory — DONE
+- [Commission Milestone C2] Tự kiểm flow fulfill + remove weapon + dismiss giver — DONE
+
+### Files tạo mới
+- scripts/ui/commission_delivery_ui.gd — Overlay giao đơn, list weapon trong inventory, validate bằng `WeaponSpec.satisfies()`, fulfill và hiện `flavor_fulfilled`.
+- scenes/ui/CommissionDeliveryUI.tscn — Scene wrapper CanvasLayer dùng script delivery UI.
+
+### Files đã sửa
+- scripts/autoload/EventBus.gd — thêm `commission_npc_spawn_requested`, `commission_giver_arrived`, `commission_npc_dismiss_requested`.
+- scripts/shop/shop_manager.gd — connect signal commission spawn/dismiss; prepend giver vào `_spawn_queue`; dismiss giver bằng `_remove_customer(c, "commission_fulfilled")`; `_find_template()` giờ trả `null` nếu không thấy đúng npc_id.
+- scripts/autoload/CommissionSystem.gd — lắng nghe `shop_opened`, request spawn cho active commission, emit `commission_giver_arrived` khi customer vào đúng giver; đổi `fulfill()` remove `_active` trước khi emit để HUD đọc state đúng.
+- scripts/ui/hud.gd — lazy-spawn `CommissionDeliveryUI` cùng `CommissionOfferUI`.
+- NOTES.md — thêm log session 129.
+
+### Vấn đề gặp phải
+- `gdlint` không có trong PATH ban đầu; đã chạy setup `python3 -m pip install gdtoolkit --quiet` và dùng binary `/Users/minhchau/Library/Python/3.9/bin/gdlint`.
+- `ShopManager._find_template()` trước đó fallback sang random template khi không thấy id; với commission giver sẽ spawn sai NPC, nên đã đổi thành exact lookup và giữ fallback scripted customer ở `_spawn_scripted_customer()`.
+
+### Chưa làm được
+- Chưa chạy runtime bằng Godot engine/visual interaction; validation hiện tại là static + logic review theo milestone.
+
+### Cần Engineering Lead chú ý
+- Vị trí giver bypass negotiation thông thường: `scripts/ui/commission_delivery_ui.gd` gọi `EventBus.commission_npc_dismiss_requested` sau fulfill; `scripts/shop/shop_manager.gd._on_commission_dismiss_requested()` nhận signal và gọi `_remove_customer(c, "commission_fulfilled")`, nên NPC rời shop không đi qua `complete_sale()` hoặc negotiation.
+- Nếu player đóng shop trước khi giver tới cửa, `ShopManager.close_shop()` clear `_spawn_queue`; signal dismiss sau đó không tìm thấy customer và no-op. MVP chấp nhận, nhưng cần quyết định UX sau này: giữ đơn active cho shop sau, hoặc re-spawn khi mở shop lại.
+- Nếu `shop_opened` fire nhiều lần trong cùng phiên, active commission có thể bị queue duplicate như milestone C1 đã chấp nhận cho MVP.
+- Validation: `gdlint` pass cho các file `.gd` đã sửa/tạo; `python3 scripts/tools/static_check.py` pass `0 FAIL, 0 WARN`; `git diff -- scripts/shop/shop_scene.gd` trống.

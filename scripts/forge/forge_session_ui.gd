@@ -911,6 +911,7 @@ func _finish_quench(_element_key: String) -> void:
 	result["material_name"]     = mat.get("name",          "")
 	var rarity_price_table := {1: 0.5, 2: 1.0, 3: 1.6}
 	var material_rarity: int = GameManager.selected_material.get("rarity", 1)
+	result["rarity_tier"] = material_rarity
 	result["price_mult"] = rarity_price_table.get(material_rarity, 1.0) \
 		* mat.get("price_mult", 1.0)
 	_show_result(result)
