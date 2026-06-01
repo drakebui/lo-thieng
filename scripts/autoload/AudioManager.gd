@@ -23,6 +23,13 @@ const SFX_PATHS: Dictionary = {
 	"hammer_good":     "res://assets/audio/sfx/forge/hammer_hit_good.wav",
 	"hammer_miss":     "res://assets/audio/sfx/forge/hammer_hit_miss.wav",
 	"hammer_perfect":  "res://assets/audio/sfx/forge/hammer_hit_perfect.mp3",
+	# --- Forge zone feedback ---
+	# Placeholder dùng file hiện có; cần thay bằng:
+	# zone_enter_cam.wav, zone_enter_peak.wav, overheat_hiss.wav, forge_fail_sizzle.wav
+	"forge_zone_cam":  "res://assets/audio/sfx/forge/hammer_hit_good.wav",
+	"forge_zone_peak": "res://assets/audio/sfx/forge/hammer_hit_perfect.mp3",
+	"forge_overheat":  "res://assets/audio/sfx/combat/player_hurt.wav",
+	"forge_fail":      "res://assets/audio/sfx/combat/player_hurt.wav",
 	# --- Shop (chưa có file, thêm sau) ---
 	# "coin_clink":    "res://assets/audio/sfx/shop/coin_clink.wav",
 	# "deal_success":  "res://assets/audio/sfx/shop/deal_success.wav",

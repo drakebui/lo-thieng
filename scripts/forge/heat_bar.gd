@@ -31,6 +31,7 @@ var peak_frac: float = 0.80   # Đỏ Rực bắt đầu
 var burn_frac: float = 0.92   # Cháy bắt đầu
 
 var _danger_flash: float = 0.0
+var _fail_flash_time: float = 0.0
 
 
 func set_thresholds(new_sweet_min: float, new_peak_frac: float, new_burn_frac: float) -> void:
@@ -40,10 +41,20 @@ func set_thresholds(new_sweet_min: float, new_peak_frac: float, new_burn_frac: f
 	queue_redraw()
 
 
-func tick_animation(_delta: float) -> void:
+func tick_animation(delta: float) -> void:
 	if is_overheated():
 		_danger_flash = sin(Time.get_ticks_msec() * 0.015) * 0.5 + 0.5
 		queue_redraw()
+	if _fail_flash_time > 0.0:
+		_fail_flash_time -= delta
+		if _fail_flash_time < 0.0:
+			_fail_flash_time = 0.0
+		queue_redraw()
+
+
+func start_fail_flash() -> void:
+	_fail_flash_time = 0.5
+	queue_redraw()
 
 
 func get_zone_name() -> String:
@@ -96,6 +107,10 @@ func _draw() -> void:
 				COLOR_DANGER_FLASH.a * _danger_flash
 			)
 		)
+
+	if _fail_flash_time > 0.0:
+		var fft: float = clampf(_fail_flash_time / 0.5, 0.0, 1.0)
+		draw_rect(bounds, Color(1.0, 0.05, 0.05, 0.6 * fft))
 
 	draw_rect(bounds, _get_border_color(), false, 1.5)
 
@@ -156,7 +171,7 @@ func _draw_fill_overlay(width: float, height: float) -> void:
 	if fill_width < width:
 		draw_rect(
 			Rect2(Vector2(fill_width, 0.0), Vector2(width - fill_width, height)),
-			Color(0.0, 0.0, 0.0, 0.54)
+			Color(0.0, 0.0, 0.0, 0.25)
 		)
 	draw_rect(Rect2(Vector2.ZERO, Vector2(fill_width, height * 0.35)), COLOR_SHEEN)
 

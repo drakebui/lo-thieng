@@ -23,6 +23,10 @@ var _lbl_eff_do_ruc: Label
 var _lbl_eff_chay: Label
 var _tip_label: Label
 var _label_pulse: float = 0.0
+var _vbox: VBoxContainer
+var _prev_zone: String = ""
+var _scene_flash_time: float = 0.0
+var _furnace_running: bool = false
 
 
 func _ready() -> void:
@@ -43,48 +47,48 @@ func _ready() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 48)
-	center.add_child(vbox)
+	_vbox = VBoxContainer.new()
+	_vbox.add_theme_constant_override("separation", 48)
+	center.add_child(_vbox)
 
 	var title := Label.new()
 	title.text = "NUNG THÉP — Phase 1"
 	title.add_theme_font_size_override("font_size", 104)
 	title.add_theme_color_override("font_color", Color(0.95, 0.82, 0.5))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(title)
+	_vbox.add_child(title)
 
-	vbox.add_child(_build_heat_bar())
+	_vbox.add_child(_build_heat_bar())
 
 	_heat_label = Label.new()
 	_heat_label.text = "Nhiệt độ: 0 / 100"
 	_heat_label.add_theme_font_size_override("font_size", 76)
 	_heat_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(_heat_label)
+	_vbox.add_child(_heat_label)
 
 	_zone_label = Label.new()
 	_zone_label.text = "Sẵn sàng..."
 	_zone_label.add_theme_font_size_override("font_size", 64)
 	_zone_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(_zone_label)
+	_vbox.add_child(_zone_label)
 
 	_tip_label = Label.new()
 	_tip_label.text = "Cam = an toàn (+20%)  •  Đỏ Rực = mạo hiểm (+40%)  •  Cháy Thép = hỏng (−50%)"
 	_tip_label.add_theme_font_size_override("font_size", 38)
 	_tip_label.add_theme_color_override("font_color", Color(0.72, 0.67, 0.52))
 	_tip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(_tip_label)
+	_vbox.add_child(_tip_label)
 
 	_instruct_label = Label.new()
 	_instruct_label.text = "Giữ [SPACE] để bơm ống bễ — Nhả để kết thúc"
 	_instruct_label.add_theme_font_size_override("font_size", 52)
 	_instruct_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(_instruct_label)
+	_vbox.add_child(_instruct_label)
 
 	_result_container = VBoxContainer.new()
 	_result_container.visible = false
 	_result_container.add_theme_constant_override("separation", 32)
-	vbox.add_child(_result_container)
+	_vbox.add_child(_result_container)
 
 	_result_container.add_child(HSeparator.new())
 
@@ -166,7 +170,12 @@ func _input(event: InputEvent) -> void:
 	if event.keycode == KEY_SPACE:
 		if event.pressed and _forge.is_active:
 			_forge.is_pumping = true
+			if not _furnace_running:
+				_furnace_running = true
+				AudioManager.play_sfx_loop("furnace_burn")
 		elif not event.pressed and _forge.is_active:
+			_furnace_running = false
+			AudioManager.stop_sfx_loop()
 			_forge.release()
 	if event.keycode == KEY_R and event.pressed and not _forge.is_active:
 		_on_retry_pressed()
@@ -181,6 +190,15 @@ func _process(delta: float) -> void:
 		_label_pulse += delta
 		_update_zone_feedback(h)
 		_animate_zone_label(h)
+		_check_zone_crossing(h)
+	if _scene_flash_time > 0.0:
+		_scene_flash_time -= delta
+		if _scene_flash_time <= 0.0:
+			_scene_flash_time = 0.0
+			modulate = Color.WHITE
+		else:
+			var t: float = _scene_flash_time / 0.45
+			modulate = Color(1.0, 1.0 - t * 0.75, 1.0 - t * 0.75, 1.0)
 
 
 func _animate_zone_label(h: float) -> void:
@@ -194,6 +212,28 @@ func _animate_zone_label(h: float) -> void:
 		_zone_label.modulate = Color(1.0, 1.0, 1.0, a)
 	else:
 		_zone_label.modulate = Color.WHITE
+
+
+func _check_zone_crossing(h: float) -> void:
+	var zone: String
+	if h >= _forge.burn_point:
+		zone = "chay"
+	elif h >= _forge.SWEET_SPOT_PEAK:
+		zone = "do_ruc"
+	elif h >= _forge.SWEET_SPOT_LOW:
+		zone = "cam"
+	else:
+		zone = "lanh"
+	if zone == _prev_zone:
+		return
+	_prev_zone = zone
+	if zone == "cam":
+		AudioManager.play_sfx_key("forge_zone_cam")
+	elif zone == "do_ruc":
+		AudioManager.play_sfx_key("forge_zone_peak")
+	elif zone == "chay":
+		AudioManager.play_sfx_key("forge_overheat")
+		_heat_bar.start_fail_flash()
 
 
 func _update_zone_feedback(h: float) -> void:
@@ -212,6 +252,12 @@ func _update_zone_feedback(h: float) -> void:
 
 
 func _on_phase1_completed(tier: String) -> void:
+	_furnace_running = false
+	AudioManager.stop_sfx_loop()
+	if tier == "chay":
+		AudioManager.play_sfx_key("forge_fail")
+		_scene_flash_time = 0.45
+		_heat_bar.start_fail_flash()
 	_result_container.visible = true
 	_instruct_label.visible = false
 
@@ -244,6 +290,11 @@ func _on_retry_pressed() -> void:
 	_zone_label.add_theme_color_override("font_color", Color.WHITE)
 	_zone_label.modulate = Color.WHITE
 	_label_pulse = 0.0
+	_prev_zone = ""
+	_scene_flash_time = 0.0
+	modulate = Color.WHITE
+	_furnace_running = false
+	AudioManager.stop_sfx_loop()
 	_forge.start_phase(0)
 	_update_heat_bar_thresholds()
 
