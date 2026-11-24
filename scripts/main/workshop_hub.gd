@@ -20,9 +20,14 @@ const PATH_SHOP  := "res://scenes/shop/ShopScene.tscn"
 const PATH_INVENTORY := "res://scenes/ui/InventoryUI.tscn"
 const PATH_PAUSE_MENU := "res://scenes/ui/PauseMenu.tscn"
 const PATH_GAME_OVER := "res://scenes/ui/GameOver.tscn"
+const WORKSHOP_BG_PATH := "res://assets/pixel/backgrounds/workshop_hub_bg_640x360.png"
+const CO_LONG_GIO_SHEET_PATH := "res://assets/pixel/sprites/npcs/co_long_gio_sheet_64.png"
+const NPC_FRAME_SIZE := 64
+const NPC_RENDER_SCALE := 2.75
 const DAY_SCENE_CARD_SCRIPT := "res://scripts/ui/day_scene_card_ui.gd"
 const WORKSHOP_TUTORIAL_CONTROLLER_SCRIPT := "res://scripts/main/workshop_tutorial_controller.gd"
 const WORKSHOP_DEBT_CONTROLLER_SCRIPT := "res://scripts/main/workshop_debt_controller.gd"
+const WORKSHOP_ATMOSPHERE_SCRIPT := "res://scripts/main/workshop_atmosphere.gd"
 const FORGE_RECIPE_BOOK_SCRIPT := "res://scripts/ui/forge_recipe_book_ui.gd"
 
 # Zone IDs
@@ -31,6 +36,7 @@ const ZONE_BED   := "bed"
 const ZONE_EXIT  := "exit"
 const ZONE_SHOP  := "shop"
 const ZONE_FORGE_BOOK := "forge_book"
+const ZONE_INVENTORY := "inventory"
 const ZONE_DEBT_AGENT := "debt_agent"
 const ZONE_DEBT_AGENT_C2 := "debt_agent_c2"
 const ZONE_DEBT_AGENT_C3 := "debt_agent_c3"
@@ -40,6 +46,10 @@ const ZONE_VISITOR_CLG := "visitor_co_long_gio"
 # Vị trí các zone — tính động theo viewport trong _init_layout()
 var cols: int
 var rows: int
+var _room_left: float
+var _room_right: float
+var _room_top: float
+var _room_bottom: float
 var forge_center: Vector2
 var forge_size:   Vector2
 var bed_center:   Vector2
@@ -52,9 +62,12 @@ var shop_center:  Vector2
 var shop_size:    Vector2
 var forge_book_center: Vector2
 var forge_book_size: Vector2
+var inventory_center: Vector2
+var inventory_size: Vector2
 
 var _player:    CharacterBody2D
 var _near_zone: String = ""
+var _overlapping_zones: Array[String] = []
 
 var _region_select: CanvasLayer   # lazy-load
 var _day_summary:   CanvasLayer   # lazy-load
@@ -65,6 +78,7 @@ var _game_over_ui: Node = null
 var _day_card_overlay: DaySceneCardUI = null
 var _tutorial_ctrl: WorkshopTutorialController = null
 var _debt_ctrl: WorkshopDebtController = null
+var _atmosphere: WorkshopAtmosphere = null
 var _debt_agents: Dictionary = {}
 var _forge_recipe_book_ui: ForgeRecipeBookUI = null
 var _visitor_clg: Node2D = null
@@ -73,21 +87,30 @@ func _init_layout() -> void:
 	var vp := get_viewport_rect().size
 	cols          = ceili(vp.x / float(TILE))        # 30 @ 1920
 	rows          = ceili(vp.y / float(TILE))        # 17 @ 1080
-	forge_center  = Vector2(TILE * 3,           TILE * 3)
-	forge_size    = Vector2(TILE * 5,           TILE * 4)
-	bed_center    = Vector2(vp.x - TILE * 3,   TILE * 3)
-	bed_size      = Vector2(TILE * 4,           TILE * 4)
-	door_center_y = vp.y * 0.5
-	door_half_h   = float(TILE * 2)
-	exit_center   = Vector2(TILE * 1.5,         door_center_y)
-	exit_size     = Vector2(float(TILE),         door_half_h * 2.0)
-	shop_center   = Vector2(vp.x - TILE * 1.5,  door_center_y)
-	shop_size     = Vector2(float(TILE),         door_half_h * 2.0)
-	forge_book_center = forge_center + Vector2(TILE * 3.1, TILE * 0.2)
-	forge_book_size = Vector2(TILE * 1.4, TILE * 1.0)
+	# Giới hạn sàn đi lại chuẩn góc nhìn 3/4 của workshop_hub_bg_640x360.png
+	_room_left    = vp.x * 0.11
+	_room_right   = vp.x * 0.895
+	_room_top     = vp.y * 0.42
+	_room_bottom  = vp.y * 0.875
+	# 6 vùng tương tác bám sát vùng sàn đi tới từng đồ vật
+	forge_center      = Vector2(vp.x * 0.345, vp.y * 0.565)
+	forge_size        = Vector2(vp.x * 0.21,  vp.y * 0.17)
+	forge_book_center = Vector2(vp.x * 0.58,  vp.y * 0.465)
+	forge_book_size   = Vector2(vp.x * 0.12,  vp.y * 0.10)
+	bed_center        = Vector2(vp.x * 0.72,  vp.y * 0.505)
+	bed_size          = Vector2(vp.x * 0.14,  vp.y * 0.11)
+	inventory_center  = Vector2(vp.x * 0.775, vp.y * 0.62)
+	inventory_size    = Vector2(vp.x * 0.12,  vp.y * 0.10)
+	door_center_y     = vp.y * 0.73
+	door_half_h       = vp.y * 0.085
+	exit_center       = Vector2(vp.x * 0.165, vp.y * 0.73)
+	exit_size         = Vector2(vp.x * 0.10,  vp.y * 0.17)
+	shop_center       = Vector2(vp.x * 0.855, vp.y * 0.745)
+	shop_size         = Vector2(vp.x * 0.10,  vp.y * 0.16)
 
 
 func _ready() -> void:
+	y_sort_enabled = true
 	if not GameManager.save_restored:
 		if SaveSystem.has_save():
 			var data := SaveSystem.load_game()
@@ -99,6 +122,7 @@ func _ready() -> void:
 	_build_room()
 	_build_player()
 	_build_zones()
+	_build_atmosphere()
 	_ensure_debt_controller()
 	_ensure_tutorial_controller()
 	add_child(preload("res://scenes/ui/HUD.tscn").instantiate())
@@ -121,6 +145,23 @@ func _ready() -> void:
 		_tutorial_ctrl.sync_script()
 	_tutorial_ctrl.sync_day1_scripted()
 	_build_hub_visitors()
+	AudioManager.play_sfx_loop("furnace_burn", 0.14)
+
+
+func _exit_tree() -> void:
+	AudioManager.stop_sfx_loop()
+
+
+func _process(_delta: float) -> void:
+	if _player == null:
+		return
+	var blocked := _has_blocking_overlay()
+	_player.set("can_move", not blocked)
+	# Điều chỉnh âm thanh lửa lò âm ỉ theo khoảng cách tới lò rèn
+	var dist := _player.position.distance_to(forge_center)
+	var prox := clampf(1.0 - dist / 950.0, 0.0, 1.0)
+	var target_vol := 0.06 if blocked else lerpf(0.08, 0.34, prox)
+	AudioManager.set_sfx_loop_volume(target_vol)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -159,36 +200,42 @@ func _is_debug_reset_key(key: InputEventKey) -> bool:
 
 
 func _build_room() -> void:
-	# Nền tường
-	var bg := ColorRect.new()
-	bg.position = Vector2.ZERO
-	bg.size     = Vector2(TILE * cols, TILE * rows)
-	bg.color    = C_WALL
-	add_child(bg)
+	var vp := get_viewport_rect().size
+	var bg_tex := load(WORKSHOP_BG_PATH) as Texture2D
+	if bg_tex != null:
+		var bg_rect := TextureRect.new()
+		bg_rect.texture = bg_tex
+		bg_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		bg_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		bg_rect.stretch_mode = TextureRect.STRETCH_SCALE
+		bg_rect.position = Vector2.ZERO
+		bg_rect.size = vp
+		bg_rect.z_index = -10
+		add_child(bg_rect)
+	else:
+		# Fallback an toàn nếu thiếu ảnh nền 32-bit
+		var bg := ColorRect.new()
+		bg.position = Vector2.ZERO
+		bg.size     = Vector2(TILE * cols, TILE * rows)
+		bg.color    = C_WALL
+		bg.z_index  = -10
+		add_child(bg)
 
-	# Sàn gỗ
-	var floor_bg := ColorRect.new()
-	floor_bg.position = Vector2(TILE, TILE)
-	floor_bg.size     = Vector2(TILE * (cols - 2), TILE * (rows - 2))
-	floor_bg.color    = C_FLOOR
-	add_child(floor_bg)
-
-	# Vân sàn xen kẽ
-	for r: int in range(rows - 2):
-		if r % 2 == 0:
-			continue
-		var plank := ColorRect.new()
-		plank.position = Vector2(TILE, TILE + r * TILE)
-		plank.size     = Vector2(TILE * (cols - 2), TILE)
-		plank.color    = C_FLOOR_ALT
-		add_child(plank)
+		var floor_bg := ColorRect.new()
+		floor_bg.position = Vector2(_room_left, _room_top)
+		floor_bg.size     = Vector2(_room_right - _room_left, _room_bottom - _room_top)
+		floor_bg.color    = C_FLOOR
+		floor_bg.z_index  = -9
+		add_child(floor_bg)
 
 	_build_wall_collision()
-	_build_forge_visual()
-	_build_forge_book_visual()
-	_build_bed_visual()
-	_build_door_visual(true)    # trái — WorldExit
-	_build_door_visual(false)   # phải — ShopDoor
+
+
+func _build_atmosphere() -> void:
+	var script: GDScript = load(WORKSHOP_ATMOSPHERE_SCRIPT)
+	_atmosphere = script.new() as WorkshopAtmosphere
+	add_child(_atmosphere)
+	_atmosphere.setup(get_viewport_rect().size, GameManager.current_phase)
 
 
 func _build_wall_collision() -> void:
@@ -197,19 +244,44 @@ func _build_wall_collision() -> void:
 	sb.collision_mask  = 0
 	add_child(sb)
 
-	var rw     := float(TILE)
-	var full_w := float(TILE * cols)
-	var full_h := float(TILE * rows)
+	var vp := get_viewport_rect().size
+	# 1. Tường trên & tường dưới phòng
+	_wall_seg(sb, Vector2(0.0, 0.0), Vector2(vp.x, vp.y * 0.42))
+	_wall_seg(sb, Vector2(0.0, vp.y * 0.875), Vector2(vp.x, vp.y * 0.125))
+	# 2. Tường vát chéo trái & phải theo đúng góc nhìn 3/4 cutaway
+	_wall_poly(sb, PackedVector2Array([
+		Vector2(0.0, 0.0),
+		Vector2(vp.x * 0.21, 0.0),
+		Vector2(vp.x * 0.205, vp.y * 0.42),
+		Vector2(vp.x * 0.11, vp.y * 0.875),
+		Vector2(0.0, vp.y * 0.875),
+	]))
+	_wall_poly(sb, PackedVector2Array([
+		Vector2(vp.x * 0.79, 0.0),
+		Vector2(vp.x, 0.0),
+		Vector2(vp.x, vp.y * 0.875),
+		Vector2(vp.x * 0.895, vp.y * 0.875),
+		Vector2(vp.x * 0.805, vp.y * 0.42),
+	]))
+	# 3. Va chạm từng cụm đồ vật (không đi xuyên qua cửa mở, lò rèn, đe, bục sách, giường, rương)
+	_wall_norm_rect(sb, vp, 0.145, 0.42, 0.235, 0.655)  # Cánh cửa mở + thùng gỗ trái
+	_wall_norm_rect(sb, vp, 0.23,  0.42, 0.505, 0.495)  # Chân lò đá + 2 thùng nước tôi
+	_wall_norm_rect(sb, vp, 0.345, 0.47, 0.438, 0.585)  # Gốc cây & đe sắt
+	_wall_norm_rect(sb, vp, 0.53,  0.42, 0.632, 0.45)   # Chân bục Bí Kíp Rèn + cuộn giấy
+	_wall_norm_rect(sb, vp, 0.70,  0.42, 0.845, 0.565)  # Giường ngủ
+	_wall_norm_rect(sb, vp, 0.732, 0.55, 0.825, 0.61)   # Rương gỗ cuối giường
 
-	# tường trên + dưới (full width)
-	_wall_seg(sb, Vector2(0, 0),           Vector2(full_w, rw))
-	_wall_seg(sb, Vector2(0, full_h - rw), Vector2(full_w, rw))
 
-	# tường trái — lấp đầy (zone exit phát hiện khi player áp sát từ bên trong)
-	_wall_seg(sb, Vector2(0, rw), Vector2(rw, full_h - rw * 2))
+func _wall_norm_rect(
+	parent: StaticBody2D, vp: Vector2, x0: float, y0: float, x1: float, y1: float
+) -> void:
+	_wall_seg(parent, Vector2(vp.x * x0, vp.y * y0), Vector2(vp.x * (x1 - x0), vp.y * (y1 - y0)))
 
-	# tường phải — lấp đầy
-	_wall_seg(sb, Vector2(full_w - rw, rw), Vector2(rw, full_h - rw * 2))
+
+func _wall_poly(parent: StaticBody2D, pts: PackedVector2Array) -> void:
+	var poly := CollisionPolygon2D.new()
+	poly.polygon = pts
+	parent.add_child(poly)
 
 
 func _wall_seg(parent: StaticBody2D, pos: Vector2, sz: Vector2) -> void:
@@ -223,81 +295,20 @@ func _wall_seg(parent: StaticBody2D, pos: Vector2, sz: Vector2) -> void:
 	parent.add_child(col)
 
 
-func _build_forge_visual() -> void:
-	var bg := ColorRect.new()
-	bg.position = forge_center - forge_size * 0.5
-	bg.size     = forge_size
-	bg.color    = C_FORGE_BG
-	add_child(bg)
-
-	var fire := ColorRect.new()
-	fire.position = forge_center + Vector2(-28, 16)
-	fire.size     = Vector2(56, 56)
-	fire.color    = C_FORGE_FRE
-	add_child(fire)
-
-	_zone_label("Lò Rèn", forge_center + Vector2(-30, -80), C_LABEL_FRG)
-
-
-func _build_forge_book_visual() -> void:
-	var book := ColorRect.new()
-	book.position = forge_book_center - forge_book_size * 0.5
-	book.size = forge_book_size
-	book.color = Color(0.34, 0.18, 0.07)
-	add_child(book)
-
-	_zone_label("Bí Kíp Rèn", forge_book_center + Vector2(-42, -52), C_LABEL_FRG)
-
-
-func _build_bed_visual() -> void:
-	var bg := ColorRect.new()
-	bg.position = bed_center - bed_size * 0.5
-	bg.size     = bed_size
-	bg.color    = C_BED_BG
-	add_child(bg)
-
-	_zone_label("Nghỉ Ngơi", bed_center + Vector2(-42, -80), C_LABEL_BED)
-
-
-func _build_door_visual(is_left: bool) -> void:
-	var x := 0.0 if is_left else float(TILE * (cols - 1))
-	var dr := ColorRect.new()
-	dr.position = Vector2(x, door_center_y - door_half_h)
-	dr.size     = Vector2(TILE, door_half_h * 2)
-	dr.color    = C_DOOR
-	add_child(dr)
-
-	var caption := "Khám Phá" if is_left else "Tiệm"
-	var lbl := Label.new()
-	lbl.text                = caption
-	lbl.position            = Vector2(x + 4, door_center_y - 12)
-	lbl.size                = Vector2(TILE - 8, 24)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.add_theme_font_size_override("font_size", 13)
-	lbl.add_theme_color_override("font_color", Color(0.95, 0.88, 0.70))
-	add_child(lbl)
-
-
-func _zone_label(text: String, pos: Vector2, col: Color) -> void:
-	var lbl := Label.new()
-	lbl.text     = text
-	lbl.position = pos
-	lbl.add_theme_font_size_override("font_size", 17)
-	lbl.add_theme_color_override("font_color", col)
-	add_child(lbl)
-
-
 func _build_player() -> void:
+	var vp := get_viewport_rect().size
 	var scr: GDScript = load("res://scripts/shop/player_shop.gd")
 	_player          = scr.new() as CharacterBody2D
 	_player.set("move_speed", PLAYER_MOVE_SPEED)
-	_player.position = Vector2(TILE * cols * 0.5, TILE * rows * 0.5)
+	_player.set("enable_footsteps", true)
+	_player.position = Vector2(vp.x * 0.50, vp.y * 0.71)
 	add_child(_player)
 
 
 func _build_zones() -> void:
 	_make_zone(ZONE_FORGE, forge_center, forge_size)
 	_make_zone(ZONE_BED,   bed_center,   bed_size)
+	_make_zone(ZONE_INVENTORY, inventory_center, inventory_size)
 	_make_zone(ZONE_EXIT,  exit_center,  exit_size)
 	_make_zone(ZONE_SHOP,  shop_center,  shop_size)
 	_make_zone(ZONE_FORGE_BOOK, forge_book_center, forge_book_size)
@@ -329,7 +340,9 @@ func _connect_signals() -> void:
 	EventBus.forge_book_opened.connect(_open_forge_recipe_book)
 
 
-func _on_phase_changed(_phase: GameManager.GamePhase) -> void:
+func _on_phase_changed(phase: GameManager.GamePhase) -> void:
+	if _atmosphere != null:
+		_atmosphere.set_phase(phase)
 	_sync_debt_agent_scene()
 	_sync_debt_payment()
 	_tutorial_ctrl.sync_day1_scripted()
@@ -344,21 +357,110 @@ func _on_day_changed(_day: int) -> void:
 func _on_zone_entered(body: Node2D, zone_id: String) -> void:
 	if body != _player:
 		return
-	_near_zone        = zone_id
-	_tutorial_ctrl.on_zone_entered(zone_id, _hint_text(zone_id))
+	if not _overlapping_zones.has(zone_id):
+		_overlapping_zones.append(zone_id)
+	_refresh_near_zone()
 
 
 func _on_zone_exited(body: Node2D, zone_id: String) -> void:
-	if body != _player or _near_zone != zone_id:
+	if body != _player:
 		return
-	_near_zone        = ""
-	_tutorial_ctrl.on_zone_exited()
+	_overlapping_zones.erase(zone_id)
+	_refresh_near_zone()
+
+
+func _refresh_near_zone() -> void:
+	var best_zone := ""
+	var best_prio := -1
+	var best_dist := INF
+	for zone_id: String in _overlapping_zones:
+		var prio := _zone_priority(zone_id)
+		var dist := _player.position.distance_to(_zone_anchor_pos(zone_id))
+		if prio > best_prio or (prio == best_prio and dist < best_dist):
+			best_prio = prio
+			best_dist = dist
+			best_zone = zone_id
+	if best_zone == _near_zone:
+		return
+	_near_zone = best_zone
+	if _near_zone == "":
+		_tutorial_ctrl.on_zone_exited()
+		if _atmosphere != null:
+			_atmosphere.hide_prompt()
+	else:
+		_tutorial_ctrl.on_zone_entered(_near_zone, _hint_text(_near_zone))
+		AudioManager.play_sfx_key("zone_prompt", 0.32)
+		if _atmosphere != null:
+			_atmosphere.show_prompt(_zone_prompt_pos(_near_zone), _zone_short_title(_near_zone))
+
+
+func _zone_priority(zone_id: String) -> int:
+	if zone_id in [
+		ZONE_VISITOR_CLG, ZONE_DEBT_AGENT, ZONE_DEBT_AGENT_C2,
+		ZONE_DEBT_AGENT_C3, ZONE_DEBT_AGENT_C4,
+	]:
+		return 3
+	if zone_id in [ZONE_FORGE, ZONE_FORGE_BOOK, ZONE_INVENTORY, ZONE_BED]:
+		return 2
+	return 1
+
+
+func _zone_anchor_pos(zone_id: String) -> Vector2:
+	match zone_id:
+		ZONE_FORGE: return forge_center
+		ZONE_BED: return bed_center
+		ZONE_INVENTORY: return inventory_center
+		ZONE_EXIT: return exit_center
+		ZONE_SHOP: return shop_center
+		ZONE_FORGE_BOOK: return forge_book_center
+		ZONE_VISITOR_CLG:
+			return _visitor_clg.position if _visitor_clg != null else Vector2.ZERO
+		_:
+			if _debt_agents.has(zone_id) and _debt_agents[zone_id] != null:
+				return (_debt_agents[zone_id] as Node2D).position
+	return Vector2.ZERO
+
+
+func _zone_prompt_pos(zone_id: String) -> Vector2:
+	var vp := get_viewport_rect().size
+	match zone_id:
+		ZONE_FORGE: return Vector2(vp.x * 0.34, vp.y * 0.42)
+		ZONE_FORGE_BOOK: return Vector2(vp.x * 0.58, vp.y * 0.25)
+		ZONE_BED: return Vector2(vp.x * 0.76, vp.y * 0.34)
+		ZONE_INVENTORY: return Vector2(vp.x * 0.78, vp.y * 0.51)
+		ZONE_EXIT: return Vector2(vp.x * 0.165, vp.y * 0.56)
+		ZONE_SHOP: return Vector2(vp.x * 0.855, vp.y * 0.57)
+		ZONE_VISITOR_CLG:
+			if _visitor_clg != null:
+				return _visitor_clg.position + Vector2(0.0, -96.0)
+		_:
+			if _debt_agents.has(zone_id) and _debt_agents[zone_id] != null:
+				return (_debt_agents[zone_id] as Node2D).position + Vector2(0.0, -104.0)
+	return _zone_anchor_pos(zone_id) + Vector2(0.0, -64.0)
+
+
+func _zone_short_title(zone_id: String) -> String:
+	var titles := {
+		ZONE_FORGE: "Lò Rèn",
+		ZONE_BED: "Nghỉ Ngơi",
+		ZONE_INVENTORY: "Rương Kho Đồ",
+		ZONE_EXIT: "Khám Phá",
+		ZONE_SHOP: "Mở Tiệm",
+		ZONE_FORGE_BOOK: "Bí Kíp Rèn",
+		ZONE_DEBT_AGENT: "Người Thu Nợ",
+		ZONE_DEBT_AGENT_C2: "Tay Sai Rừng",
+		ZONE_DEBT_AGENT_C3: "Thương Nhân",
+		ZONE_DEBT_AGENT_C4: "Bà Trùm Hắc Nguyệt",
+		ZONE_VISITOR_CLG: "Cô Lộng Gió",
+	}
+	return String(titles.get(zone_id, _hint_text(zone_id)))
 
 
 func _hint_text(zone_id: String) -> String:
 	var hints := {
 		ZONE_FORGE: "Vào lò rèn",
 		ZONE_BED: "Nghỉ ngơi — kết thúc ngày",
+		ZONE_INVENTORY: "Mở Rương Kho Đồ",
 		ZONE_EXIT: "Đi khám phá vùng đất",
 		ZONE_SHOP: "Mở cửa tiệm",
 		ZONE_FORGE_BOOK: "Mở Bí Kíp Rèn",
@@ -377,6 +479,7 @@ func _activate_zone(zone_id: String) -> void:
 	match zone_id:
 		ZONE_FORGE: _go_forge()
 		ZONE_BED:   _go_sleep()
+		ZONE_INVENTORY: _open_inventory()
 		ZONE_EXIT:  _go_explore()
 		ZONE_SHOP:  _go_shop()
 		ZONE_FORGE_BOOK: EventBus.forge_book_opened.emit()
@@ -396,35 +499,32 @@ func _build_hub_visitors() -> void:
 		return
 	if _visitor_clg != null:
 		return
-	var cx: float = cols * TILE * 0.5
-	var cy: float = rows * TILE * 0.5
-
+	var vp := get_viewport_rect().size
 	var npc := Node2D.new()
 	npc.name = "CoLongGioHub"
-	npc.position = Vector2(cx, cy - TILE * 1.5)
-	npc.z_index = 30
+	npc.position = Vector2(vp.x * 0.285, vp.y * 0.68)
 	add_child(npc)
 	_visitor_clg = npc
 
-	var visual := ColorRect.new()
-	visual.size = Vector2(38, 54)
-	visual.position = Vector2(-19, -27)
-	visual.color = Color(0.62, 0.82, 0.92)
-	npc.add_child(visual)
-
-	var sash := ColorRect.new()
-	sash.size = Vector2(30, 8)
-	sash.position = Vector2(-15, -4)
-	sash.color = Color(0.94, 0.82, 0.42)
-	npc.add_child(sash)
+	var clg_sprite := _build_npc_animated_sprite(CO_LONG_GIO_SHEET_PATH)
+	if clg_sprite != null:
+		npc.add_child(clg_sprite)
+	else:
+		var visual := ColorRect.new()
+		visual.size = Vector2(38, 54)
+		visual.position = Vector2(-19, -27)
+		visual.color = Color(0.62, 0.82, 0.92)
+		npc.add_child(visual)
 
 	var name_lbl := Label.new()
 	name_lbl.text = "Cô Lộng Gió"
-	name_lbl.position = Vector2(-78, -64)
+	name_lbl.position = Vector2(-78, -90)
 	name_lbl.size = Vector2(156, 28)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", 18)
 	name_lbl.add_theme_color_override("font_color", Color(0.80, 0.94, 1.0))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0.08, 0.05, 0.04, 0.92))
+	name_lbl.add_theme_constant_override("outline_size", 4)
 	npc.add_child(name_lbl)
 
 	var body_col := CollisionShape2D.new()
@@ -450,18 +550,30 @@ func _build_hub_visitors() -> void:
 	talk_col.shape = talk_shape
 	talk_area.add_child(talk_col)
 
-	talk_area.body_entered.connect(func(body: Node2D) -> void:
-		if body != _player:
-			return
-		_near_zone = ZONE_VISITOR_CLG
-		_tutorial_ctrl.on_zone_entered(ZONE_VISITOR_CLG, _hint_text(ZONE_VISITOR_CLG))
-	)
-	talk_area.body_exited.connect(func(body: Node2D) -> void:
-		if body != _player or _near_zone != ZONE_VISITOR_CLG:
-			return
-		_near_zone = ""
-		_tutorial_ctrl.on_zone_exited()
-	)
+	talk_area.body_entered.connect(_on_zone_entered.bind(ZONE_VISITOR_CLG))
+	talk_area.body_exited.connect(_on_zone_exited.bind(ZONE_VISITOR_CLG))
+
+
+func _build_npc_animated_sprite(sheet_path: String) -> AnimatedSprite2D:
+	var texture := load(sheet_path) as Texture2D
+	if texture == null:
+		return null
+	var sprite := AnimatedSprite2D.new()
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var frames := SpriteFrames.new()
+	frames.add_animation("idle")
+	frames.set_animation_speed("idle", 6.0)
+	frames.set_animation_loop("idle", true)
+	for col in 4:
+		var atlas := AtlasTexture.new()
+		atlas.atlas = texture
+		atlas.region = Rect2(col * NPC_FRAME_SIZE, 0, NPC_FRAME_SIZE, NPC_FRAME_SIZE)
+		frames.add_frame("idle", atlas)
+	sprite.sprite_frames = frames
+	sprite.offset = Vector2(0.0, -16.0)
+	sprite.scale = Vector2(NPC_RENDER_SCALE, NPC_RENDER_SCALE)
+	sprite.play("idle")
+	return sprite
 
 
 func _talk_to_hub_visitor_clg() -> void:
@@ -476,7 +588,8 @@ func _talk_to_hub_visitor_clg() -> void:
 				GameManager.mark_tutorial_seen("co_long_gio_met")
 				_visitor_clg.queue_free()
 				_visitor_clg = null
-				_near_zone = ""
+				_overlapping_zones.erase(ZONE_VISITOR_CLG)
+				_refresh_near_zone()
 		)
 	else:
 		_tutorial_ctrl.show_tutorial_then(
@@ -485,7 +598,8 @@ func _talk_to_hub_visitor_clg() -> void:
 			func() -> void:
 				_visitor_clg.queue_free()
 				_visitor_clg = null
-				_near_zone = ""
+				_overlapping_zones.erase(ZONE_VISITOR_CLG)
+				_refresh_near_zone()
 		)
 
 
@@ -524,7 +638,7 @@ func _go_shop() -> void:
 		DayCycle.advance_phase()
 	if GameManager.current_phase == GameManager.GamePhase.NOON:
 		DayCycle.advance_phase()
-	EventBus.shop_opened.emit()
+	AudioManager.play_sfx_key("door_wood", 0.75)
 	SceneManager.go_to(PATH_SHOP)
 
 
@@ -539,6 +653,7 @@ func _go_explore() -> void:
 			_go_explore
 		)
 		return
+	AudioManager.play_sfx_key("door_wood", 0.70)
 	_open_region_select()
 
 
@@ -666,6 +781,7 @@ func _open_forge_recipe_book() -> void:
 		var scr: GDScript = load(FORGE_RECIPE_BOOK_SCRIPT)
 		_forge_recipe_book_ui = scr.new() as ForgeRecipeBookUI
 		add_child(_forge_recipe_book_ui)
+	AudioManager.play_sfx_key("book_flip", 0.72)
 	_forge_recipe_book_ui.show_book()
 
 
@@ -718,7 +834,30 @@ func _open_inventory() -> void:
 		var scene := load(PATH_INVENTORY) as PackedScene
 		_inventory_ui = scene.instantiate() as InventoryUI
 		add_child(_inventory_ui)
+	AudioManager.play_sfx_key("chest_open", 0.72)
 	_inventory_ui.show_inventory()
+
+
+func _has_blocking_overlay() -> bool:
+	if _day_card_overlay != null:
+		return true
+	if _forge_recipe_book_ui != null and _forge_recipe_book_ui.visible:
+		return true
+	if _inventory_ui != null and _inventory_ui.visible:
+		return true
+	if _region_select != null and _region_select.visible:
+		return true
+	if _combat_loadout != null and _combat_loadout.visible:
+		return true
+	if _day_summary != null and _day_summary.visible:
+		return true
+	if _pause_menu != null and _pause_menu.visible:
+		return true
+	if _tutorial_ctrl != null and _tutorial_ctrl.is_overlay_active():
+		return true
+	if _debt_ctrl != null and _debt_ctrl.has_visible_overlay():
+		return true
+	return false
 
 
 func _sync_debt_overlays() -> void:
@@ -745,7 +884,6 @@ func _on_debt_agent_spawn_requested(
 	agent.name = node_name
 	agent.display_name = display_name
 	agent.position = pos
-	agent.z_index = 30
 	agent.player_entered.connect(_on_debt_agent_entered.bind(zone_id))
 	agent.player_exited.connect(_on_debt_agent_exited.bind(zone_id))
 	add_child(agent)
@@ -755,25 +893,23 @@ func _on_debt_agent_spawn_requested(
 func _on_debt_agent_cleared(zone_id: String) -> void:
 	if not _debt_agents.has(zone_id):
 		return
-	if _near_zone == zone_id:
-		_near_zone = ""
-		_tutorial_ctrl.clear_hint()
+	_overlapping_zones.erase(zone_id)
 	var agent := _debt_agents[zone_id] as Node2D
 	if agent != null:
 		agent.queue_free()
 	_debt_agents.erase(zone_id)
+	_refresh_near_zone()
 
 
 func _on_debt_agent_entered(zone_id: String) -> void:
-	_near_zone = zone_id
-	_tutorial_ctrl.request_hint("[E]   " + _hint_text(zone_id))
+	if not _overlapping_zones.has(zone_id):
+		_overlapping_zones.append(zone_id)
+	_refresh_near_zone()
 
 
 func _on_debt_agent_exited(zone_id: String) -> void:
-	if _near_zone != zone_id:
-		return
-	_near_zone = ""
-	_tutorial_ctrl.clear_hint()
+	_overlapping_zones.erase(zone_id)
+	_refresh_near_zone()
 
 
 func _open_pause_menu() -> void:

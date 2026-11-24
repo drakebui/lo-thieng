@@ -21,11 +21,14 @@ func _ready() -> void:
 	layer   = 16
 	visible = false
 	_build_placeholder()
-
-
-func _process(_delta: float) -> void:
-	if visible:
-		_refresh_summary()
+	GameManager.gold_changed.connect(func(_amount: int) -> void:
+		if visible:
+			_refresh_summary()
+	)
+	DebtSystem.debt_paid.connect(func(_checkpoint: DebtCheckpoint) -> void:
+		if visible:
+			_refresh_summary()
+	)
 
 
 func show_summary(stats: Dictionary = {}) -> void:
@@ -267,12 +270,3 @@ func _find_c1_checkpoint() -> DebtCheckpoint:
 		if checkpoint.id == C1_CHECKPOINT_ID:
 			return checkpoint
 	return null
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if not visible:
-		return
-	if event is InputEventKey and (event as InputEventKey).pressed:
-		if (event as InputEventKey).keycode == KEY_ESCAPE:
-			visible = false
-			get_viewport().set_input_as_handled()

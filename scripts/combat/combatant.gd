@@ -91,11 +91,6 @@ func tick_status() -> Array:
 		msgs.append("%s bị Độc: -%d HP" % [combatant_name, dmg])
 		poison_turns -= 1
 
-	if freeze_turns > 0:
-		freeze_turns -= 1
-		if freeze_turns == 0:
-			msgs.append("%s thoát khỏi Đóng Băng." % combatant_name)
-
 	return msgs
 
 

@@ -174,6 +174,14 @@ func open_debt_notice(checkpoint: DebtCheckpoint) -> void:
 			_debt_notice.notice_closed.connect(callback, CONNECT_ONE_SHOT)
 
 
+func has_visible_overlay() -> bool:
+	if _debt_notice != null and _debt_notice.visible:
+		return true
+	if _debt_payment != null and _debt_payment.visible:
+		return true
+	return false
+
+
 func reset_day_check() -> void:
 	_last_debt_check_day = 0
 

@@ -26,7 +26,7 @@ func check_day(day: int) -> void:
 			checkpoint.has_notified = true
 			debt_triggered.emit(checkpoint)
 
-		if checkpoint.deadline_day == day and not checkpoint.is_late:
+		if day > checkpoint.deadline_day and not checkpoint.is_late:
 			checkpoint.is_late = true
 			debt_penalty_applied.emit(checkpoint, checkpoint.penalty_gold)
 
@@ -47,6 +47,9 @@ func pay_checkpoint(id: String) -> bool:
 	for checkpoint in checkpoints:
 		if checkpoint.id != id:
 			continue
+
+		if checkpoint.is_paid:
+			return false
 
 		var total_amount: int = checkpoint.amount_gold
 		if checkpoint.is_late:

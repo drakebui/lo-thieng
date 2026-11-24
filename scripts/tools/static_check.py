@@ -23,6 +23,7 @@ AUTOLOAD_NAMES = (
     "SceneManager",
     "DayCycle",
     "DebtSystem",
+    "CommissionSystem",
 )
 VALID_SKILL_EFFECTS = {
     "DAMAGE",
@@ -73,6 +74,27 @@ KNOWN_MATERIAL_IDS = [
     "cat_than",
     "tro_thieng",
     "tinh_the_lo",
+]
+VALID_BLANK_IDS = {
+    "kiem_don",
+    "song_dao",
+    "giao_dai",
+    "bua_chien",
+    "cung_truong",
+    "khien_dong",
+    "quyen_cu",
+    "con_nhi_khuc",
+    "dao_phat",
+    "gay_phep",
+    "liem_song",
+    "phoi_no_ban",
+}
+COMMISSION_REQUIRED_FIELDS = [
+    "commission_id",
+    "giver_npc_id",
+    "req_element",
+    "req_min_rarity",
+    "reward_gold",
 ]
 
 
@@ -345,6 +367,53 @@ def check_material_allowed_elements(root: Path) -> tuple[int, list[Finding]]:
     return len(KNOWN_MATERIAL_IDS), failures
 
 
+def check_commission_resources(root: Path) -> tuple[int, list[Finding]]:
+    comm_dir = root / "resources" / "commissions"
+    cust_dir = root / "resources" / "customers"
+    failures: list[Finding] = []
+
+    if not comm_dir.exists():
+        return 0, failures
+
+    comm_files = sorted(comm_dir.glob("*.tres"))
+    string_field_pattern = re.compile(r'^(\w+)\s*=\s*"([^"]*)"')
+    for path in comm_files:
+        source = _relative(path)
+        lines = _read_lines(path)
+        declared_fields: set[str] = set()
+        string_values: dict[str, str] = {}
+
+        for line in lines:
+            match = TRES_FIELD_PATTERN.match(line)
+            if match:
+                declared_fields.add(match.group(1))
+            smatch = string_field_pattern.match(line)
+            if smatch:
+                string_values[smatch.group(1)] = smatch.group(2)
+
+        for field in COMMISSION_REQUIRED_FIELDS:
+            if field not in declared_fields:
+                failures.append(Finding(source, 1, f"missing field: {field}"))
+
+        req_blank = string_values.get("req_blank", "")
+        if req_blank and req_blank not in VALID_BLANK_IDS:
+            failures.append(
+                Finding(source, 1, f'req_blank "{req_blank}" not in VALID_BLANK_IDS')
+            )
+
+        giver_npc_id = string_values.get("giver_npc_id", "")
+        if giver_npc_id and not (cust_dir / f"{giver_npc_id}.tres").exists():
+            failures.append(
+                Finding(
+                    source,
+                    1,
+                    f'giver_npc_id "{giver_npc_id}" has no customer .tres',
+                )
+            )
+
+    return len(comm_files), failures
+
+
 def _print_findings(kind: str, findings: list[Finding]) -> None:
     for finding in findings:
         print(f"  {kind}: {finding.format()}")
@@ -402,7 +471,13 @@ def main() -> int:
     _print_findings("FAIL", mat_failures)
     print()
 
-    fail_count = len(path_failures) + len(signal_failures) + len(scene_script_failures) + len(skill_failures) + len(debt_failures) + len(mat_failures)
+    print("[CHECK 8] Commission resources")
+    comm_count, comm_failures = check_commission_resources(ROOT)
+    print(f"  PASS: {comm_count} commission files checked")
+    _print_findings("FAIL", comm_failures)
+    print()
+
+    fail_count = len(path_failures) + len(signal_failures) + len(scene_script_failures) + len(skill_failures) + len(debt_failures) + len(mat_failures) + len(comm_failures)
     warn_count = len(autoload_warnings)
     print(f"=== KẾT QUẢ: {fail_count} FAIL, {warn_count} WARN ===")
 

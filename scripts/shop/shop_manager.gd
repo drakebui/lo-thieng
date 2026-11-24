@@ -90,7 +90,7 @@ func open_shop(slot_count: int = 0) -> void:
 	else:
 		# Tổng NPC = số vũ khí trên kệ + ngẫu nhiên 0/1/2, tối thiểu 1
 		var count: int = maxi(1, slot_count + randi_range(0, 2))
-		for i in count:
+		for i in range(count):
 			_spawn_queue.append(_instantiate(_pick_weighted_template()))
 	_stagger_timer = 0.2  # khách đầu vào ngay sau 0.2s
 
@@ -114,17 +114,18 @@ func close_shop() -> void:
 	EventBus.shop_closed.emit(stats)
 
 
-# Gọi khi hoàn thành bán hàng cho 1 khách.
-func complete_sale(instance_id: int, gold: int) -> void:
+# Gọi khi hoàn thành bán hàng cho 1 khách. Trả về true nếu thành công, false nếu khách không tồn tại.
+func complete_sale(instance_id: int, gold: int) -> bool:
 	var c := _find_customer(instance_id)
 	if c.is_empty():
-		return
+		return false
 	_gold_earned      += gold
 	_customers_served += 1
 	if gold > 0:
 		GameManager.add_gold(gold)
 	EventBus.customer_served.emit(c.get("type", ""), gold)
 	_remove_customer(c, "sale")
+	return true
 
 
 # Gọi khi khách bỏ đi không mua (hết patience, từ chối giá, tự đi ra).
@@ -138,6 +139,8 @@ func customer_walk_out(instance_id: int) -> void:
 func _on_commission_spawn_requested(npc_id: String) -> void:
 	if not is_open:
 		return
+	if _has_commission_giver(npc_id):
+		return
 	var tmpl := _find_template(npc_id)
 	if tmpl == null:
 		push_warning("Commission giver template not found: " + npc_id)
@@ -150,7 +153,18 @@ func _on_commission_spawn_requested(npc_id: String) -> void:
 func _on_commission_dismiss_requested(instance_id: int) -> void:
 	var c := _find_customer(instance_id)
 	if not c.is_empty():
+		_customers_served += 1
 		_remove_customer(c, "commission_fulfilled")
+
+
+func _has_commission_giver(npc_id: String) -> bool:
+	for queued in _spawn_queue:
+		if queued.get("is_commission_giver", false) and queued.get("type", "") == npc_id:
+			return true
+	for active in _in_shop:
+		if active.get("is_commission_giver", false) and active.get("type", "") == npc_id:
+			return true
+	return false
 
 
 # Trả về danh sách khách đang trong shop (read-only copy).

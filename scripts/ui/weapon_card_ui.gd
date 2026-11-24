@@ -2,8 +2,11 @@
 # setup(weapon_data) để cập nhật nội dung:
 #   phase1_tier, phase2_prefix, element, suffix, element_name, element_color
 #   weapon_type, base_atk, base_def, base_magic, base_speed
-#   innate_skill, innate_skill_desc
+#   innate_skill, innate_skill_desc, perfect_quench, price_mult, durability_bonus
 extends Control
+
+signal shelf_saved(result: Dictionary)
+signal warehouse_saved(result: Dictionary)
 
 const _FORGE_CONVERTER := preload("res://scripts/forge/weapon_data.gd")
 
@@ -13,12 +16,16 @@ const CARD_HEIGHT := 720.0
 const PHASE1_TIER_NAMES := {
 	"lanh":     "Lạnh",
 	"cam":      "Cam",
+	"do_ruc":   "Đỏ Rực",
 	"vang_kim": "Vàng Kim",
+	"chay":     "Cháy Thép",
 }
 const PHASE1_MULTIPLIERS := {
 	"lanh":     0.7,
 	"cam":      1.2,
+	"do_ruc":   1.4,
 	"vang_kim": 1.4,
+	"chay":     0.5,
 }
 const PHASE2_PREFIX_NAMES := {
 	"phan_chu":   "Phản Chủ",  "curse_nang": "Lời Nguyền",
@@ -37,10 +44,24 @@ const SUFFIX_NAMES := {
 	"sam_set":     "Sấm Sét",   "dao_dong":    "Dao Động",
 	"cuong_phong": "Cuồng Phong","hu_khong":   "Hư Không",
 }
+const NPC_DISPLAY_NAMES := {
+	"hiep_khach":   "Hiệp Khách",
+	"tho_san":      "Thợ Săn",
+	"thuong_nhan":  "Thương Nhân",
+	"quan_binh":    "Quan Binh",
+	"ba_hac_nguyet": "Bà Hạc Nguyệt",
+	"co_long_gio":  "Cổ Lộng Gió",
+	"nguoi_thu_no": "Người Thu Nợ",
+}
 
 const _DEFAULT_ATK   := 12
 const _DEFAULT_DEF   :=  0
 const _DEFAULT_MAGIC :=  3
+
+# Dữ liệu vũ khí hiện tại & cờ trạng thái
+var _current_data:           Dictionary = {}
+var _matched_customer_name:  String = ""
+var _is_perfect_quench:      bool = false
 
 # Nodes cần cập nhật từ setup()
 var _card_panel:        PanelContainer
@@ -199,6 +220,7 @@ func _apply_card_style(border_color: Color) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func setup(data: Dictionary) -> void:
+	_current_data = data
 	var tier_key:    String = data.get("phase1_tier",       "cam")
 	var prefix_key:  String = data.get("phase2_prefix",     "thuong")
 	var suffix_key:  String = data.get("suffix",            "")
@@ -216,11 +238,16 @@ func setup(data: Dictionary) -> void:
 	var suffix_name:   String = SUFFIX_NAMES.get(suffix_key, suffix_key)
 	var tier_name:     String = PHASE1_TIER_NAMES.get(tier_key, tier_key)
 	var material_name: String = data.get("material_name", "")
-	var price_mult:    float  = data.get("price_mult",    1.0)
+
+	_is_perfect_quench = bool(data.get("perfect_quench", false))
+	var price_mult: float = float(data.get("price_mult", 1.10 if _is_perfect_quench else 1.0))
+	var dur_bonus:  int   = int(data.get("durability_bonus", 10 if _is_perfect_quench else 0))
+	var base_dur:   int   = int(data.get("durability", 50))
+	var max_dur:    int   = base_dur + dur_bonus
 
 	var mult:  float = PHASE1_MULTIPLIERS.get(tier_key, 1.0)
 	var bonus: int   = PHASE2_BONUS.get(prefix_key, 0)
-	var atk:   int   = maxi(0, int(base_atk   * mult) + bonus)
+	var atk:   int   = maxi(1, int(base_atk   * mult) + bonus)
 	var def_v: int   = maxi(0, int(base_def   * mult))
 	var magic: int   = maxi(0, int(base_magic * mult) + bonus)
 	var spd:   int   = base_speed
@@ -230,16 +257,37 @@ func setup(data: Dictionary) -> void:
 	var price_min  := int(sell_val * 0.85)
 	var price_max  := int(sell_val * 1.15)
 
+	# Kiểm tra khớp đơn hàng với CommissionSystem
+	_matched_customer_name = ""
+	if CommissionSystem != null:
+		var check_data := data.duplicate()
+		if not check_data.has("rarity_tier") or int(check_data.get("rarity_tier", 0)) == 0:
+			check_data["rarity_tier"] = rar_tier
+		if String(check_data.get("blank_id", "")).is_empty() and GameManager != null:
+			if not GameManager.selected_blank.is_empty():
+				check_data["blank_id"] = GameManager.selected_blank.get(
+					"blank_id", GameManager.selected_blank.get("id", "")
+				)
+		for c in CommissionSystem.get_active():
+			if WeaponSpec.satisfies(check_data, c):
+				_matched_customer_name = NPC_DISPLAY_NAMES.get(c.giver_npc_id, c.giver_npc_id)
+				break
+
 	# Cập nhật border và accent theo nguyên tố
 	_apply_card_style(Color(elem_color.r * 0.65, elem_color.g * 0.65, elem_color.b * 0.65))
 	_accent_strip.color = elem_color
 
-	_name_label.text = "⚔  %s  %s · %s" % [weapon_type, prefix_name, suffix_name]
+	_name_label.text = "⚔  %s %s · %s" % [prefix_name, weapon_type, suffix_name]
 	_name_label.add_theme_color_override("font_color", elem_color)
 
 	var mat_part := ("NL: %s   •   " % material_name) if not material_name.is_empty() else ""
-	_meta_label.text = "%sNung: %s   •   Rèn: %s   •   Nguyên tố: %s" % [
+	var meta_text := "%sNung: %s   •   Rèn: %s   •   Nguyên tố: %s" % [
 		mat_part, tier_name, prefix_name, elem_name]
+	if _is_perfect_quench:
+		meta_text += "   •   ★ TỐI HOÀN HẢO (+10% Giá, +15% Bền)"
+	if not _matched_customer_name.is_empty():
+		meta_text += "   •   ✓ KHỚP ĐƠN HÀNG: %s" % _matched_customer_name
+	_meta_label.text = meta_text
 
 	_atk_val.text   = str(atk)
 	_def_val.text   = str(def_v)
@@ -254,8 +302,19 @@ func setup(data: Dictionary) -> void:
 	_skill2_label.text = "Nguyên Tố:  %s  (%s)" % [elem_name, suffix_name]
 	_skill2_label.add_theme_color_override("font_color", elem_color)
 
-	_durability_label.text = "Độ bền:  50 / 50"
-	_price_label.text = "Giá ước tính:  %s – %s  G" % [_fmt_price(price_min), _fmt_price(price_max)]
+	if _is_perfect_quench and dur_bonus > 0:
+		_durability_label.text = "Độ bền:  %d / %d  (★ +%d Bền)" % [max_dur, max_dur, dur_bonus]
+	else:
+		_durability_label.text = "Độ bền:  %d / %d" % [max_dur, max_dur]
+
+	if _is_perfect_quench:
+		_price_label.text = "Giá ước tính:  %s – %s  G  (★ +10%% Giá)" % [
+			_fmt_price(price_min), _fmt_price(price_max)
+		]
+	else:
+		_price_label.text = "Giá ước tính:  %s – %s  G" % [
+			_fmt_price(price_min), _fmt_price(price_max)
+		]
 
 
 func _fmt_price(n: int) -> String:
@@ -266,3 +325,85 @@ func _fmt_price(n: int) -> String:
 			result += "."
 		result += s[i]
 	return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOGIC XỬ LÝ VŨ KHÍ & KỆ HÀNG
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Xây dựng Dictionary vũ khí hoàn chỉnh (kèm bonus perfect_quench nếu có)
+func build_combat_weapon() -> Dictionary:
+	var weapon: Dictionary = _FORGE_CONVERTER.forge_to_combat(_current_data)
+	for key in _current_data:
+		if not weapon.has(key):
+			weapon[key] = _current_data[key]
+	var is_perfect: bool = bool(_current_data.get("perfect_quench", false))
+	if is_perfect:
+		weapon["perfect_quench"] = true
+		var dur_b: int = int(_current_data.get("durability_bonus", 10))
+		if dur_b <= 0:
+			dur_b = 10
+		weapon["durability_bonus"] = dur_b
+		var max_d: int = 50 + dur_b
+		weapon["durability"] = max_d
+		weapon["durability_max"] = max_d
+		var p_mult: float = float(_current_data.get("price_mult", 1.0))
+		if not _current_data.has("price_mult"):
+			p_mult *= 1.10
+		weapon["price_mult"] = p_mult
+		var atk_val: int = int(weapon.get("atk", 1))
+		var mag_val: int = int(weapon.get("magic", 0))
+		var spd_val: int = int(weapon.get("speed", 5))
+		var rar_val: int = int(weapon.get("rarity_tier", 2))
+		weapon["sell_value"] = _FORGE_CONVERTER.weapon_sell_value(
+			atk_val, mag_val, spd_val, rar_val, p_mult
+		)
+	return weapon
+
+
+## Lưu vũ khí và bày ngay lên kệ bán tiệm (tối đa 3 slot)
+## Trả về: { "success": bool, "weapon": Dictionary, "message": String }
+func save_and_shelf(custom_weapon: Dictionary = {}) -> Dictionary:
+	var weapon: Dictionary = custom_weapon if not custom_weapon.is_empty() else build_combat_weapon()
+	InventorySystem.add_weapon(weapon)
+	EventBus.weapon_forged.emit(weapon)
+
+	var moved: bool = InventorySystem.move_to_shelf(weapon)
+	var msg: String = ""
+	if moved:
+		msg = "Đã lưu và bày lên kệ bán tiệm (Slot %d/3)!" % InventorySystem.get_shelf_weapons().size()
+	else:
+		msg = "Kệ tiệm đã đầy (3/3)! Đã lưu vào kho."
+
+	var res := {
+		"success": moved,
+		"weapon": weapon,
+		"message": msg,
+	}
+	shelf_saved.emit(res)
+	return res
+
+
+## Lưu vũ khí vào kho thông thường
+func save_to_warehouse(custom_weapon: Dictionary = {}) -> Dictionary:
+	var weapon: Dictionary = custom_weapon if not custom_weapon.is_empty() else build_combat_weapon()
+	InventorySystem.add_weapon(weapon)
+	EventBus.weapon_forged.emit(weapon)
+
+	var res := {
+		"success": true,
+		"weapon": weapon,
+		"message": "Đã lưu vào kho thành công!",
+	}
+	warehouse_saved.emit(res)
+	return res
+
+
+## Lấy tên khách hàng của đơn hàng khớp (nếu có)
+func get_matched_customer_name() -> String:
+	return _matched_customer_name
+
+
+## Kiểm tra vũ khí hiện tại có tối hoàn hảo không
+func is_perfect_quench() -> bool:
+	return _is_perfect_quench

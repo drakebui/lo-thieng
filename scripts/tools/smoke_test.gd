@@ -57,10 +57,6 @@ func _check_files() -> void:
 		"res://scenes/forge/WeaponBuilder.tscn",
 		"res://scenes/forge/ElementPicker.tscn",
 		"res://scenes/forge/ForgeSession.tscn",
-		"res://scenes/forge/ForgePhase1.tscn",
-		"res://scenes/forge/ForgePhase2.tscn",
-		"res://scenes/forge/ForgePhase3.tscn",
-		"res://scenes/forge/MaterialPicker.tscn",
 		"res://resources/DebtCheckpoint.gd",
 		"res://resources/debt/c1_mat_bang.tres",
 		"res://resources/debt/c2_dan_duong.tres",
@@ -180,7 +176,7 @@ func _check_guide_book_functions() -> void:
 
 
 func _check_day_cycle_constants() -> void:
-	var constants := GameManagerScript.get_script_constant_map()
+	var constants: Dictionary = (GameManagerScript as Script).get_script_constant_map()
 	if not constants.has("DEMO_LAST_DAY"):
 		_fail("GameManager.DEMO_LAST_DAY", "constant DEMO_LAST_DAY not found")
 	else:
@@ -204,7 +200,7 @@ func _guide_method(method_name: String, min_size: int) -> void:
 		_fail(method_name, "function not found")
 		return
 	var result: Variant = Callable(GuideBook, method_name).call()
-	var is_valid := result is Array and result.size() >= min_size
+	var is_valid: bool = result is Array and (result as Array).size() >= min_size
 	_check(
 		method_name,
 		is_valid,

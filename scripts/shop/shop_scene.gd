@@ -98,6 +98,7 @@ const COLOR_PLANT_LEAF     := Color(0.24, 0.54, 0.22)   # lá
 const COLOR_PLANT_LEAF_D   := Color(0.17, 0.38, 0.15)   # lá tối
 const INTERACT_RANGE: float = 130.0   # px — khoảng cách tối đa để tương tác kệ
 const TUTORIAL_OVERLAY_SCRIPT := "res://scripts/ui/tutorial_overlay_ui.gd"
+const PATH_COMMISSION_DELIVERY_UI := "res://scenes/ui/CommissionDeliveryUI.tscn"
 const PATH_PAUSE_MENU := "res://scenes/ui/PauseMenu.tscn"
 const STARTER_WEAPON_NAME := "Búa Sắt Cũ"
 
@@ -114,6 +115,7 @@ var _player: CharacterBody2D
 var _shop_mgr: ShopManager
 var _neg_ui: NegotiationUI
 var _tutorial_overlay: TutorialOverlayUI
+var _commission_delivery_ui: CommissionDeliveryUI = null
 
 var _customers: Dictionary = {}  # instance_id → CustomerAI node
 var _neg_queue: Array = []  # instance_id của các khách đang chờ ở quầy
@@ -168,6 +170,7 @@ func _ready() -> void:
 	_build_shelf_system()
 	_build_shop_hud()
 	_setup_shop_manager()
+	_setup_ui()
 
 
 func _process(delta: float) -> void:
@@ -470,6 +473,8 @@ func _setup_shop_manager() -> void:
 	_shop_mgr.customer_left.connect(_on_customer_left_by_manager)
 	_shop_mgr.shop_opened.connect(_on_shop_opened)
 	_shop_mgr.shop_closed.connect(_on_shop_closed)
+	if not EventBus.commission_fulfilled.is_connected(_on_commission_fulfilled_in_shop):
+		EventBus.commission_fulfilled.connect(_on_commission_fulfilled_in_shop)
 
 	_neg_ui = NegotiationUI.new()
 	add_child(_neg_ui)
@@ -477,6 +482,15 @@ func _setup_shop_manager() -> void:
 	_neg_ui.trade_accepted.connect(_on_trade_accepted)
 	_neg_ui.deal_declined.connect(_on_deal_declined)
 	# Shop bắt đầu đóng — player phải bày hàng rồi mới mở
+
+
+func _setup_ui() -> void:
+	if _commission_delivery_ui != null:
+		return
+	var deliv_scene := load(PATH_COMMISSION_DELIVERY_UI) as PackedScene
+	if deliv_scene != null:
+		_commission_delivery_ui = deliv_scene.instantiate() as CommissionDeliveryUI
+		add_child(_commission_delivery_ui)
 
 
 # ── Customer lifecycle ────────────────────────────────────────────────────────
@@ -534,6 +548,12 @@ func _on_customer_reached_counter(instance_id: int) -> void:
 func _on_customer_left_shop(instance_id: int, reason: String) -> void:
 	_customers.erase(instance_id)
 	_neg_queue = _neg_queue.filter(func(id: int) -> bool: return id != instance_id)
+	if instance_id == _active_neg_id:
+		_active_neg_id = -1
+		_reserved_weapons.erase(_active_neg_weapon)
+		_active_neg_weapon = {}
+		_neg_ui.close_ui()
+		_try_next_negotiation()
 	# "served"/"dismissed" đã được xử lý qua _on_deal_accepted / _on_deal_declined
 	# Chỉ cần báo ShopManager khi khách tự rời (impatient) mà chưa được xử lý
 	if reason == "impatient" or reason == "browsed":
@@ -675,6 +695,8 @@ func _try_next_negotiation() -> void:
 		return
 	_active_neg_weapon = weapon
 	_reserved_weapons.append(weapon)   # khóa — NPC khác không lấy được
+	if _customers.has(_active_neg_id):
+		(_customers[_active_neg_id] as CustomerAI).set_wait_timer_paused(true)
 	if _should_show_bargain_tutorial():
 		_show_bargain_tutorial(found[0], weapon)
 		return
@@ -729,10 +751,13 @@ func _on_deal_accepted(weapon: Dictionary, gold: int) -> void:
 	_active_neg_id = -1
 	_reserved_weapons.erase(_active_neg_weapon)
 	_active_neg_weapon = {}
-	_remove_weapon_from_shelf(weapon)
-	_shop_mgr.complete_sale(id, gold)
+	var success := _shop_mgr.complete_sale(id, gold)
+	if success:
+		_remove_weapon_from_shelf(weapon)
 	if _customers.has(id):
-		(_customers[id] as CustomerAI).dismiss_served()
+		var ai := _customers[id] as CustomerAI
+		ai.set_wait_timer_paused(false)
+		ai.dismiss_served()
 	_try_next_negotiation()
 
 
@@ -741,11 +766,14 @@ func _on_trade_accepted(weapon: Dictionary, trade_offer: Dictionary) -> void:
 	_active_neg_id = -1
 	_reserved_weapons.erase(_active_neg_weapon)
 	_active_neg_weapon = {}
-	_remove_weapon_from_shelf(weapon)
-	InventorySystem.add_trade_offer(trade_offer)
-	_shop_mgr.complete_sale(id, 0)
+	var success := _shop_mgr.complete_sale(id, 0)
+	if success:
+		_remove_weapon_from_shelf(weapon)
+		InventorySystem.add_trade_offer(trade_offer)
 	if _customers.has(id):
-		(_customers[id] as CustomerAI).dismiss_served()
+		var ai := _customers[id] as CustomerAI
+		ai.set_wait_timer_paused(false)
+		ai.dismiss_served()
 	_try_next_negotiation()
 
 
@@ -756,7 +784,9 @@ func _on_deal_declined() -> void:
 	_active_neg_weapon = {}
 	_shop_mgr.customer_walk_out(id)
 	if _customers.has(id):
-		(_customers[id] as CustomerAI).dismiss_served()
+		var ai := _customers[id] as CustomerAI
+		ai.set_wait_timer_paused(false)
+		ai.dismiss_served()
 	_try_next_negotiation()
 
 
@@ -1046,6 +1076,15 @@ func _on_slot_weapon_changed(slot_idx: int, weapon: Dictionary) -> void:
 
 
 func _apply_slot_weapon(slot_idx: int, weapon: Dictionary) -> void:
+	if not weapon.is_empty():
+		for i: int in _shelf_slots.size():
+			if i != slot_idx and _shelf_slots[i].get("weapon", {}) == weapon:
+				_shelf_slots[i]["weapon"] = {}
+				if _shelf_slots[i].get("icon") != null:
+					(_shelf_slots[i]["icon"] as Polygon2D).queue_free()
+					_shelf_slots[i]["icon"] = null
+				_update_slot_outline(i, false)
+
 	var s: Dictionary = _shelf_slots[slot_idx]
 
 	# Xoá icon cũ trong world-space
@@ -1271,6 +1310,20 @@ func _remove_weapon_from_shelf(weapon: Dictionary) -> void:
 			_apply_slot_weapon(i, {})
 	_update_shelf_info_label()
 	_shop_mgr.set_shelf_inventory(_get_display_inventory())
+
+
+func _on_commission_fulfilled_in_shop(
+		_commission_id: String,
+		weapon: Dictionary,
+		_reward: Dictionary
+) -> void:
+	_reserved_weapons.erase(weapon)
+	for i: int in _shelf_slots.size():
+		if _shelf_slots[i].get("weapon", {}) == weapon:
+			_apply_slot_weapon(i, {})
+	_update_shelf_info_label()
+	if _shop_mgr != null:
+		_shop_mgr.set_shelf_inventory(_get_display_inventory())
 
 
 func _has_sellable_display_weapon(display: Array) -> bool:

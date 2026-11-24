@@ -9,7 +9,6 @@ const PATH_BOOK := "res://assets/UI/book/"
 const PATH_WEAPONS := "res://assets/weapons/"
 const PATH_BAG := "res://assets/UI/bag/"
 const BACKGROUND_PATH := "res://assets/sprites/forge/backgrounds/Forge Scene BG.PNG"
-const PATH_MATERIAL_PICKER := "res://scenes/forge/MaterialPicker.tscn"
 const PATH_ELEMENT_PICKER := "res://scenes/forge/ElementPicker.tscn"
 const PATH_WORKSHOP := "res://scenes/main/WorkshopHub.tscn"
 const _PHASE_INDICATOR_SCRIPT := preload("res://scripts/forge/forge_phase_indicator.gd")
@@ -772,12 +771,6 @@ func _build_state_nl() -> void:
 	_btn_confirm_nl.custom_minimum_size = Vector2(210, 54)
 	_nl_bottom_bar.add_child(_btn_confirm_nl)
 	_rebuild_material_slots(2)
-
-	print("ForgeBookUI: PART 1 layout restructure completed")
-	print("ForgeBookUI: PART 5 visual states completed")
-	print("ForgeBookUI: PART 6 animation timing completed")
-	print("ForgeBookUI: PART 7 back button completed")
-	print("ForgeBookUI: StateNL built with TopBar, BagArea, ScatterZone, BottomBar")
 
 
 func _build_preview_label(node_name: String, label_position: Vector2) -> Label:
@@ -2658,6 +2651,7 @@ func _build_selected_blank(weapon_id: String) -> Dictionary:
 		"customers": data["customers"],
 		"required_tier": data["required_tier"],
 		"required_quantity": data["required_quantity"],
+		"sprite_path": _weapon_asset_path("prototype", String(data.get("asset", "")) + ".png"),
 	}
 
 

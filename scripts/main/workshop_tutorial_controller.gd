@@ -73,6 +73,10 @@ func is_day1_active() -> bool:
 	)
 
 
+func is_overlay_active() -> bool:
+	return _is_overlay_visible()
+
+
 func _is_overlay_visible() -> bool:
 	return _tutorial_overlay != null and _tutorial_overlay.visible
 
@@ -147,12 +151,12 @@ func should_handle_day1_debt_notice() -> bool:
 
 func on_day1_debt_notice_closed() -> void:
 	GameManager.mark_tutorial("debt_notice_shown")
-	# Tiến thẳng đến chiều để player vào shop được ngay
+	show_day1_post_ntn_if_needed()
 	if GameManager.current_phase == GameManager.GamePhase.MORNING:
 		advance_phase_requested.emit()
-	if GameManager.current_phase == GameManager.GamePhase.NOON:
+	elif GameManager.current_phase == GameManager.GamePhase.NOON:
 		advance_phase_requested.emit()
-	_set_tutorial_step(3)
+	sync_day1_scripted()
 
 
 func show_day1_post_ntn_if_needed() -> void:

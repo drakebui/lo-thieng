@@ -94,10 +94,19 @@ func remove_from_shelf(weapon: Dictionary) -> void:
 func sell_weapon(weapon: Dictionary) -> void:
 	shelf_weapons.erase(weapon)
 	weapons.erase(weapon)
+	GameManager.remove_weapon(weapon)
 	shelf_updated.emit()
 
 func get_shelf_weapons() -> Array[Dictionary]:
 	return shelf_weapons
+
+func set_shelf_weapons(new_shelf: Array) -> void:
+	shelf_weapons.clear()
+	for weapon in new_shelf:
+		if weapon is Dictionary:
+			var weapon_dict: Dictionary = weapon
+			shelf_weapons.append(weapon_dict)
+	shelf_updated.emit()
 
 func _trade_offer_to_material(trade_offer: Dictionary) -> Dictionary:
 	var item_id: String = trade_offer.get("item_id", "")

@@ -282,6 +282,7 @@ func restore_from_save(data: Dictionary) -> void:
 			else:
 				loaded_equipped.append({})
 		equipped_weapons = loaded_equipped
+	_rebind_equipped_weapons_to_inventory()
 	if data.has("travel_stamina"):
 		travel_stamina = clampi(int(data["travel_stamina"]), 0, max_travel_stamina)
 	if data.has("tutorial_flags") and data["tutorial_flags"] is Dictionary:
@@ -394,6 +395,10 @@ func change_phase(new_phase: GamePhase) -> void:
 	phase_changed.emit(new_phase)
 
 
+func advance_day() -> void:
+	DayCycle.advance_phase()
+
+
 func _check_zero_gold_streak() -> void:
 	if gold <= 0:
 		consecutive_zero_gold_days += 1
@@ -414,6 +419,17 @@ func get_entry_cost(region_id: String) -> int:
 
 func can_enter_region(region_id: String) -> bool:
 	return travel_stamina >= get_entry_cost(region_id)
+
+
+func consume_travel_stamina(amount: int = 1) -> bool:
+	var cost: int = maxi(1, amount)
+	if travel_stamina < cost:
+		return false
+	travel_stamina = maxi(0, travel_stamina - cost)
+	travel_stamina_changed.emit(travel_stamina, max_travel_stamina)
+	if travel_stamina == 0:
+		EventBus.travel_stamina_depleted.emit()
+	return true
 
 
 func consume_entry_stamina(region_id: String) -> bool:
@@ -564,7 +580,20 @@ func _complete_quest(quest: QuestData) -> void:
 	EventBus.quest_updated.emit()
 
 
+func collect_artifact(artifact_id: int) -> void:
+	if artifact_id < 0:
+		return
+	artifact_count += 1
+	EventBus.artifact_collected.emit(artifact_id)
+
+
 func _grant_quest_reward(quest: QuestData) -> void:
+	if quest.reward_gold > 0:
+		add_gold(quest.reward_gold)
+	if quest.reward_reputation > 0:
+		add_reputation(quest.reward_reputation)
+	if quest.reward_artifact_id >= 0:
+		collect_artifact(quest.reward_artifact_id)
 	if quest.reward_recipe_id.is_empty():
 		return
 	if quest.reward_recipe_id not in unlocked_recipe_ids:
@@ -626,6 +655,10 @@ func add_weapon(weapon_data: Dictionary) -> void:
 	EventBus.weapon_forged.emit(weapon_data)
 
 
+func remove_weapon(weapon: Dictionary) -> void:
+	forged_weapons.erase(weapon)
+
+
 func _on_weapon_forged(weapon_data: Dictionary) -> void:
 	if weapon_data not in forged_weapons:
 		forged_weapons.append(weapon_data)
@@ -683,3 +716,28 @@ func _make_starter_weapon() -> Dictionary:
 		"durability_max": 50,
 		"source": "starter",
 	}
+
+
+func _rebind_equipped_weapons_to_inventory() -> void:
+	var inv_weapons := InventorySystem.get_weapons()
+	var used_indices: Array[int] = []
+	for slot_idx in equipped_weapons.size():
+		var eq: Dictionary = equipped_weapons[slot_idx]
+		if eq.is_empty():
+			continue
+		for inv_idx in inv_weapons.size():
+			if inv_idx in used_indices:
+				continue
+			if _same_weapon_signature(eq, inv_weapons[inv_idx]):
+				equipped_weapons[slot_idx] = inv_weapons[inv_idx]
+				used_indices.append(inv_idx)
+				break
+
+
+func _same_weapon_signature(a: Dictionary, b: Dictionary) -> bool:
+	return (
+		a.get("weapon_name", "") == b.get("weapon_name", "")
+		and a.get("blank_id", "") == b.get("blank_id", "")
+		and int(a.get("atk", 0)) == int(b.get("atk", 0))
+		and int(a.get("rarity_tier", 0)) == int(b.get("rarity_tier", 0))
+	)

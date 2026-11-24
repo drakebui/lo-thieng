@@ -13,11 +13,15 @@ func save_game(game_state: Dictionary) -> void:
 	game_state["unlocked_recipe_ids"] = GameManager.unlocked_recipe_ids
 	game_state["materials"] = InventorySystem.get_materials()
 	game_state["weapons"] = InventorySystem.get_weapons()
+	game_state["shelf_weapons"] = InventorySystem.get_shelf_weapons()
 	var active_commissions: Array[String] = []
 	for c in CommissionSystem.get_active():
 		active_commissions.append(c.commission_id)
 	game_state["commissions_active"] = active_commissions
 	var file = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if file == null:
+		push_error("Không thể mở file save: " + SAVE_PATH)
+		return
 	file.store_string(JSON.stringify(game_state))
 	file.close()
 
@@ -25,9 +29,12 @@ func load_game() -> Dictionary:
 	if not FileAccess.file_exists(SAVE_PATH):
 		return {}
 	var file = FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if file == null:
+		push_error("Không thể mở file save: " + SAVE_PATH)
+		return {}
 	var data = JSON.parse_string(file.get_as_text())
 	file.close()
-	var loaded_data: Dictionary = data if data else {}
+	var loaded_data: Dictionary = data if data is Dictionary else {}
 	if loaded_data.has("tutorial_flags") and loaded_data["tutorial_flags"] is Dictionary:
 		for key in loaded_data["tutorial_flags"]:
 			if GameManager.tutorial_flags.has(key):
@@ -36,6 +43,7 @@ func load_game() -> Dictionary:
 	InventorySystem.set_weapons(
 		loaded_data.get("weapons", loaded_data.get("forged_weapons", []))
 	)
+	InventorySystem.set_shelf_weapons(loaded_data.get("shelf_weapons", []))
 	CommissionSystem.reset_state()
 	var active_ids: Array = loaded_data.get("commissions_active", [])
 	if not active_ids.is_empty():
@@ -49,9 +57,12 @@ func get_save_metadata() -> Dictionary:
 	if not FileAccess.file_exists(SAVE_PATH):
 		return {}
 	var file = FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if file == null:
+		push_error("Không thể mở file save: " + SAVE_PATH)
+		return {}
 	var data = JSON.parse_string(file.get_as_text())
 	file.close()
-	var loaded_data: Dictionary = data if data else {}
+	var loaded_data: Dictionary = data if data is Dictionary else {}
 	return {
 		"day": loaded_data.get("day", 0),
 		"saved_at": loaded_data.get("saved_at", ""),

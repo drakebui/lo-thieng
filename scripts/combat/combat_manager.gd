@@ -199,6 +199,13 @@ func _do_player_action(action: Dictionary) -> void:
 		combatant_updated.emit(true)
 		return
 
+	if player.freeze_turns > 0:
+		player.freeze_turns -= 1
+		if randf() < 0.5:
+			_log("> Bạn bị Đóng Băng — không thể hành động!")
+			combatant_updated.emit(true)
+			return
+
 	if action.get("type") == "switch":
 		var pu := player as PlayerCombatUnit
 		if pu:
@@ -233,11 +240,13 @@ func _do_enemy_action() -> void:
 		combatant_updated.emit(false)
 		return
 
-	if enemy.freeze_turns > 0 and randf() < 0.5:
-		_log("> %s bị Đóng Băng — không thể hành động!" % enemy.combatant_name)
-		combatant_updated.emit(false)
-		combatant_updated.emit(true)
-		return
+	if enemy.freeze_turns > 0:
+		enemy.freeze_turns -= 1
+		if randf() < 0.5:
+			_log("> %s bị Đóng Băng — không thể hành động!" % enemy.combatant_name)
+			combatant_updated.emit(false)
+			combatant_updated.emit(true)
+			return
 
 	match _enemy_intent.get("type", "attack"):
 		"attack":
@@ -284,7 +293,7 @@ func _do_enemy_action() -> void:
 
 		"run":
 			_log("> %s bỏ chạy khỏi trận!" % enemy.combatant_name)
-			_finish("win", { "gold": enemy.drop_gold })
+			_finish("win", _build_win_reward())
 			return
 
 	combatant_updated.emit(false)
@@ -425,7 +434,7 @@ func _execute_skill(skill_data: Variant, attacker: Combatant, target: Combatant)
 			var pct:   float = skill.get("stat_bonus_pct",   0.15)
 			attacker.dmg_mult        = 1.0 + pct
 			attacker.dmg_mult_turns  = turns
-			attacker.def_bonus       = int(attacker.def_stat * pct)
+			attacker.def_bonus       = maxi(1, int(round(attacker.def_stat * pct)))
 			attacker.def_bonus_turns = turns
 			_log("> %s dùng %s: +%.0f%% mọi stat trong %d lượt!" % [
 				attacker.combatant_name, name, pct * 100.0, turns])
@@ -473,14 +482,30 @@ func _apply_counter_bonus(
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _check_end() -> bool:
-	if not enemy.is_alive():
-		AudioManager.play_sfx_key("enemy_death")
-		_finish("win", { "gold": enemy.drop_gold })
+	if _state == CombatState.ENDED:
 		return true
 	if not player.is_alive():
 		_finish("lose", {})
 		return true
+	if not enemy.is_alive():
+		AudioManager.play_sfx_key("enemy_death")
+		_finish("win", _build_win_reward())
+		return true
 	return false
+
+
+func _build_win_reward() -> Dictionary:
+	var total_gold: int = enemy.drop_gold
+	if player is PlayerCombatUnit:
+		var active_weapon: Dictionary = (player as PlayerCombatUnit).get_active_weapon()
+		var s1: Dictionary = active_weapon.get("skill1", {})
+		var bonus_gold: int = int(s1.get("gold_bonus_on_win", 0))
+		if bonus_gold > 0:
+			total_gold += bonus_gold
+		var bonus_rep: int = int(s1.get("rep_bonus_on_win", 0))
+		if bonus_rep > 0:
+			GameManager.add_reputation(bonus_rep)
+	return { "gold": total_gold }
 
 
 func _finish(result: String, data: Dictionary) -> void:

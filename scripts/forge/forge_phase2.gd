@@ -1,4 +1,4 @@
-# Phase 2: Rèn Búa — 5 nhát búa, timing-based
+# Phase 2: Rèn Búa — 5 nhát búa, timing-based con lắc liên tục
 # Kết quả emit EventBus.phase2_completed(score, prefix_tier)
 extends Node
 
@@ -9,20 +9,27 @@ enum HitResult { PERFECT, GOOD, MISS }
 
 const TOTAL_STRIKES      := 5
 const BASE_BEAT_DURATION := 1.5   # giây mỗi nhát ở rarity 1
+const BEAT_SPEEDUP_STEP  := 0.07  # mỗi nhát sau nhanh hơn 7% tạo cao trào nhát 4-5
 const PERFECT_HALF_WIDTH := 0.08  # ±8% quanh tâm
 const GOOD_HALF_WIDTH    := 0.18  # ±18% quanh tâm
-# Difficulty: Story=1.5, Normal=1.0, Hardcore=0.7 — nhân vào half-width
+const BREATH_DURATION    := 0.22  # nhịp thở 0.22s khi đổi chiều / sau mỗi nhát đập
 
 var score: int = 0
+var combo_count: int = 0
 var current_strike: int = 0
 var is_active: bool = false
 var beat_progress: float = 0.0
 var perfect_center: float = 0.55
 var window_scale: float = 1.0
+var direction: float = 1.0
+
+var _base_beat_duration: float = BASE_BEAT_DURATION
 var _beat_duration: float = BASE_BEAT_DURATION
 var _material_rarity: int = 1
 
 var _hit_this_beat: bool = false
+var _is_breathing: bool = false
+var _breath_timer: float = 0.0
 var _between_beats: bool = false
 
 
@@ -32,29 +39,54 @@ func start_phase(
 	material_rarity: int = 1
 ) -> void:
 	score = 0
+	combo_count = 0
 	current_strike = 0
 	is_active = true
+	_is_breathing = false
+	_breath_timer = 0.0
 	_between_beats = false
 	window_scale = p_window_scale
+	_base_beat_duration = p_beat_duration
 	_beat_duration = p_beat_duration
 	_material_rarity = material_rarity
+	direction = -1.0  # _next_beat sẽ lật thành +1.0 để bắt đầu từ trái sang phải
 	_next_beat()
 
 
 func try_hit() -> void:
-	if not is_active or _hit_this_beat or _between_beats:
+	if not is_active or _hit_this_beat or _between_beats or _is_breathing:
 		return
 	_hit_this_beat = true
 	_resolve_hit(beat_progress)
 
 
+func get_combo_count() -> int:
+	return combo_count
+
+
 func _process(delta: float) -> void:
-	if not is_active or _between_beats:
+	if not is_active:
 		return
-	beat_progress = minf(beat_progress + delta / _beat_duration, 1.0)
-	if beat_progress >= 1.0 and not _hit_this_beat:
-		_hit_this_beat = true
-		_resolve_hit(1.0)
+
+	if _is_breathing:
+		_breath_timer -= delta
+		if _breath_timer <= 0.0:
+			_is_breathing = false
+			_between_beats = false
+			_next_beat()
+		return
+
+	beat_progress += direction * (delta / _beat_duration)
+	if direction > 0.0 and beat_progress >= 1.0:
+		beat_progress = 1.0
+		if not _hit_this_beat:
+			_hit_this_beat = true
+			_resolve_hit(1.0)
+	elif direction < 0.0 and beat_progress <= 0.0:
+		beat_progress = 0.0
+		if not _hit_this_beat:
+			_hit_this_beat = true
+			_resolve_hit(0.0)
 
 
 func _resolve_hit(progress: float) -> void:
@@ -66,11 +98,14 @@ func _resolve_hit(progress: float) -> void:
 	if dist <= perfect_w:
 		result = HitResult.PERFECT
 		score += 1
+		combo_count += 1
 	elif dist <= good_w:
 		result = HitResult.GOOD
+		combo_count = 0
 	else:
 		result = HitResult.MISS
 		score -= 1
+		combo_count = 0
 
 	strike_resolved.emit(result, current_strike, score)
 	current_strike += 1
@@ -80,16 +115,27 @@ func _resolve_hit(progress: float) -> void:
 		EventBus.phase2_completed.emit(score, _score_to_prefix(score))
 		return
 
+	# Nhịp thở 0.22s mượt mà sau nhát đập, không dùng create_timer gây khựng đơ
+	_is_breathing = true
+	_breath_timer = BREATH_DURATION
 	_between_beats = true
-	await get_tree().create_timer(0.5).timeout
-	_between_beats = false
-	_next_beat()
 
 
 func _next_beat() -> void:
-	beat_progress = 0.0
 	_hit_this_beat = false
-	perfect_center = randf_range(0.38, 0.72)
+	_between_beats = false
+	direction = -direction
+	if direction > 0.0:
+		beat_progress = 0.0
+		# Con lắc chạy trái -> phải: tâm hoàn hảo nảy sang nửa phải [0.55, 0.72]
+		perfect_center = randf_range(0.55, 0.72)
+	else:
+		beat_progress = 1.0
+		# Con lắc chạy phải -> trái: tâm hoàn hảo nảy sang nửa trái [0.28, 0.45]
+		perfect_center = randf_range(0.28, 0.45)
+
+	var speed_factor := maxf(0.65, 1.0 - float(current_strike) * BEAT_SPEEDUP_STEP)
+	_beat_duration = _base_beat_duration * speed_factor
 	beat_started.emit(current_strike, perfect_center)
 
 

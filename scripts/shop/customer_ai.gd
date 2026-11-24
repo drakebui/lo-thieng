@@ -61,6 +61,7 @@ var _browse_queue:  Array   = []   # chỉ số kệ sẽ ghé, pop_front khi đ
 var _pause_timer:   float   = 0.0
 var _pausing:       bool    = false
 var _wait_timer:    float   = 0.0
+var _is_wait_timer_paused: bool = false
 var _leaving_reason: String = "impatient"
 var _wants_to_buy:  bool    = true
 
@@ -217,9 +218,10 @@ func _physics_process(delta: float) -> void:
 		State.AT_COUNTER:
 			velocity = Vector2.ZERO
 			move_and_slide()
-			_wait_timer -= delta
-			if _wait_timer <= 0.0:
-				_begin_leave("impatient")
+			if not _is_wait_timer_paused:
+				_wait_timer -= delta
+				if _wait_timer <= 0.0:
+					_begin_leave("impatient")
 
 		State.LEAVING:
 			_walk_to_target()
@@ -242,6 +244,11 @@ func _near_target() -> bool:
 # ══════════════════════════════════════════════════════════════════════════════
 # PUBLIC API — gọi từ ShopScene
 # ══════════════════════════════════════════════════════════════════════════════
+
+# Tạm dừng / tiếp tục đếm ngược khi mở giao diện đàm phán
+func set_wait_timer_paused(paused: bool) -> void:
+	_is_wait_timer_paused = paused
+
 
 # Gọi sau khi sale hoàn tất → khách tự đi ra
 func dismiss_served() -> void:

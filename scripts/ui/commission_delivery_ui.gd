@@ -176,8 +176,11 @@ func _on_deliver_pressed(weapon: Dictionary) -> void:
 		return
 
 	_is_delivering = true
+	InventorySystem.sell_weapon(weapon)
+	for slot_idx in GameManager.equipped_weapons.size():
+		if GameManager.equipped_weapons[slot_idx] == weapon:
+			GameManager.equipped_weapons[slot_idx] = {}
 	CommissionSystem.fulfill(_commission.commission_id, weapon)
-	InventorySystem.weapons.erase(weapon)
 	_status_lbl.text = "\"%s\"" % _commission.flavor_fulfilled
 	await get_tree().create_timer(1.5).timeout
 	EventBus.commission_npc_dismiss_requested.emit(_customer_instance_id)

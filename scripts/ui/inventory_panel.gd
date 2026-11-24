@@ -122,7 +122,7 @@ func _unhandled_input(event: InputEvent) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _build_skeleton() -> void:
-	var vp_size := Vector2(1024, 768)
+	var vp_size := get_viewport().get_visible_rect().size
 	var bx := int((vp_size.x - PW) * 0.5)
 	var by := int((vp_size.y - PH) * 0.5)
 
@@ -367,10 +367,11 @@ func _build_shop_weapon_card(w: Dictionary, y: int) -> void:
 
 	# Nút đặt vũ khí vào từng ô của nhóm hiện tại
 	var slot_indices := _get_current_group_slot_indices()
-	var on_other  := _is_on_other_shelf(w)
+	var placed_slot := _get_placed_slot(w)
 	for i: int in slot_indices.size():
 		var slot_idx: int = slot_indices[i]
-		var on_slot := _slot_has_weapon(slot_idx, w)
+		var on_slot := (placed_slot == slot_idx)
+		var is_placed_elsewhere := (placed_slot != -1 and not on_slot)
 		var btn := Button.new()
 		btn.text = _get_slot_name(slot_idx)
 		if on_slot:
@@ -378,8 +379,8 @@ func _build_shop_weapon_card(w: Dictionary, y: int) -> void:
 		btn.position = Vector2(PW - 222 + (i % 2) * 108, y + 6 + floori(i / 2.0) * 34)
 		btn.size = Vector2(104, 30)
 		btn.add_theme_font_size_override("font_size", 15)
-		btn.disabled = on_slot or on_other
-		if not on_slot and not on_other:
+		btn.disabled = on_slot or is_placed_elsewhere
+		if not btn.disabled:
 			btn.pressed.connect(_on_place_weapon.bind(slot_idx, w))
 		_content_root.add_child(btn)
 		_dynamic_nodes.append(btn)
@@ -465,6 +466,9 @@ func _build_forge_weapon_card(w: Dictionary, y: int) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _on_place_weapon(slot_idx: int, weapon: Dictionary) -> void:
+	var old_slot := _get_placed_slot(weapon)
+	if old_slot != -1 and old_slot != slot_idx:
+		slot_weapon_changed.emit(old_slot, {})
 	slot_weapon_changed.emit(slot_idx, weapon)
 	_rebuild_content()   # refresh để cập nhật trạng thái nút
 
@@ -482,6 +486,15 @@ func _on_choose_for_forge(weapon: Dictionary) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
+
+func _get_placed_slot(w: Dictionary) -> int:
+	if w.is_empty():
+		return -1
+	for i: int in _shelf_slots.size():
+		if _shelf_slots[i].get("weapon", {}) == w:
+			return i
+	return -1
+
 
 func _slot_has_weapon(slot_idx: int, w: Dictionary) -> bool:
 	if slot_idx < 0 or slot_idx >= _shelf_slots.size():

@@ -1,4 +1,4 @@
-# Phase 3: Tôi Luyện — Auto phase, không có mini-game
+# Phase 3: Tôi Luyện — Nhúng linh lực và căn nhịp Cổ Ngữ hội tụ
 # Player chọn nguyên tố (Linh Lực) → vũ khí được nhúng → suffix xác định
 # Kết quả emit EventBus.phase3_completed(weapon_result: Dictionary)
 extends Node
@@ -45,29 +45,71 @@ const SUFFIX_NAMES: Dictionary = {
 	"hu_khong":    "Hư Không",
 }
 
-# Thời gian animation tôi luyện (giây) — UI dùng để chạy tween
-const QUENCH_DURATION := 3.5
+# Thời gian tôi luyện 2.4s (0..1.0 trong 2.4s)
+const QUENCH_DURATION := 2.4
+
+# Vùng tâm hội tụ cổ ngữ: 0.70 ± 0.08
+const TARGET_PROGRESS  := 0.70
+const TARGET_TOLERANCE := 0.08
 
 var element_key: String = ""
-var is_active:   bool   = false
+var is_active: bool = false
+var quench_progress: float = 0.0
+var is_quenching: bool = false
+var perfect_quench: bool = false
+var _quench_pressed: bool = false
 
 
 func start_phase(element: String) -> void:
 	element_key = element
-	is_active   = true
+	is_active = true
+	is_quenching = true
+	quench_progress = 0.0
+	perfect_quench = false
+	_quench_pressed = false
 
 
-# Gọi sau khi animation UI kết thúc — tính kết quả và emit signal
-func complete(phase1_tier: String, phase2_prefix: String) -> Dictionary:
+func _process(delta: float) -> void:
+	if not is_active or not is_quenching:
+		return
+	quench_progress = minf(quench_progress + delta / QUENCH_DURATION, 1.0)
+	if quench_progress >= 1.0:
+		is_quenching = false
+
+
+# Người chơi nhấn Space căn nhịp hội tụ
+func try_quench_press() -> bool:
+	if not is_active or not is_quenching or _quench_pressed:
+		return false
+	_quench_pressed = true
+	var dist := absf(quench_progress - TARGET_PROGRESS)
+	if dist <= TARGET_TOLERANCE:
+		perfect_quench = true
+		return true
+	return false
+
+
+# Kiểm tra xem hiện tại có đang trong cửa sổ hội tụ không
+func is_in_quench_window() -> bool:
+	return absf(quench_progress - TARGET_PROGRESS) <= TARGET_TOLERANCE
+
+
+# Gọi sau khi kết thúc tôi luyện — tính kết quả và emit signal
+func complete(phase1_tier: String, phase2_prefix: String, is_perfect_quench: bool = false) -> Dictionary:
 	is_active = false
+	is_quenching = false
+	var final_perfect := is_perfect_quench or perfect_quench
 	var elem: Dictionary = ELEMENTS.get(element_key, {})
 	var result := {
-		"phase1_tier":    phase1_tier,
-		"phase2_prefix":  phase2_prefix,
-		"element":        element_key,
-		"suffix":         elem.get("suffix", ""),
-		"element_name":   elem.get("name", ""),
-		"element_color":  elem.get("color", Color.WHITE),
+		"phase1_tier":      phase1_tier,
+		"phase2_prefix":    phase2_prefix,
+		"element":          element_key,
+		"suffix":           elem.get("suffix", ""),
+		"element_name":     elem.get("name", ""),
+		"element_color":    elem.get("color", Color.WHITE),
+		"perfect_quench":   final_perfect,
+		"price_mult":       1.10 if final_perfect else 1.0,
+		"durability_bonus": 10 if final_perfect else 0,
 	}
 	EventBus.phase3_completed.emit(result)
 	return result

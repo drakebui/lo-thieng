@@ -46,6 +46,24 @@ const PREFIX_RARITY: Dictionary = {
 	"perfect":     5,
 }
 
+const PHASE2_BONUS: Dictionary = {
+	"phan_chu":    -5,
+	"curse_nang":  -3,
+	"curse_nhe":   -1,
+	"thuong":       0,
+	"tot":          1,
+	"nang_tay":     1,
+	"than_toc":     1,
+	"kiet_tac":     2,
+	"can_bang":     2,
+	"to_nghe":      3,
+	"huyen_bi":     3,
+	"cung_nhu_da":  4,
+	"khi_phach":    4,
+	"truong_sinh":  5,
+	"perfect":      5,
+}
+
 
 ## Nguồn sự thật duy nhất cho giá bán vũ khí.
 ## Dùng chung bởi weapon_card_ui (hiển thị) và negotiation_ui (shop).
@@ -74,16 +92,19 @@ static func forge_to_combat(fd: Dictionary) -> Dictionary:
 	var blank_id:  String = fd.get("blank_id",      "")
 
 	var p1_mult: float = P1_MULTIPLIERS.get(p1_tier, 1.0)
+	var p2_bonus: int = PHASE2_BONUS.get(p2_prefix, 0)
 
-	# Phase 1 nhân ATK, DEF, Magic — Speed là tốc độ chiến đấu, không phụ thuộc nhiệt
-	# TODO: PHASE2_BONUS is applied in weapon_card_ui preview but NOT here.
-	# Combat stats and preview stats currently diverge. Fix in next pass.
-	var atk:        int   = maxi(1, int(fd.get("base_atk",   10) * p1_mult))
+	# Phase 1 nhân ATK, DEF, Magic; Phase 2 cộng bonus vào ATK và Magic — khớp WeaponCardUI
+	var atk:        int   = maxi(1, int(fd.get("base_atk",   10) * p1_mult) + p2_bonus)
 	var def_s:      int   = maxi(0, int(fd.get("base_def",    0) * p1_mult))
-	var magic:      int   = maxi(0, int(fd.get("base_magic",  0) * p1_mult))
+	var magic:      int   = maxi(0, int(fd.get("base_magic",  0) * p1_mult) + p2_bonus)
 	var speed:      int   = fd.get("base_speed", 5)
 	var price_mult: float = fd.get("price_mult", 1.0)
 	var rar_tier:   int   = PREFIX_RARITY.get(p2_prefix, 2)
+
+	var dur_bonus:  int   = int(fd.get("durability_bonus", 0))
+	var base_dur:   int   = int(fd.get("durability", 50))
+	var max_dur:    int   = base_dur + dur_bonus
 
 	return {
 		"weapon_name":    _build_name(fd),
@@ -100,8 +121,8 @@ static func forge_to_combat(fd: Dictionary) -> Dictionary:
 		"phase2_prefix":  p2_prefix,
 		"element":        fd.get("element",      ""),
 		"element_name":   fd.get("element_name", ""),
-		"durability":      50,
-		"durability_max":  50,
+		"durability":      max_dur,
+		"durability_max":  max_dur,
 		"sell_value":      weapon_sell_value(atk, magic, speed, rar_tier, price_mult),
 		"combat_power":    weapon_combat_power(atk, def_s, magic, speed),
 	}
@@ -212,7 +233,7 @@ static func _suffix_to_skill(suffix: String) -> Dictionary:
 		"sam_set":     # Sét — Chain Lightning bỏ qua 50% DEF
 			return {
 				"name": "Sấm Sét", "stamina_cost": 2,
-				"effect": "DAMAGE", "damage_mult": 1.0, "dice": 0, "ignore_def": 0.5,
+				"effect": "DAMAGE_IGNORE_DEF", "damage_mult": 1.0, "dice": 0, "ignore_def": 0.5,
 			}
 		"dao_dong":    # Thổ — Poison Cloud (Độc)
 			return {
@@ -228,7 +249,7 @@ static func _suffix_to_skill(suffix: String) -> Dictionary:
 		"hu_khong":    # Hư Không — Shadow Strike bỏ qua 100% DEF
 			return {
 				"name": "Shadow Strike", "stamina_cost": 2,
-				"effect": "DAMAGE", "damage_mult": 1.0, "dice": 0, "ignore_def": 1.0,
+				"effect": "DAMAGE_IGNORE_DEF", "damage_mult": 1.0, "dice": 0, "ignore_def": 1.0,
 			}
 		_:
 			return {}

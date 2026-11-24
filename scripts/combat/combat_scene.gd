@@ -9,10 +9,22 @@ const _ENEMY_CYCLE: Array[String] = [
 	"bandit_tre_t1",
 	"soi_gia_t2",
 ]
-const SPRITE_SHEET_PATH := "res://assets/sprites/players/sprite sheet_Nấm.png"
-const FRAME_W := 768
-const FRAME_H := 448
-const SPRITE_RENDER_SCALE := 0.54
+# [PIXEL ART CONFIG] Chuẩn 32-bit 4 hướng (1024x896, 16 cột x 14 hàng, ô 64x64):
+# Hàng 2 = idle_right (16f), Hàng 6 = walk_right (16f), SPRITE_RENDER_SCALE = 3.0 (integer scale).
+const SPRITE_SHEET_PATH := "res://assets/pixel/sprites/player/nam_4dir_sheet_64.png"
+const FRAME_W := 64
+const FRAME_H := 64
+const PLAYER_FEET_Y := 60
+const SPRITE_RENDER_SCALE := 3.0
+const COMBAT_BG_PATH := "res://assets/pixel/backgrounds/combat_v1_dong_may_640x360.png"
+const ENEMY_FRAME_W := 64
+const ENEMY_FRAME_H := 64
+const ENEMY_RENDER_SCALE := 3.0
+const ENEMY_SHEET_PATHS: Dictionary = {
+	"soi_dong_co_t1": "res://assets/pixel/sprites/enemies/soi_dong_co_t1_sheet_64.png",
+	"bandit_tre_t1": "res://assets/pixel/sprites/enemies/bandit_tre_t1_sheet_64.png",
+	"soi_gia_t2": "res://assets/pixel/sprites/enemies/soi_gia_t2_sheet_64.png",
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NODES
@@ -37,7 +49,8 @@ var _e_hp_lbl:     Label
 var _e_status_lbl: Label
 var _e_intent_lbl: Label
 var _e_stat_lbl:   Label
-var _e_sprite:     ColorRect
+var _e_sprite:     AnimatedSprite2D
+var _e_fallback_rect: ColorRect
 var _e_color:      Color = Color(0.55, 0.25, 0.12)  # màu gốc sprite enemy
 
 # HP bar tweens — để không bị conflict khi có nhiều update liên tiếp
@@ -143,10 +156,25 @@ func _build_battle_area() -> Control:
 	var area := Control.new()
 	area.clip_contents = true
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.10, 0.08, 0.07)
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	area.add_child(bg)
+	var bg_tex := load(COMBAT_BG_PATH) as Texture2D
+	if bg_tex != null:
+		var bg_img := TextureRect.new()
+		bg_img.texture = bg_tex
+		bg_img.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		bg_img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		bg_img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		bg_img.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		area.add_child(bg_img)
+		# Phủ lớp tối nhẹ 18% giúp chữ HUD nổi rõ trên nền thảo nguyên sáng
+		var shade := ColorRect.new()
+		shade.color = Color(0.06, 0.04, 0.03, 0.18)
+		shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		area.add_child(shade)
+	else:
+		var bg := ColorRect.new()
+		bg.color = Color(0.10, 0.08, 0.07)
+		bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		area.add_child(bg)
 
 	# Enemy info: góc trên-trái (giống Pokémon — tên + HP enemy phía trên trái)
 	_add_anchored_to(area, _build_enemy_info_panel(), 0.02, 0.03, 0.50, 0.52)
@@ -166,13 +194,30 @@ func _build_battle_area() -> Control:
 func _build_player_sprite_area() -> Control:
 	var wrap := Control.new()
 	wrap.clip_contents = false
+
+	# Bóng tiếp đất oval dưới đúng điểm chân (32, 60) giúp Nấm đứng vững trên mặt sàn đấu
+	var shadow := Polygon2D.new()
+	shadow.color = Color(0.06, 0.03, 0.04, 0.42)
+	var pts := PackedVector2Array()
+	var segs := 14
+	for i in range(segs):
+		var ang := (float(i) / float(segs)) * TAU
+		pts.append(Vector2(cos(ang) * 9.5, sin(ang) * 3.0) * SPRITE_RENDER_SCALE)
+	shadow.polygon = pts
+	wrap.add_child(shadow)
+
 	_p_sprite = _build_player_sprite()
 	_p_sprite.flip_h = false
 	_p_sprite.play("idle")
 	wrap.add_child(_p_sprite)
-	# AnimatedSprite2D là Node2D → không tự center trong Control
-	# Dùng resized để đặt tâm sprite vào giữa vùng chứa
-	wrap.resized.connect(func(): _p_sprite.position = wrap.size * 0.5)
+
+	# Căn nguyên pixel (roundf) để không lệch sub-pixel làm biến dạng nét pixel của Nấm
+	var feet_offset_y := float(PLAYER_FEET_Y - FRAME_H / 2) * SPRITE_RENDER_SCALE
+	wrap.resized.connect(func() -> void:
+		var sprite_pos := Vector2(roundf(wrap.size.x * 0.46), roundf(wrap.size.y * 0.52))
+		_p_sprite.position = sprite_pos
+		shadow.position = Vector2(sprite_pos.x, roundf(sprite_pos.y + feet_offset_y))
+	)
 	return wrap
 
 
@@ -216,8 +261,10 @@ func _build_player_sprite() -> AnimatedSprite2D:
 		return sprite
 
 	var defs: Array[Dictionary] = [
-		{"name": "idle", "row": 0, "count": 4, "fps": 6.0, "loop": true},
-		{"name": "walk", "row": 1, "count": 4, "fps": 8.0, "loop": true},
+		{"name": "idle", "row": 2, "count": 16, "fps": 12.0, "loop": true},
+		{"name": "walk", "row": 6, "count": 16, "fps": 24.0, "loop": true},
+		{"name": "hurt", "row": 12, "count": 8, "fps": 16.0, "loop": false},
+		{"name": "special", "row": 13, "count": 8, "fps": 18.0, "loop": false},
 	]
 
 	for definition: Dictionary in defs:
@@ -227,24 +274,82 @@ func _build_player_sprite() -> AnimatedSprite2D:
 		frames.add_animation(anim_name)
 		frames.set_animation_speed(anim_name, definition["fps"])
 		frames.set_animation_loop(anim_name, definition["loop"])
-		for col in frame_count:
+		for col in range(frame_count):
 			var atlas := AtlasTexture.new()
 			atlas.atlas = texture
 			atlas.region = Rect2(col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H)
 			frames.add_frame(anim_name, atlas)
 
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.sprite_frames = frames
 	sprite.scale = Vector2(SPRITE_RENDER_SCALE, SPRITE_RENDER_SCALE)
+	sprite.animation_finished.connect(func() -> void:
+		if sprite.animation != "idle":
+			sprite.play("idle")
+	)
 	return sprite
 
 
 func _build_enemy_sprite_area() -> Control:
-	var wrap := CenterContainer.new()
-	_e_sprite = ColorRect.new()
-	_e_sprite.custom_minimum_size = Vector2(160, 200)
-	_e_sprite.color = Color(0.55, 0.25, 0.12)
+	var wrap := Control.new()
+	wrap.clip_contents = false
+
+	_e_fallback_rect = ColorRect.new()
+	_e_fallback_rect.size = Vector2(160, 200)
+	_e_fallback_rect.color = Color(0.55, 0.25, 0.12)
+	_e_fallback_rect.visible = false
+	wrap.add_child(_e_fallback_rect)
+
+	_e_sprite = AnimatedSprite2D.new()
+	_e_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_e_sprite.scale = Vector2(ENEMY_RENDER_SCALE, ENEMY_RENDER_SCALE)
+	_e_sprite.animation_finished.connect(func() -> void:
+		if _e_sprite.animation != "idle" and _e_sprite.sprite_frames != null \
+				and _e_sprite.sprite_frames.has_animation("idle"):
+			_e_sprite.play("idle")
+	)
 	wrap.add_child(_e_sprite)
+
+	wrap.resized.connect(func() -> void:
+		_e_sprite.position = wrap.size * 0.5
+		_e_fallback_rect.position = (wrap.size - _e_fallback_rect.size) * 0.5
+	)
 	return wrap
+
+
+func _load_enemy_sprite_sheet(enemy_key: String, fallback_color: Color) -> void:
+	var path: String = String(ENEMY_SHEET_PATHS.get(enemy_key, ""))
+	var texture := load(path) as Texture2D if not path.is_empty() else null
+	if texture == null:
+		_e_sprite.visible = false
+		_e_fallback_rect.visible = true
+		_e_fallback_rect.color = fallback_color
+		return
+
+	var frames := SpriteFrames.new()
+	var defs: Array[Dictionary] = [
+		{"name": "idle", "row": 0, "count": 4, "fps": 6.0, "loop": true},
+		{"name": "walk", "row": 1, "count": 4, "fps": 8.0, "loop": true},
+		{"name": "attack", "row": 2, "count": 4, "fps": 10.0, "loop": false},
+		{"name": "hurt", "row": 3, "count": 4, "fps": 10.0, "loop": false},
+	]
+	for d: Dictionary in defs:
+		var anim_name: String = d["name"]
+		var row: int = d["row"]
+		frames.add_animation(anim_name)
+		frames.set_animation_speed(anim_name, d["fps"])
+		frames.set_animation_loop(anim_name, d["loop"])
+		for col in int(d["count"]):
+			var atlas := AtlasTexture.new()
+			atlas.atlas = texture
+			atlas.region = Rect2(col * ENEMY_FRAME_W, row * ENEMY_FRAME_H, ENEMY_FRAME_W, ENEMY_FRAME_H)
+			frames.add_frame(anim_name, atlas)
+
+	_e_sprite.sprite_frames = frames
+	_e_sprite.modulate = Color.WHITE
+	_e_sprite.visible = true
+	_e_fallback_rect.visible = false
+	_e_sprite.play("idle")
 
 
 func _build_enemy_info_panel() -> Control:
@@ -462,8 +567,8 @@ func _setup_mock_combat(enemy_key: String) -> void:
 		tmpl = fallback.to_template() if fallback != null else {}
 
 	var e := EnemyCombatUnit.from_template(tmpl)
-	_e_color        = e.color
-	_e_sprite.color = e.color
+	_e_color = e.color
+	_load_enemy_sprite_sheet(enemy_key, e.color)
 
 	_p_name_lbl.text = p.combatant_name
 	_e_name_lbl.text = e.combatant_name
@@ -526,18 +631,34 @@ func _on_combatant_updated(is_player: bool) -> void:
 		_e_stat_lbl.text   = _stat_line(e)
 
 
-# Flash sprite đỏ + số -HP nổi lên khi bị đánh
+# Flash sprite đỏ + phát animation đánh/trúng đòn + số -HP nổi lên khi bị đánh
 func _on_hit_landed(target_is_player: bool, damage: int, is_crit: bool) -> void:
 	var flash := Color(1.0, 0.75, 0.05) if is_crit else Color(1.0, 0.22, 0.18)
 	var tw := create_tween()
 	if target_is_player:
+		if _e_sprite.visible and _e_sprite.sprite_frames != null \
+				and _e_sprite.sprite_frames.has_animation("attack"):
+			_e_sprite.play("attack")
+		if _p_sprite != null and _p_sprite.sprite_frames != null \
+				and _p_sprite.sprite_frames.has_animation("hurt"):
+			_p_sprite.play("hurt")
 		tw.tween_property(_p_sprite, "modulate", flash, 0.06)
 		tw.tween_property(_p_sprite, "modulate", flash, 0.10)
 		tw.tween_property(_p_sprite, "modulate", Color.WHITE, 0.28)
 	else:
-		tw.tween_property(_e_sprite, "color", flash, 0.06)
-		tw.tween_property(_e_sprite, "color", flash, 0.10)
-		tw.tween_property(_e_sprite, "color", _e_color, 0.28)
+		if _p_sprite != null and _p_sprite.sprite_frames != null \
+				and _p_sprite.sprite_frames.has_animation("special"):
+			_p_sprite.play("special")
+		if _e_sprite.visible and _e_sprite.sprite_frames != null \
+				and _e_sprite.sprite_frames.has_animation("hurt"):
+			_e_sprite.play("hurt")
+			tw.tween_property(_e_sprite, "modulate", flash, 0.06)
+			tw.tween_property(_e_sprite, "modulate", flash, 0.10)
+			tw.tween_property(_e_sprite, "modulate", Color.WHITE, 0.28)
+		else:
+			tw.tween_property(_e_fallback_rect, "color", flash, 0.06)
+			tw.tween_property(_e_fallback_rect, "color", flash, 0.10)
+			tw.tween_property(_e_fallback_rect, "color", _e_color, 0.28)
 	_spawn_damage_number(target_is_player, damage, is_crit)
 
 
@@ -803,14 +924,16 @@ func _append_log(text: String) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _spawn_damage_number(target_is_player: bool, damage: int, is_crit: bool = false) -> void:
-	var sprite_gpos: Vector2
+	var center: Vector2
 	var sprite_size: Vector2
 	if target_is_player:
-		sprite_gpos = _p_sprite.global_position
-		sprite_size = Vector2(110, 180)
+		# _p_sprite dùng centered = true nên global_position đã là tâm nhân vật Nấm
+		center = _p_sprite.global_position
+		sprite_size = Vector2(110, 162)
 	else:
-		sprite_gpos = _e_sprite.global_position
-		sprite_size = _e_sprite.size
+		var enemy_pos := _e_sprite.global_position if _e_sprite.visible else (_e_fallback_rect.global_position + Vector2(70, 90))
+		center = enemy_pos
+		sprite_size = Vector2(140, 180)
 
 	var lbl := Label.new()
 	lbl.text = ("!%d!" % damage) if is_crit else ("-%d" % damage)
@@ -820,8 +943,7 @@ func _spawn_damage_number(target_is_player: bool, damage: int, is_crit: bool = f
 	lbl.add_theme_color_override("font_color", color)
 	add_child(lbl)
 
-	var center := sprite_gpos + sprite_size * 0.5
-	lbl.position = center + Vector2(-30.0, -sprite_size.y * 0.25)
+	lbl.position = (center + Vector2(-36.0, -sprite_size.y * 0.35)).round()
 
 	var rise := 160.0 if is_crit else 120.0
 	var tw := create_tween()

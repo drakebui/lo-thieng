@@ -6,9 +6,9 @@
 script = ExtResource("1")
 commission_id = "commission_001"
 giver_npc_id = "hiep_khach"
-reason_text = "Một hiệp khách cần kiếm ngắn hệ Hỏa để hộ tống đoàn hàng qua vùng núi lạnh."
-hint_region = "Đồng Mây có phôi kiếm ngắn dễ tìm, còn Hỏa thạch hợp với đơn này."
-req_blank = "kiem_ngan"
+reason_text = "Một hiệp khách cần kiếm đơn hệ Hỏa để hộ tống đoàn hàng qua vùng núi lạnh."
+hint_region = "Đồng Mây có phôi kiếm đơn dễ tìm, còn Hỏa thạch hợp với đơn này."
+req_blank = "kiem_don"
 req_element = "hoa"
 req_min_rarity = 1
 reward_gold = 650

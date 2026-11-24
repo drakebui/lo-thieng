@@ -408,7 +408,7 @@ func _build_player() -> void:
 	_player          = scr.new() as CharacterBody2D
 	_player.position = _get_restore_player_position()
 	add_child(_player)
-	_player.scale = Vector2(5.0, 5.0)
+	_player.scale = Vector2(1.0, 1.0)
 	_add_player_camera()
 
 
@@ -639,8 +639,8 @@ func _build_exit_left() -> void:
 	var col  := CollisionShape2D.new()
 	var rect := RectangleShape2D.new()
 	var h    := TILE * (ROWS - 2)
-	rect.size    = Vector2(TILE * 1.2, h)
-	col.position = Vector2(TILE * 0.6, TILE + h * 0.5)
+	rect.size    = Vector2(TILE * 2.5, h)
+	col.position = Vector2(TILE * 1.25, TILE + h * 0.5)
 	col.shape    = rect
 	area.add_child(col)
 
@@ -671,8 +671,8 @@ func _build_exit_right() -> void:
 	var col := CollisionShape2D.new()
 	var rect := RectangleShape2D.new()
 	var h := float(TILE * (ROWS - 2))
-	rect.size = Vector2(TILE * 1.2, h)
-	col.position = Vector2(TILE * COLS - TILE * 0.6, TILE + h * 0.5)
+	rect.size = Vector2(TILE * 2.5, h)
+	col.position = Vector2(TILE * COLS - TILE * 1.25, TILE + h * 0.5)
 	col.shape = rect
 	area.add_child(col)
 
@@ -695,29 +695,33 @@ func _build_exit_right() -> void:
 func _leave_region() -> void:
 	if _is_leaving_region:
 		return
-	_is_leaving_region = true
 	if _scene_idx == 0:
-		# Về workshop.
-		GameManager.current_sub_scene_idx = 0
-		GameManager.current_sub_scene_type = GameManager.SUB_SCENE_ORDER[0]
-		GameManager.current_region_id = ""
-		for item in GameManager.hand_inventory:
-			var item_type: int = item.get("item_type", -1)
-			if item_type == ItemData.ItemType.MATERIAL or item_type == ItemData.ItemType.BLANK:
-				InventorySystem.add_material(item)
-			# TODO: Xử lý consumable/loại khác khi có hệ thống dùng item ngoài vùng.
-		GameManager.clear_hand()
-		GameManager.clear_exploration_state()
-		EventBus.region_exited.emit(_region_id)
-		if GameManager.is_region_cleared(_region_id):
-			GameManager.unlock_next_region_after(_region_id)
-		SceneManager.go_to(PATH_WORKSHOP)
+		_return_to_workshop_directly()
 	else:
 		# Về sub-scene trước.
+		_is_leaving_region = true
 		GameManager.current_sub_scene_idx = _scene_idx - 1
 		GameManager.current_sub_scene_type = GameManager.SUB_SCENE_ORDER[_scene_idx - 1]
 		GameManager.exploration_state["entry_paid"] = true
 		SceneManager.go_to(PATH_EXPLORATION)
+
+
+func _return_to_workshop_directly() -> void:
+	if _is_leaving_region:
+		return
+	_is_leaving_region = true
+	GameManager.current_sub_scene_idx = 0
+	GameManager.current_sub_scene_type = GameManager.SUB_SCENE_ORDER[0]
+	GameManager.current_region_id = ""
+	for item in GameManager.hand_inventory:
+		if not item.is_empty():
+			InventorySystem.add_material(item)
+	GameManager.clear_hand()
+	GameManager.clear_exploration_state()
+	EventBus.region_exited.emit(_region_id)
+	if GameManager.is_region_cleared(_region_id):
+		GameManager.unlock_next_region_after(_region_id)
+	SceneManager.go_to(PATH_WORKSHOP)
 
 
 func _advance_sub_scene() -> void:
@@ -914,7 +918,7 @@ func _build_hud(meta: Dictionary) -> void:
 	return_btn.position = Vector2(vp.x - 166, 6)
 	return_btn.size = Vector2(154, 36)
 	return_btn.add_theme_font_size_override("font_size", 18)
-	return_btn.pressed.connect(_leave_region)
+	return_btn.pressed.connect(_return_to_workshop_directly)
 	hud.add_child(return_btn)
 
 	_hint_lbl = Label.new()
@@ -1278,9 +1282,9 @@ func _make_enemy_waypoints(origin: Vector2, enemy_rng: RandomNumberGenerator) ->
 
 func _rand_enemy_positions(count: int, enemy_rng: RandomNumberGenerator) -> Array:
 	var result: Array = []
-	for _idx in count:
+	for _idx in range(count):
 		var placed := false
-		for _attempt in ENEMY_SPAWN_RETRIES:
+		for _attempt in range(ENEMY_SPAWN_RETRIES):
 			var grid := Vector2i(
 				enemy_rng.randi_range(3, COLS - 4),
 				enemy_rng.randi_range(3, ROWS - 4)
@@ -1376,8 +1380,8 @@ func _clamp_player_in_bounds() -> void:
 	if _player == null:
 		return
 	_player.position = _player.position.clamp(
-		Vector2(TILE * 1.5, TILE * 1.5),
-		Vector2(TILE * (COLS - 1.5), TILE * (ROWS - 1.5))
+		Vector2(TILE * 1.0, TILE * 1.0),
+		Vector2(TILE * (COLS - 1.0), TILE * (ROWS - 1.0))
 	)
 
 
@@ -1438,10 +1442,12 @@ func _build_gather_nodes() -> void:
 			pool.append(item)
 	if pool.is_empty():
 		pool = ItemDatabase.get_items_by_type(ItemData.ItemType.MATERIAL)
+	if pool.is_empty():
+		return
 	var occupied: Dictionary = {}
 	for i in _gather_nodes.size():
 		pass
-	for i in count:
+	for i in range(count):
 		var tries := 0
 		var gx := 0
 		var gy := 0
