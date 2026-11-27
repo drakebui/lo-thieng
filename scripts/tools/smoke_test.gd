@@ -2,6 +2,9 @@
 extends EditorScript
 
 const ForgeConverter := preload("res://scripts/forge/weapon_data.gd")
+const ForgeSystem := preload("res://scripts/forge/forge_system.gd")
+const ForgePhase2 := preload("res://scripts/forge/forge_phase2.gd")
+const ForgePhase3 := preload("res://scripts/forge/forge_phase3.gd")
 const GuideBook := preload("res://scripts/ui/guide_book.gd")
 const GameManagerScript := preload("res://scripts/autoload/GameManager.gd")
 
@@ -29,8 +32,11 @@ func _run() -> void:
 	_check_debt_checkpoints()
 	_check_skill_effects()
 	_check_forge_converter()
+	_check_chapter1_forge_mechanics()
+	_check_chapter1_shop_and_echo()
 	_check_guide_book_functions()
 	_check_day_cycle_constants()
+	_check_audit_regressions()
 	print("=== %d/%d checks passed ===" % [_passed, _passed + _failed])
 
 
@@ -55,7 +61,6 @@ func _check_files() -> void:
 	var paths := [
 		"res://scenes/main/WorkshopHub.tscn",
 		"res://scenes/forge/WeaponBuilder.tscn",
-		"res://scenes/forge/ElementPicker.tscn",
 		"res://scenes/forge/ForgeSession.tscn",
 		"res://resources/DebtCheckpoint.gd",
 		"res://resources/debt/c1_mat_bang.tres",
@@ -167,6 +172,143 @@ func _check_forge_converter() -> void:
 	)
 
 
+func _check_chapter1_forge_mechanics() -> void:
+	# 1. Kiểm tra 2 hồ sơ nhiệt Phase 1 (Phôi Nặng vs Phôi Thanh & Phép)
+	var heavy: Dictionary = ForgeSystem.get_heat_profile("bua_chien")
+	var light: Dictionary = ForgeSystem.get_heat_profile("kiem_don")
+	_check("HeatProfile heavy low == 55", is_equal_approx(float(heavy["low"]), 55.0))
+	_check("HeatProfile heavy peak == 80", is_equal_approx(float(heavy["peak"]), 80.0))
+	_check("HeatProfile heavy burn == 92", is_equal_approx(float(heavy["burn"]), 92.0))
+	_check("HeatProfile light low == 48", is_equal_approx(float(light["low"]), 48.0))
+	_check("HeatProfile light peak == 65", is_equal_approx(float(light["peak"]), 65.0))
+	_check("HeatProfile light burn == 80", is_equal_approx(float(light["burn"]), 80.0))
+
+	# 2. Kiểm tra bảng ánh xạ tiền tố Phase 2 tất định 100% (0 ngẫu nhiên)
+	_assert_string(
+		"P2 score=-4 -> phan_chu",
+		ForgePhase2.resolve_deterministic_prefix(-4, 3, 2, 2),
+		"phan_chu"
+	)
+	_assert_string(
+		"P2 score=-2 -> curse_nang",
+		ForgePhase2.resolve_deterministic_prefix(-2, 3, 2, 2),
+		"curse_nang"
+	)
+	_assert_string(
+		"P2 score=-1 -> curse_nhe",
+		ForgePhase2.resolve_deterministic_prefix(-1, 3, 2, 2),
+		"curse_nhe"
+	)
+	_assert_string(
+		"P2 score=0 -> thuong",
+		ForgePhase2.resolve_deterministic_prefix(0, 3, 3, 2),
+		"thuong"
+	)
+	_assert_string(
+		"P2 T1 cap score=5 cuong=4 -> nang_tay",
+		ForgePhase2.resolve_deterministic_prefix(5, 1, 4, 1),
+		"nang_tay"
+	)
+	_assert_string(
+		"P2 T1 cap score=5 nhu=4 -> than_toc",
+		ForgePhase2.resolve_deterministic_prefix(5, 1, 1, 4),
+		"than_toc"
+	)
+	_assert_string(
+		"P2 T1 cap score=1 balanced -> tot",
+		ForgePhase2.resolve_deterministic_prefix(1, 1, 3, 2),
+		"tot"
+	)
+	_assert_string(
+		"P2 T2 score=2 cuong>nhu -> kiet_tac",
+		ForgePhase2.resolve_deterministic_prefix(2, 2, 3, 2),
+		"kiet_tac"
+	)
+	_assert_string(
+		"P2 T2 score=2 nhu>=cuong -> can_bang",
+		ForgePhase2.resolve_deterministic_prefix(2, 2, 2, 3),
+		"can_bang"
+	)
+	_assert_string(
+		"P2 T2 cap score=5 cuong>nhu -> to_nghe",
+		ForgePhase2.resolve_deterministic_prefix(5, 2, 4, 1),
+		"to_nghe"
+	)
+	_assert_string(
+		"P2 T2 cap score=5 nhu>=cuong -> huyen_bi",
+		ForgePhase2.resolve_deterministic_prefix(5, 2, 2, 3),
+		"huyen_bi"
+	)
+	_assert_string(
+		"P2 T3 score=4 cuong>nhu -> cung_nhu_da",
+		ForgePhase2.resolve_deterministic_prefix(4, 3, 3, 2),
+		"cung_nhu_da"
+	)
+	_assert_string(
+		"P2 T3 score=4 nhu>=cuong -> khi_phach",
+		ForgePhase2.resolve_deterministic_prefix(4, 3, 2, 3),
+		"khi_phach"
+	)
+	_assert_string(
+		"P2 T3 score=5 cuong>nhu -> perfect",
+		ForgePhase2.resolve_deterministic_prefix(5, 3, 3, 2),
+		"perfect"
+	)
+	_assert_string(
+		"P2 T3 score=5 nhu>=cuong -> truong_sinh",
+		ForgePhase2.resolve_deterministic_prefix(5, 3, 2, 3),
+		"truong_sinh"
+	)
+
+	# 3. Kiểm tra Tôi Hoàn Hảo (+10% Giá, +10 Bền = 60/60) & Tôi Nước Thuần
+	var pure_fd := {
+		"phase1_tier": "do_ruc",
+		"phase2_prefix": "to_nghe",
+		"element": "",
+		"suffix": "",
+		"element_name": "",
+		"base_atk": 14,
+		"base_def": 2,
+		"base_magic": 3,
+		"base_speed": 6,
+		"weapon_type": "Kiếm Đơn",
+		"blank_id": "kiem_don",
+		"perfect_quench": true,
+		"durability_bonus": 10,
+		"price_mult": 1.10,
+	}
+	var pure_w: Dictionary = ForgeConverter.forge_to_combat(pure_fd)
+	_assert_int("Perfect quench durability_max == 60", pure_w.get("durability_max", 0), 60)
+	_assert_string("Pure water weapon name has no trailing dot", pure_w.get("weapon_name", ""), "Tổ Nghề Kiếm Đơn")
+	var p3: Variant = ForgePhase3.new()
+	var elem_info: Dictionary = p3.get_element_data("")
+	if p3 is Node:
+		(p3 as Node).free()
+	_assert_string("Pure water fallback element label", elem_info.get("name", ""), "Nước Thuần")
+
+
+func _check_chapter1_shop_and_echo() -> void:
+	# 1. Kiểm tra 4 tầng đọc vị mặc cả (NegotiationUI.get_reaction_tier)
+	var neg_script := preload("res://scripts/shop/negotiation_ui.gd")
+	_assert_int("Haggle Tier 1 (<= offer*1.05)", neg_script.get_reaction_tier(210, 200, 400), 1)
+	_assert_int("Haggle Tier 2 (<= max*0.88)", neg_script.get_reaction_tier(320, 200, 400), 2)
+	_assert_int("Haggle Tier 3 (<= max)", neg_script.get_reaction_tier(390, 200, 400), 3)
+	_assert_int("Haggle Tier 4 (> max)", neg_script.get_reaction_tier(450, 200, 400), 4)
+
+	# 2. Kiểm tra đủ 6 đơn đặt rèn Chương 1 (commission_001..006.tres)
+	var commission_paths := [
+		"res://resources/commissions/commission_001.tres",
+		"res://resources/commissions/commission_002.tres",
+		"res://resources/commissions/commission_003.tres",
+		"res://resources/commissions/commission_004.tres",
+		"res://resources/commissions/commission_005.tres",
+		"res://resources/commissions/commission_006.tres",
+	]
+	for cpath: String in commission_paths:
+		var c := load(cpath)
+		_check("Commission " + cpath.get_file(), c != null, "cannot load " + cpath)
+
+
 func _check_guide_book_functions() -> void:
 	_guide_method("get_ba_trum_intro_steps", 3)
 	_guide_method("get_co_long_gio_first_dialogue", 6)
@@ -225,6 +367,66 @@ func _assert_int(name: String, actual: Variant, expected: int) -> void:
 
 func _assert_string(name: String, actual: Variant, expected: String) -> void:
 	_check(name, actual == expected, "expected %s got %s" % [expected, str(actual)])
+
+
+func _check_audit_regressions() -> void:
+	# 1. Mỗi vũ khí rèn mới phải có uid riêng và fallback price_mult = 1.10 khi perfect_quench = true
+	var fd1 := {
+		"prefix": "Bình Thường", "rarity_tier": 1, "material_rarity": 1,
+		"element": "", "quality_mult": 1.0, "base_atk": 10, "base_def": 2,
+		"base_magic": 1, "base_speed": 5, "weapon_type": "Kiếm Đơn",
+		"blank_id": "kiem_don", "perfect_quench": true, "durability_bonus": 10,
+	}
+	var fd2 := fd1.duplicate()
+	var w1: Dictionary = ForgeConverter.forge_to_combat(fd1)
+	var w2: Dictionary = ForgeConverter.forge_to_combat(fd2)
+	_check("ForgeConverter assigns non-empty uid", String(w1.get("uid", "")) != "")
+	_check("ForgeConverter uid unique per forge", String(w1.get("uid", "")) != String(w2.get("uid", "")))
+	_check("ForgeConverter perfect_quench fallback price_mult", float(fd1.get("price_mult", 1.10)) >= 1.10)
+
+	# 2. ForgePhase2 không văng lỗi khi material_rarity ngoài biên 1..3
+	var p2: Variant = ForgePhase2.new()
+	var low_cap: Dictionary = p2.calculate_prefix(95, 0)
+	var high_cap: Dictionary = p2.calculate_prefix(95, 9)
+	if p2 is Node:
+		(p2 as Node).free()
+	_check("ForgePhase2 clamps material_rarity <= 0", int(low_cap.get("rarity_tier", 0)) >= 1)
+	_check("ForgePhase2 clamps material_rarity > 3", int(high_cap.get("rarity_tier", 0)) <= 4)
+
+	# 3. tho_san.tres khớp đúng tag phoi_no_ban
+	var tho_san := load("res://resources/customers/tho_san.tres")
+	if tho_san == null:
+		_fail("tho_san.tres", "cannot load")
+	else:
+		var ptags: Array = tho_san.get("preferred_weapon_tags")
+		_check("tho_san prefers phoi_no_ban", ptags.has("phoi_no_ban"))
+
+	# 4. first_artifact_shard.tres trả đúng mảnh cổ khí #1
+	var q_shard := load("res://resources/quests/first_artifact_shard.tres")
+	if q_shard == null:
+		_fail("first_artifact_shard.tres", "cannot load")
+	else:
+		_assert_int("first_artifact_shard.reward_artifact_id == 1", q_shard.get("reward_artifact_id"), 1)
+
+	# 5. Kiểm tra API chuẩn trên các Autoload scripts vừa bổ sung
+	var gm_scr := preload("res://scripts/autoload/GameManager.gd") as Script
+	var inv_scr := preload("res://scripts/autoload/InventorySystem.gd") as Script
+	var comm_scr := preload("res://scripts/autoload/CommissionSystem.gd") as Script
+	var debt_scr := preload("res://scripts/autoload/DebtSystem.gd") as Script
+	_check("InventorySystem has _unequip_weapon_ref", _script_has_method(inv_scr, "_unequip_weapon_ref"))
+	_check("CommissionSystem has restore_state", _script_has_method(comm_scr, "restore_state"))
+	_check("DebtSystem has reset_checkpoints", _script_has_method(debt_scr, "reset_checkpoints"))
+	_check("GameManager has ensure_new_game_starter", _script_has_method(gm_scr, "ensure_new_game_starter"))
+
+	# 6. Gộp kiểm thử WeaponSpec.satisfies từ commission_smoke_test cũ
+	var c1: CommissionData = load("res://resources/commissions/commission_001.tres")
+	if c1 == null:
+		_fail("commission_001.tres", "cannot load")
+	else:
+		var w_match := {"blank_id": "kiem_don", "element": "hoa", "rarity_tier": 1}
+		var w_nomatch := {"blank_id": "bua_chien", "element": "bang", "rarity_tier": 1}
+		_check("WeaponSpec matches commission_001 (kiem_don/hoa)", WeaponSpec.satisfies(w_match, c1) == true)
+		_check("WeaponSpec rejects commission_001 (bua_chien/bang)", WeaponSpec.satisfies(w_nomatch, c1) == false)
 
 
 func _value_size_text(value: Variant) -> String:

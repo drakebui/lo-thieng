@@ -13,7 +13,7 @@
 
 param(
     [Parameter(Mandatory=$false)]
-    [ValidateSet("sheetFromSingle", "sheetFromGrid", "player4Dir", "background", "validate", "demoBatch")]
+    [ValidateSet("sheetFromSingle", "sheetFromGrid", "player4Dir", "char4Dir", "charSide16FromStrip", "upgradeSide16FromSprite", "background", "validate", "demoBatch")]
     [string]$Mode = "demoBatch",
 
     [Parameter(Mandatory=$false)]
@@ -50,7 +50,13 @@ param(
     [int]$TargetH = 360,
 
     [Parameter(Mandatory=$false)]
-    [int]$FacingSign = 1 # +1 if facing right (Player/NPC walk default), -1 if facing left (Combat enemy default)
+    [int]$FacingSign = 1, # +1 if facing right (Player/NPC walk default), -1 if facing left (Combat enemy default)
+
+    [Parameter(Mandatory=$false)]
+    [switch]$EnableEyeBlink,
+
+    [Parameter(Mandatory=$false)]
+    [switch]$FlipSource
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -510,6 +516,11 @@ public static class HoaTam32Bit
 
     public static Bitmap DeformVertical16Frame(Bitmap core, Rectangle b, int torsoX, int mode, int col, bool isBack)
     {
+        return DeformVertical16Frame(core, b, torsoX, mode, col, isBack, true);
+    }
+
+    public static Bitmap DeformVertical16Frame(Bitmap core, Rectangle b, int torsoX, int mode, int col, bool isBack, bool enableEyeBlink)
+    {
         int w = core.Width, h = core.Height;
         Bitmap dst = new Bitmap(w, h, PixelFormat.Format32bppArgb);
         if (b.IsEmpty) return dst;
@@ -543,7 +554,7 @@ public static class HoaTam32Bit
                 }
             }
 
-            if (!isBack && col == 7)
+            if (enableEyeBlink && !isBack && col == 7)
             {
                 ApplyEyeBlink(dst, b.Y + (int)(b.Height * 0.18), b.Y + (int)(b.Height * 0.34));
             }
@@ -596,6 +607,11 @@ public static class HoaTam32Bit
 
     public static Bitmap DeformSide16Frame(Bitmap core, Rectangle b, int torsoX, int mode, int col)
     {
+        return DeformSide16Frame(core, b, torsoX, mode, col, true);
+    }
+
+    public static Bitmap DeformSide16Frame(Bitmap core, Rectangle b, int torsoX, int mode, int col, bool enableEyeBlink)
+    {
         int w = core.Width, h = core.Height;
         Bitmap dst = new Bitmap(w, h, PixelFormat.Format32bppArgb);
         if (b.IsEmpty) return dst;
@@ -629,7 +645,7 @@ public static class HoaTam32Bit
                 }
             }
 
-            if (col == 7)
+            if (enableEyeBlink && col == 7)
             {
                 ApplyEyeBlink(dst, b.Y + (int)(b.Height * 0.18), b.Y + (int)(b.Height * 0.34));
             }
@@ -824,9 +840,8 @@ public static class HoaTam32Bit
         return rawCore;
     }
 
-    // Scales a single frame with an explicit shared scale so all 4 walk frames keep identical head/body proportions
-    // while preserving natural vertical bobbing between Passing (taller) and Contact (slightly lower) poses!
-    public static Bitmap PixelizeNamCoreWithScale(Bitmap src, Rectangle crop, int cellSize, double sharedScale, out int outTorsoX)
+    // Scales a single frame with an explicit shared scale and optional target top Y (for rock-steady head alignment across walk cycles)
+    public static Bitmap PixelizeNamCoreWithScale(Bitmap src, Rectangle crop, int cellSize, double sharedScale, out int outTorsoX, int targetTopY = -1)
     {
         Bitmap rawCore = new Bitmap(cellSize, cellSize, PixelFormat.Format32bppArgb);
         outTorsoX = cellSize / 2;
@@ -842,7 +857,9 @@ public static class HoaTam32Bit
         ox = Math.Max(minSideMargin, Math.Min(cellSize - minSideMargin - drawW, ox));
         outTorsoX = Math.Max(8, Math.Min(cellSize - 8, ox + (int)Math.Round(relTorsoX)));
 
-        int oy = Math.Max(2, cellSize - padBottom - drawH); // Foot baseline strictly locked at y=59 (+1px outline = y=60)
+        int oy = (targetTopY >= 2) ? targetTopY : Math.Max(2, cellSize - padBottom - drawH);
+        // Clamp so bottom pixel never exceeds cellSize - 4 (y=60 outline) and top stays >= 2
+        if (oy + drawH > cellSize - 3) oy = Math.Max(2, cellSize - 3 - drawH);
 
         for (int ty = 0; ty < drawH; ty++)
         {
@@ -938,7 +955,7 @@ public static class HoaTam32Bit
                         }
                     }
                 }
-                if (area >= 400)
+                if (area >= 40)
                 {
                     compIds.Add(id);
                     compAreas.Add(area);
@@ -947,26 +964,73 @@ public static class HoaTam32Bit
             }
         }
 
-        // Keep top 4 largest components, then sort left-to-right by center X
+        // Keep top 4 largest components as character anchors, sort left-to-right, and merge detached props (area >= 40) into nearest anchor
         if (compIds.Count >= 4)
         {
             List<int> idxOrder = new List<int>();
             for (int i = 0; i < compIds.Count; i++) idxOrder.Add(i);
             idxOrder.Sort((a, b) => compAreas[b].CompareTo(compAreas[a]));
-            idxOrder = idxOrder.GetRange(0, 4);
-            idxOrder.Sort((a, b) => (compBoxes[a].X + compBoxes[a].Width / 2).CompareTo(compBoxes[b].X + compBoxes[b].Width / 2));
+            List<int> anchorIndices = idxOrder.GetRange(0, 4);
+            anchorIndices.Sort((a, b) => (compBoxes[a].X + compBoxes[a].Width / 2).CompareTo(compBoxes[b].X + compBoxes[b].Width / 2));
+
+            int[] anchorSlot = new int[compIds.Count];
+            for (int i = 0; i < anchorSlot.Length; i++) anchorSlot[i] = -1;
+            Rectangle[] slotBoxes = new Rectangle[4];
+            double[] anchorCenterX = new double[4];
+            for (int s = 0; s < 4; s++)
+            {
+                int ai = anchorIndices[s];
+                anchorSlot[ai] = s;
+                slotBoxes[s] = compBoxes[ai];
+                anchorCenterX[s] = compBoxes[ai].X + compBoxes[ai].Width * 0.5;
+            }
+
+            int maxAssignSpan = Math.Max(48, w / 4);
+            for (int i = 0; i < compIds.Count; i++)
+            {
+                if (anchorSlot[i] >= 0) continue;
+                Rectangle cb = compBoxes[i];
+                double cx = cb.X + cb.Width * 0.5;
+                int bestSlot = -1;
+                double bestDist = double.MaxValue;
+                for (int s = 0; s < 4; s++)
+                {
+                    Rectangle ab = compBoxes[anchorIndices[s]];
+                    bool overlapsX = (cb.Right >= ab.Left - 12 && cb.Left <= ab.Right + 12);
+                    double dist = Math.Abs(cx - anchorCenterX[s]);
+                    if (overlapsX) dist *= 0.25;
+                    if (dist < bestDist && dist <= maxAssignSpan)
+                    {
+                        bestDist = dist;
+                        bestSlot = s;
+                    }
+                }
+                if (bestSlot >= 0)
+                {
+                    anchorSlot[i] = bestSlot;
+                    slotBoxes[bestSlot] = Rectangle.Union(slotBoxes[bestSlot], cb);
+                }
+            }
+
+            HashSet<int>[] slotCompIds = new HashSet<int>[4];
+            for (int s = 0; s < 4; s++) slotCompIds[s] = new HashSet<int>();
+            for (int i = 0; i < compIds.Count; i++)
+            {
+                if (anchorSlot[i] >= 0) slotCompIds[anchorSlot[i]].Add(compIds[i]);
+            }
 
             Bitmap[] frames = new Bitmap[4];
             for (int k = 0; k < 4; k++)
             {
-                int ci = idxOrder[k];
-                int cid = compIds[ci];
-                Rectangle box = compBoxes[ci];
+                Rectangle box = slotBoxes[k];
                 Bitmap f = new Bitmap(box.Width, box.Height, PixelFormat.Format32bppArgb);
                 for (int yy = 0; yy < box.Height; yy++)
                     for (int xx = 0; xx < box.Width; xx++)
-                        if (labels[box.X + xx, box.Y + yy] == cid)
+                    {
+                        int lbl = labels[box.X + xx, box.Y + yy];
+                        if (lbl != 0 && slotCompIds[k].Contains(lbl))
                             f.SetPixel(xx, yy, cleanStrip.GetPixel(box.X + xx, box.Y + yy));
+                    }
                 frames[k] = f;
             }
             return frames;
@@ -1007,11 +1071,16 @@ public static class HoaTam32Bit
                 if (maxW * sharedScale > maxAllowedW)
                     sharedScale = (double)maxAllowedW / maxW;
 
+                int passingDrawH = Math.Max(1, (int)Math.Round(Math.Min(srcBounds[1].Height, srcBounds[3].Height) * sharedScale));
+                int passingTopY = Math.Max(3, cellSize - 4 - passingDrawH);
+
                 Bitmap[] cores = new Bitmap[4];
                 for (int i = 0; i < 4; i++)
                 {
                     int tx;
-                    cores[i] = PixelizeNamCoreWithScale(parts[i], srcBounds[i], cellSize, sharedScale, out tx);
+                    // Passing frames (1, 3) sit at passingTopY; Contact frames (0, 2) sit 1px lower (natural walk dip, never jumping up!)
+                    int desiredTopY = (i == 0 || i == 2) ? (passingTopY + 1) : passingTopY;
+                    cores[i] = PixelizeNamCoreWithScale(parts[i], srcBounds[i], cellSize, sharedScale, out tx, desiredTopY);
                     torsoXs[i] = tx;
                     coreBounds[i] = FindBounds(cores[i], 0, 0, cellSize, cellSize);
                 }
@@ -1024,8 +1093,35 @@ public static class HoaTam32Bit
         }
     }
 
+    // Apply subtle vertical passing apex (-1) or contact weight settle (+1) to upper body only while locking lower legs/feet at y=59
+    public static Bitmap ApplyVerticalWalkSettle(Bitmap core, Rectangle b, int dy)
+    {
+        if (dy == 0 || b.IsEmpty) return (Bitmap)core.Clone();
+        int w = core.Width, h = core.Height;
+        Bitmap dst = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+        int ankleY = b.Bottom - Math.Max(6, (int)Math.Round(b.Height * 0.14));
+        for (int ny = 0; ny < h - 1; ny++)
+        {
+            for (int nx = 0; nx < w; nx++)
+            {
+                int sy = (ny < ankleY) ? (ny - dy) : ny;
+                if (sy >= 0 && sy < h)
+                {
+                    Color c = core.GetPixel(nx, sy);
+                    if (c.A > 0) dst.SetPixel(nx, ny, c);
+                }
+            }
+        }
+        return dst;
+    }
+
     // Build complete 16-col x 14-row (1024x896, 64x64/cell) 4-Directional Sheet using TRUE hand-drawn 4-frame walk strips!
     public static void BuildPlayer4DirFromStrips(string walkDownStrip, string walkUpStrip, string walkRightStrip, string outputPath, int cellSize)
+    {
+        BuildChar4DirFromStrips(walkDownStrip, walkUpStrip, walkRightStrip, outputPath, cellSize, false);
+    }
+
+    public static void BuildChar4DirFromStrips(string walkDownStrip, string walkUpStrip, string walkRightStrip, string outputPath, int cellSize, bool enableEyeBlink)
     {
         int[] txDown, txUp, txRight;
         Rectangle[] cbDown, cbUp, cbRight;
@@ -1035,22 +1131,35 @@ public static class HoaTam32Bit
 
         try
         {
-            // Frame 1 (Passing Neutral) is the clean standing pose for each direction -> 100% consistent proportions & angle!
-            Bitmap idleDownCore  = fDown[1];
+            // Frame 3 for down (crisp open eyes) & Frame 1 for up/right (passing neutral) -> 100% consistent proportions & clean face!
+            Bitmap idleDownCore  = fDown[3];
             Bitmap idleUpCore    = fUp[1];
             Bitmap idleRightCore = fRight[1];
+            Rectangle idleDownCb = cbDown[3];
+            int idleDownTx       = txDown[3];
 
-            // Pre-outline the 4 true walk frames for each direction
-            Bitmap[] outDown  = new Bitmap[4];
-            Bitmap[] outUp    = new Bitmap[4];
-            Bitmap[] outRight = new Bitmap[4];
-            Bitmap[] outLeft  = new Bitmap[4];
+            // Pre-outline the 4 true walk frames + subtle passing lift (-1) and contact settle (+1) variants for 8 smooth beats per cycle!
+            // variant 0 = exact pose, variant 1 = apex lift (-1), variant 2 = weight settle (+1)
+            Bitmap[,] outDown  = new Bitmap[4, 3];
+            Bitmap[,] outUp    = new Bitmap[4, 3];
+            Bitmap[,] outRight = new Bitmap[4, 3];
+            Bitmap[,] outLeft  = new Bitmap[4, 3];
+            int[] dyVariants = { 0, -1, 1 };
             for (int i = 0; i < 4; i++)
             {
-                outDown[i]  = SealOutline(fDown[i]);
-                outUp[i]    = SealOutline(fUp[i]);
-                outRight[i] = SealOutline(fRight[i]);
-                outLeft[i]  = FlipHorizontalAroundCenter(outRight[i]);
+                for (int v = 0; v < 3; v++)
+                {
+                    int vdy = dyVariants[v];
+                    using (Bitmap vd = ApplyVerticalWalkSettle(fDown[i], cbDown[i], vdy))
+                    using (Bitmap vu = ApplyVerticalWalkSettle(fUp[i], cbUp[i], vdy))
+                    using (Bitmap vr = ApplyVerticalWalkSettle(fRight[i], cbRight[i], vdy))
+                    {
+                        outDown[i, v]  = SealOutline(vd);
+                        outUp[i, v]    = SealOutline(vu);
+                        outRight[i, v] = SealOutline(vr);
+                        outLeft[i, v]  = FlipHorizontalAroundCenter(outRight[i, v]);
+                    }
+                }
             }
 
             try
@@ -1060,18 +1169,18 @@ public static class HoaTam32Bit
                 {
                     g.Clear(Color.Transparent);
 
-                    // Rows 0..3: IDLE (16 frames @ 12 FPS = 1.33s calm breathing & subtle eye blink, paws strictly locked at y=60)
+                    // Rows 0..3: IDLE (16 frames @ 12 FPS = 1.33s calm breathing & optional eye blink, paws strictly locked at y=60)
                     for (int col = 0; col < 16; col++)
                     {
-                        using (Bitmap dDef = DeformVertical16Frame(idleDownCore, cbDown[1], txDown[1], 0, col, false))
+                        using (Bitmap dDef = DeformVertical16Frame(idleDownCore, idleDownCb, idleDownTx, 0, col, false, enableEyeBlink))
                         using (Bitmap dOut = SealOutline(dDef))
                             g.DrawImageUnscaled(dOut, col * cellSize, 0 * cellSize);
 
-                        using (Bitmap uDef = DeformVertical16Frame(idleUpCore, cbUp[1], txUp[1], 0, col, true))
+                        using (Bitmap uDef = DeformVertical16Frame(idleUpCore, cbUp[1], txUp[1], 0, col, true, enableEyeBlink))
                         using (Bitmap uOut = SealOutline(uDef))
                             g.DrawImageUnscaled(uOut, col * cellSize, 1 * cellSize);
 
-                        using (Bitmap rDef = DeformSide16Frame(idleRightCore, cbRight[1], txRight[1], 0, col))
+                        using (Bitmap rDef = DeformSide16Frame(idleRightCore, cbRight[1], txRight[1], 0, col, enableEyeBlink))
                         using (Bitmap rOut = SealOutline(rDef))
                         {
                             g.DrawImageUnscaled(rOut, col * cellSize, 2 * cellSize);
@@ -1088,30 +1197,32 @@ public static class HoaTam32Bit
                     for (int col = 0; col < 16; col++)
                     {
                         int wi = walkMap[col];
-                        g.DrawImageUnscaled(outDown[wi],  col * cellSize, 4 * cellSize);
-                        g.DrawImageUnscaled(outUp[wi],    col * cellSize, 5 * cellSize);
-                        g.DrawImageUnscaled(outRight[wi], col * cellSize, 6 * cellSize);
-                        g.DrawImageUnscaled(outLeft[wi],  col * cellSize, 7 * cellSize);
+                        int beat = col % 8;
+                        int wv = (beat == 2 || beat == 3) ? 1 : ((beat == 6 || beat == 7) ? 2 : 0);
+                        g.DrawImageUnscaled(outDown[wi, wv],  col * cellSize, 4 * cellSize);
+                        g.DrawImageUnscaled(outUp[wi, wv],    col * cellSize, 5 * cellSize);
+                        g.DrawImageUnscaled(outRight[wi, wv], col * cellSize, 6 * cellSize);
+                        g.DrawImageUnscaled(outLeft[wi, wv],  col * cellSize, 7 * cellSize);
 
                         int ri = runMap[col];
-                        g.DrawImageUnscaled(outDown[ri],  col * cellSize, 8  * cellSize);
-                        g.DrawImageUnscaled(outUp[ri],    col * cellSize, 9  * cellSize);
-                        g.DrawImageUnscaled(outRight[ri], col * cellSize, 10 * cellSize);
-                        g.DrawImageUnscaled(outLeft[ri],  col * cellSize, 11 * cellSize);
+                        g.DrawImageUnscaled(outDown[ri, 0],  col * cellSize, 8  * cellSize);
+                        g.DrawImageUnscaled(outUp[ri, 0],    col * cellSize, 9  * cellSize);
+                        g.DrawImageUnscaled(outRight[ri, 0], col * cellSize, 10 * cellSize);
+                        g.DrawImageUnscaled(outLeft[ri, 0],  col * cellSize, 11 * cellSize);
                     }
 
                     // Row 12: HURT (8 frames: clean rigid recoil + hit flash from neutral side stance)
                     // Row 13: SPECIAL / ATTACK (8 frames: windup from neutral -> dynamic strike lunge using Contact B pose -> recover)
                     for (int col = 0; col < 8; col++)
                     {
-                        using (Bitmap hDef = DeformSide16Frame(idleRightCore, cbRight[1], txRight[1], 3, col))
+                        using (Bitmap hDef = DeformSide16Frame(idleRightCore, cbRight[1], txRight[1], 3, col, false))
                         using (Bitmap hOut = SealOutline(hDef))
                             g.DrawImageUnscaled(hOut, col * cellSize, 12 * cellSize);
 
                         Bitmap atkBase = (col >= 3 && col <= 5) ? fRight[2] : idleRightCore;
                         Rectangle atkB = (col >= 3 && col <= 5) ? cbRight[2] : cbRight[1];
                         int atkTx      = (col >= 3 && col <= 5) ? txRight[2] : txRight[1];
-                        using (Bitmap aDef = DeformSide16Frame(atkBase, atkB, atkTx, 4, col))
+                        using (Bitmap aDef = DeformSide16Frame(atkBase, atkB, atkTx, 4, col, false))
                         using (Bitmap aOut = SealOutline(aDef))
                             g.DrawImageUnscaled(aOut, col * cellSize, 13 * cellSize);
                     }
@@ -1124,10 +1235,13 @@ public static class HoaTam32Bit
             {
                 for (int i = 0; i < 4; i++)
                 {
-                    if (outDown[i]  != null) outDown[i].Dispose();
-                    if (outUp[i]    != null) outUp[i].Dispose();
-                    if (outRight[i] != null) outRight[i].Dispose();
-                    if (outLeft[i]  != null) outLeft[i].Dispose();
+                    for (int v = 0; v < 3; v++)
+                    {
+                        if (outDown[i, v]  != null) outDown[i, v].Dispose();
+                        if (outUp[i, v]    != null) outUp[i, v].Dispose();
+                        if (outRight[i, v] != null) outRight[i, v].Dispose();
+                        if (outLeft[i, v]  != null) outLeft[i, v].Dispose();
+                    }
                 }
             }
         }
@@ -1140,6 +1254,296 @@ public static class HoaTam32Bit
                 if (fRight[i] != null) fRight[i].Dispose();
             }
         }
+    }
+
+    // Build 16-col x 4-row (1024x256, 64x64/cell) smooth side sheet from a hand-drawn 1x4 right-facing walk strip
+    // Row 0: idle (16f), Row 1: walk (16f), Row 2: attack (8f), Row 3: hurt (8f)
+    public static void BuildCharSide16FromStrip(string walkRightStrip, string outputPath, int cellSize, bool enableEyeBlink)
+    {
+        int[] txRight;
+        Rectangle[] cbRight;
+        Bitmap[] fRight = PixelizeStrip4(walkRightStrip, cellSize, out txRight, out cbRight);
+        try
+        {
+            Bitmap idleCore = fRight[1];
+            Bitmap[,] outWalk = new Bitmap[4, 3];
+            int[] dyVariants = { 0, -1, 1 };
+            for (int i = 0; i < 4; i++)
+            {
+                for (int v = 0; v < 3; v++)
+                {
+                    using (Bitmap vw = ApplyVerticalWalkSettle(fRight[i], cbRight[i], dyVariants[v]))
+                        outWalk[i, v] = SealOutline(vw);
+                }
+            }
+
+            try
+            {
+                using (Bitmap sheet = new Bitmap(cellSize * 16, cellSize * 4, PixelFormat.Format32bppArgb))
+                using (Graphics g = Graphics.FromImage(sheet))
+                {
+                    g.Clear(Color.Transparent);
+                    int[] walkMap = { 3, 3, 3, 3, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2 };
+
+                    for (int col = 0; col < 16; col++)
+                    {
+                        using (Bitmap iDef = DeformSide16Frame(idleCore, cbRight[1], txRight[1], 0, col, enableEyeBlink))
+                        using (Bitmap iOut = SealOutline(iDef))
+                            g.DrawImageUnscaled(iOut, col * cellSize, 0 * cellSize);
+
+                        int wi = walkMap[col];
+                        int beat = col % 8;
+                        int wv = (beat == 2 || beat == 3) ? 1 : ((beat == 6 || beat == 7) ? 2 : 0);
+                        g.DrawImageUnscaled(outWalk[wi, wv], col * cellSize, 1 * cellSize);
+                    }
+
+                    for (int col = 0; col < 8; col++)
+                    {
+                        Bitmap atkBase = (col >= 3 && col <= 5) ? fRight[2] : idleCore;
+                        Rectangle atkB = (col >= 3 && col <= 5) ? cbRight[2] : cbRight[1];
+                        int atkTx      = (col >= 3 && col <= 5) ? txRight[2] : txRight[1];
+                        using (Bitmap aDef = DeformSide16Frame(atkBase, atkB, atkTx, 4, col, false))
+                        using (Bitmap aOut = SealOutline(aDef))
+                            g.DrawImageUnscaled(aOut, col * cellSize, 2 * cellSize);
+
+                        using (Bitmap hDef = DeformSide16Frame(idleCore, cbRight[1], txRight[1], 3, col, false))
+                        using (Bitmap hOut = SealOutline(hDef))
+                            g.DrawImageUnscaled(hOut, col * cellSize, 3 * cellSize);
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+                    sheet.Save(outputPath, ImageFormat.Png);
+                }
+            }
+            finally
+            {
+                for (int i = 0; i < 4; i++)
+                    for (int v = 0; v < 3; v++)
+                        if (outWalk[i, v] != null) outWalk[i, v].Dispose();
+            }
+        }
+        finally
+        {
+            for (int i = 0; i < 4; i++)
+                if (fRight[i] != null) fRight[i].Dispose();
+        }
+    }
+
+    // Strip only the 1px exterior dark outline touching transparent outside pixels (never inner dark details)
+    private static Bitmap StripExteriorOutline(Bitmap src)
+    {
+        int w = src.Width, h = src.Height;
+        Bitmap dst = (Bitmap)src.Clone();
+        bool[,] ext = new bool[w, h];
+        Queue<Point> q = new Queue<Point>();
+        Action<int, int> enq = (x, y) => {
+            if (x < 0 || x >= w || y < 0 || y >= h || ext[x, y]) return;
+            if (src.GetPixel(x, y).A < 128) { ext[x, y] = true; q.Enqueue(new Point(x, y)); }
+        };
+        for (int x = 0; x < w; x++) { enq(x, 0); enq(x, h - 1); }
+        for (int y = 0; y < h; y++) { enq(0, y); enq(w - 1, y); }
+        while (q.Count > 0)
+        {
+            Point p = q.Dequeue();
+            enq(p.X + 1, p.Y); enq(p.X - 1, p.Y); enq(p.X, p.Y + 1); enq(p.X, p.Y - 1);
+        }
+
+        int[] dx = { -1, 1, 0, 0 };
+        int[] dy = { 0, 0, -1, 1 };
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                Color c = src.GetPixel(x, y);
+                if (c.A < 128) { dst.SetPixel(x, y, Color.FromArgb(0, 0, 0, 0)); continue; }
+                bool touchesExt = false;
+                for (int k = 0; k < 4; k++)
+                {
+                    int nx = x + dx[k], ny = y + dy[k];
+                    if (nx < 0 || nx >= w || ny < 0 || ny >= h || ext[nx, ny]) { touchesExt = true; break; }
+                }
+                if (touchesExt && c.R < 42 && c.G < 32 && c.B < 38)
+                    dst.SetPixel(x, y, Color.FromArgb(0, 0, 0, 0));
+                else
+                    dst.SetPixel(x, y, Color.FromArgb(255, c.R, c.G, c.B));
+            }
+        }
+        return dst;
+    }
+
+    // Build 16-col x 4-row (1024x256, 64x64/cell) smooth multi-phase side sheet from an existing 64x64 sprite or 256x256 sheet
+    public static void BuildSmoothSide16FromSprite(string inputPath, string outputPath, int cellSize, bool flipSource, bool enableEyeBlink)
+    {
+        using (Bitmap raw = new Bitmap(inputPath))
+        {
+            Rectangle srcCrop = (raw.Width > cellSize || raw.Height > cellSize)
+                ? new Rectangle(0, 0, Math.Min(cellSize, raw.Width), Math.Min(cellSize, raw.Height))
+                : new Rectangle(0, 0, raw.Width, raw.Height);
+            using (Bitmap cell = raw.Clone(srcCrop, PixelFormat.Format32bppArgb))
+            using (Bitmap oriented = flipSource ? FlipHorizontalAroundCenter(cell) : (Bitmap)cell.Clone())
+            using (Bitmap stripped = StripExteriorOutline(oriented))
+            {
+                Rectangle sb = FindBounds(stripped, 0, 0, stripped.Width, stripped.Height);
+                Bitmap core = new Bitmap(cellSize, cellSize, PixelFormat.Format32bppArgb);
+                int torsoX = cellSize / 2;
+                if (!sb.IsEmpty)
+                {
+                    double rawTorsoX = MeasureTorsoCenterX(stripped, sb);
+                    int minSideMargin = 3;
+                    int ox = (int)Math.Round(cellSize * 0.5 - (rawTorsoX - sb.X));
+                    ox = Math.Max(minSideMargin, Math.Min(cellSize - minSideMargin - sb.Width, ox));
+                    int oy = Math.Max(2, cellSize - 5 - sb.Height); // lowest core pixel at y=59 -> outline at y=60
+                    for (int y = 0; y < sb.Height; y++)
+                    {
+                        if (oy + y < 1 || oy + y >= cellSize - 1) continue;
+                        for (int x = 0; x < sb.Width; x++)
+                        {
+                            if (ox + x < 1 || ox + x >= cellSize - 1) continue;
+                            Color c = stripped.GetPixel(sb.X + x, sb.Y + y);
+                            if (c.A >= 128) core.SetPixel(ox + x, oy + y, c);
+                        }
+                    }
+                    torsoX = Math.Max(10, Math.Min(cellSize - 10, ox + (int)Math.Round(rawTorsoX - sb.X)));
+                }
+
+                try
+                {
+                    Rectangle cb = FindBounds(core, 0, 0, cellSize, cellSize);
+                    if (cb.IsEmpty) cb = new Rectangle(12, 8, cellSize - 24, cellSize - 13);
+                    int neckY = cb.Y + (int)Math.Round(cb.Height * 0.36);
+                    int hipY  = cb.Y + (int)Math.Round(cb.Height * 0.66);
+                    int ankleY = cb.Bottom - Math.Max(6, (int)Math.Round(cb.Height * 0.14));
+                    int footY = cb.Bottom - 1;
+
+                    using (Bitmap sheet = new Bitmap(cellSize * 16, cellSize * 4, PixelFormat.Format32bppArgb))
+                    using (Graphics g = Graphics.FromImage(sheet))
+                    {
+                        g.Clear(Color.Transparent);
+
+                        // Row 0: IDLE (16 frames @ 12 FPS — sinusoidal breathing + phase-lagged cloak/tail sway, feet locked at y=59)
+                        for (int col = 0; col < 16; col++)
+                        {
+                            double phase = 2.0 * Math.PI * col / 16.0;
+                            int breatheDy = (Math.Sin(phase) > 0.35) ? -1 : 0;
+                            int trailDx = (Math.Sin(phase - 0.9) > 0.45) ? -1 : 0;
+                            int trailDy = (Math.Sin(phase - 0.6) > 0.35) ? -1 : 0;
+
+                            using (Bitmap idleFrame = new Bitmap(cellSize, cellSize, PixelFormat.Format32bppArgb))
+                            {
+                                for (int ny = 1; ny < cellSize - 1; ny++)
+                                {
+                                    for (int nx = 1; nx < cellSize - 1; nx++)
+                                    {
+                                        int dx = 0, dy = 0;
+                                        bool isTrail = (nx < torsoX - 6) && (ny >= neckY) && (ny < footY - 2);
+                                        if (isTrail) { dx = trailDx; dy = trailDy; }
+                                        else if (ny < ankleY - 3) { dy = breatheDy; }
+
+                                        int sx = nx - dx, sy = ny - dy;
+                                        if (sx >= 0 && sx < cellSize && sy >= 0 && sy < cellSize)
+                                        {
+                                            Color c = core.GetPixel(sx, sy);
+                                            if (c.A > 0) idleFrame.SetPixel(nx, ny, c);
+                                        }
+                                    }
+                                }
+                                if (enableEyeBlink && col == 7)
+                                    ApplyEyeBlink(idleFrame, cb.Y + (int)(cb.Height * 0.16), cb.Y + (int)(cb.Height * 0.34));
+                                using (Bitmap outlined = SealOutline(idleFrame))
+                                    g.DrawImageUnscaled(outlined, col * cellSize, 0 * cellSize);
+                            }
+                        }
+
+                        // Row 1: WALK (16 frames @ 24 FPS — smooth stride, rigid front props, trailing cloak, contacts at col 4 & 12)
+                        for (int col = 0; col < 16; col++)
+                        {
+                            double theta = 2.0 * Math.PI * ((col - 4) / 16.0);
+                            double sinT = Math.Sin(theta);
+                            double cosT = Math.Cos(theta);
+                            int bodyBob = (Math.Abs(sinT) > 0.55) ? -1 : ((col == 6 || col == 14) ? 1 : 0);
+                            int headBobDx = (nyThresholdDx(col)) ? 1 : 0;
+                            int trailDx = (int)Math.Round(-0.8 - Math.Sin(theta * 2.0 - 0.7) * 0.7);
+
+                            using (Bitmap walkFrame = new Bitmap(cellSize, cellSize, PixelFormat.Format32bppArgb))
+                            {
+                                for (int ny = 1; ny < cellSize - 1; ny++)
+                                {
+                                    for (int nx = 1; nx < cellSize - 1; nx++)
+                                    {
+                                        double dx = 0.0, dy = 0.0;
+                                        if (nx > torsoX + 8)
+                                        {
+                                            // Keep far-front held props (spear shaft, scroll tip) rigid with bodyBob
+                                            dx = 0.0;
+                                            dy = bodyBob;
+                                        }
+                                        else if (nx < torsoX - 7 && ny >= neckY && ny < footY - 3)
+                                        {
+                                            dx = trailDx;
+                                            dy = bodyBob;
+                                        }
+                                        else if (ny >= hipY)
+                                        {
+                                            double legT = Math.Max(0.0, Math.Min(1.0, (double)(ny - hipY) / Math.Max(1, footY - hipY)));
+                                            double spread = (cosT >= 0.0) ? (cosT * 1.8) : (cosT * 0.85);
+                                            if (nx >= torsoX)
+                                            {
+                                                dx = spread * legT;
+                                                dy = (sinT < -0.25) ? (-1.4 * legT) : 0.0;
+                                            }
+                                            else
+                                            {
+                                                dx = -spread * legT;
+                                                dy = (sinT > 0.25) ? (-1.4 * legT) : 0.0;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            dy = bodyBob;
+                                            if (ny < neckY) dx = headBobDx;
+                                        }
+
+                                        int sx = (int)Math.Round(nx - dx);
+                                        int sy = (int)Math.Round(ny - dy);
+                                        if (sx >= 0 && sx < cellSize && sy >= 0 && sy < cellSize)
+                                        {
+                                            Color c = core.GetPixel(sx, sy);
+                                            if (c.A > 0) walkFrame.SetPixel(nx, ny, c);
+                                        }
+                                    }
+                                }
+                                using (Bitmap outlined = SealOutline(walkFrame))
+                                    g.DrawImageUnscaled(outlined, col * cellSize, 1 * cellSize);
+                            }
+                        }
+
+                        // Row 2: ATTACK (8f) & Row 3: HURT (8f)
+                        for (int col = 0; col < 8; col++)
+                        {
+                            using (Bitmap aDef = DeformSide16Frame(core, cb, torsoX, 4, col, false))
+                            using (Bitmap aOut = SealOutline(aDef))
+                                g.DrawImageUnscaled(aOut, col * cellSize, 2 * cellSize);
+
+                            using (Bitmap hDef = DeformSide16Frame(core, cb, torsoX, 3, col, false))
+                            using (Bitmap hOut = SealOutline(hDef))
+                                g.DrawImageUnscaled(hOut, col * cellSize, 3 * cellSize);
+                        }
+
+                        Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+                        sheet.Save(outputPath, ImageFormat.Png);
+                    }
+                }
+                finally
+                {
+                    core.Dispose();
+                }
+            }
+        }
+    }
+
+    private static bool nyThresholdDx(int col)
+    {
+        return (col == 4 || col == 5 || col == 12 || col == 13);
     }
 
     public static Bitmap FlipHorizontalAroundCenter(Bitmap src)
@@ -1361,6 +1765,26 @@ switch ($Mode) {
     "sheetFromGrid" {
         [HoaTam32Bit]::ConvertGridSheet($InputPath, $OutputPath, 4, 8, $CellSize)
         Write-Host ([HoaTam32Bit]::ValidateAsset($OutputPath, $CellSize * 4, $CellSize * 8, $true))
+    }
+    "char4Dir" {
+        if (-not $WalkDownStrip -or -not (Test-Path $WalkDownStrip))   { throw "char4Dir requires valid -WalkDownStrip" }
+        if (-not $WalkUpStrip -or -not (Test-Path $WalkUpStrip))       { throw "char4Dir requires valid -WalkUpStrip" }
+        if (-not $WalkRightStrip -or -not (Test-Path $WalkRightStrip)) { throw "char4Dir requires valid -WalkRightStrip" }
+        if (-not $OutputPath) { throw "char4Dir requires -OutputPath" }
+        [HoaTam32Bit]::BuildChar4DirFromStrips($WalkDownStrip, $WalkUpStrip, $WalkRightStrip, $OutputPath, $CellSize, [bool]$EnableEyeBlink)
+        Write-Host ([HoaTam32Bit]::ValidateAsset($OutputPath, $CellSize * 16, $CellSize * 14, $true))
+    }
+    "charSide16FromStrip" {
+        if (-not $WalkRightStrip -or -not (Test-Path $WalkRightStrip)) { throw "charSide16FromStrip requires valid -WalkRightStrip" }
+        if (-not $OutputPath) { throw "charSide16FromStrip requires -OutputPath" }
+        [HoaTam32Bit]::BuildCharSide16FromStrip($WalkRightStrip, $OutputPath, $CellSize, [bool]$EnableEyeBlink)
+        Write-Host ([HoaTam32Bit]::ValidateAsset($OutputPath, $CellSize * 16, $CellSize * 4, $true))
+    }
+    "upgradeSide16FromSprite" {
+        if (-not $InputPath -or -not (Test-Path $InputPath)) { throw "upgradeSide16FromSprite requires valid -InputPath" }
+        if (-not $OutputPath) { throw "upgradeSide16FromSprite requires -OutputPath" }
+        [HoaTam32Bit]::BuildSmoothSide16FromSprite($InputPath, $OutputPath, $CellSize, [bool]$FlipSource, [bool]$EnableEyeBlink)
+        Write-Host ([HoaTam32Bit]::ValidateAsset($OutputPath, $CellSize * 16, $CellSize * 4, $true))
     }
     "player4Dir" {
         if (-not $OutputPath) { $OutputPath = "assets\pixel\sprites\player\nam_4dir_sheet_64.png" }

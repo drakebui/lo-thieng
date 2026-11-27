@@ -6,7 +6,7 @@ const DEFAULT_RECIPES: Array[Dictionary] = [
 	{
 		"name": "Kiếm Đơn",
 		"blank": "Phôi Kiếm Đơn (#51)",
-		"materials": [{"item": "Quặng Sắt", "qty": 2}],
+		"materials": [{"item": "Sắt Thô", "qty": 2}],
 		"linh_luc": "Tùy chọn",
 		"description": "Vũ khí cơ bản, dễ rèn, phù hợp cho cả chiến binh lẫn thương nhân mới vào nghề.",
 		"forge_tips": "Phase Nung: giữ vùng Cam để có multiplier ×1.2.\n"
@@ -17,8 +17,8 @@ const DEFAULT_RECIPES: Array[Dictionary] = [
 		"name": "Giáo Dài",
 		"blank": "Phôi Giáo Dài (#53)",
 		"materials": [
-			{"item": "Quặng Sắt", "qty": 2},
-			{"item": "Gỗ Cứng", "qty": 1},
+			{"item": "Sắt Thô", "qty": 2},
+			{"item": "Gỗ Cổ Thụ", "qty": 1},
 		],
 		"linh_luc": "Tùy chọn",
 		"description": "Vũ khí tầm xa, lợi thế khi đánh trước. Cần tay nghề ổn định.",
@@ -29,8 +29,8 @@ const DEFAULT_RECIPES: Array[Dictionary] = [
 		"name": "Gậy Phép",
 		"blank": "Phôi Gậy Phép (#60)",
 		"materials": [
-			{"item": "Pha Lê", "qty": 2},
-			{"item": "Gỗ Cứng", "qty": 1},
+			{"item": "Pha Lê Rừng", "qty": 2},
+			{"item": "Gỗ Cổ Thụ", "qty": 1},
 		],
 		"linh_luc": "Hỏa / Sét / Băng",
 		"description": "Kênh magic damage, yêu cầu Linh Lực để khai phóng toàn bộ tiềm năng.",
@@ -255,7 +255,7 @@ func _select_slot(btn: Button, recipe: Dictionary) -> void:
 func _update_detail(recipe: Dictionary) -> void:
 	_detail_name.text = recipe.get("name", "")
 	_detail_blank.text = "Phôi: %s" % recipe.get("blank", "???")
-	_detail_linh_luc.text = "⚡ Linh Lực: %s" % recipe.get("linh_luc", "Tùy chọn")
+	_detail_linh_luc.text = "Linh Lực: %s" % recipe.get("linh_luc", "Tùy chọn")
 	_detail_description.text = recipe.get("description", "")
 	_detail_tips.text = recipe.get("forge_tips", "")
 

@@ -16,10 +16,12 @@ func _ready() -> void:
 
 func show_inventory() -> void:
 	refresh()
+	visible = true
 	_root.visible = true
 
 
 func hide_inventory() -> void:
+	visible = false
 	if _root != null:
 		_root.visible = false
 

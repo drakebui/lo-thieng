@@ -269,7 +269,10 @@ var _offer_gold:     int        = 0
 var _trade_offer:    Dictionary = {}
 var _resolving:      bool       = false
 var _patience:       int        = 0   # kiên nhẫn hiện tại của NPC
+var _max_patience:   int        = 2   # kiên nhẫn tối đa (tính cả bonus Tri Kỷ)
 var _proposals_used: int        = 0   # số lần player đã đề xuất giá
+var _matched_pref:   bool       = false
+var _last_reaction_tier: int    = 0
 
 var _npc_max_price:  int        = 0   # giá tối đa NPC sẵn sàng trả (budget ∩ val×class_factor)
 var _price_cap_hard: int        = 0   # trần cứng player được nhập (val × 1.6)
@@ -277,14 +280,23 @@ var _hint_min:       int        = 0   # cận dưới gợi ý hiển thị
 var _hint_max:       int        = 0   # cận trên gợi ý hiển thị
 var _threat_available: bool     = false  # nút đe dọa có xuất hiện lượt này không
 var _threat_used:      bool     = false  # đã dùng chưa (1 lần/giao dịch)
+var _type_token:       int      = 0      # hủy coroutine gõ chữ cũ khi mở hội thoại mới/đóng UI
 
 var _root:           Control
+var _panel_holder:   Control
 
 var _bx:             int = 0   # outer border left x
 var _by:             int = 0   # outer border top y
 
+var _npc_portrait_holder: Control
+var _npc_portrait_base_pos: Vector2 = Vector2.ZERO
+var _portrait_tween: Tween = null
 var _rport_body:     ColorRect
+var _rport_sprite:   TextureRect
+var _emote_icon:     TextureRect
 var _rport_name:     Label
+var _lbl_affinity_badge: Label
+var _lbl_mood_badge: Label
 var _mood_overlay:   ColorRect
 var _patience_bar:   ColorRect
 
@@ -304,7 +316,8 @@ var _lbl_price_display:  Label
 var _zone_low_rect:      ColorRect
 var _zone_good_rect:     ColorRect
 var _zone_high_rect:     ColorRect
-var _lbl_hint:       Label    # gợi ý khoảng giá hợp lý
+var _lbl_hint:       Label    # gợi ý khoảng giá hợp lý (Day 0 hoặc Khách Quen)
+var _lbl_body_lang:  Label    # mô tả ngôn ngữ cơ thể 4 tầng theo thời gian thực
 var _trade_section:  Control
 var _lbl_trade_desc: Label
 var _btn_sell_npc:   Button
@@ -314,15 +327,68 @@ var _btn_trade:      Button
 var _btn_decline_p2: Button
 var _bargain_tooltip: PanelContainer
 
+const FONT_PIXEL_PATH := "res://assets/fonts/PixelifySans.ttf"
+const FONT_BOOK_PATH := "res://assets/fonts/Lora-Regular.ttf"
+const FONT_BOOK_ITALIC_PATH := "res://assets/fonts/Lora-Italic.ttf"
+
+const REACTION_TEXTS: Dictionary = {
+	1: "Khách mắt sáng lên, khẽ gật đầu — mức giá rất hời.",
+	2: "Khách mỉm cười nhẹ, gõ tay lên mặt quầy cân nhắc.",
+	3: "Khách nhíu mày, tay mân mê dây túi tiền có vẻ do dự.",
+	4: "Khách lùi lại nửa bước, sắc mặt tối sầm vì giá quá cao.",
+}
+const REACTION_BADGES: Dictionary = {
+	1: "HÀI LÒNG",
+	2: "CÂN NHẮC",
+	3: "DO DỰ",
+	4: "QUÁ ĐẮT",
+}
+const REACTION_COLORS: Dictionary = {
+	1: Color(0.56, 0.86, 0.50),
+	2: Color(0.94, 0.84, 0.58),
+	3: Color(0.95, 0.68, 0.28),
+	4: Color(0.92, 0.36, 0.28),
+}
+
+var _font_pixel: Font = null
+var _font_book: Font = null
+var _font_italic: Font = null
+
+
+static func get_reaction_tier(proposed: int, offer_gold: int, max_price: int) -> int:
+	if proposed <= int(offer_gold * 1.05):
+		return 1
+	if proposed <= int(max_price * 0.88):
+		return 2
+	if proposed <= max_price:
+		return 3
+	return 4
+
+
 func _ready() -> void:
 	layer   = 20
 	visible = false
+	_font_pixel = load(FONT_PIXEL_PATH) as Font
+	_font_book = load(FONT_BOOK_PATH) as Font
+	_font_italic = load(FONT_BOOK_ITALIC_PATH) as Font
 	_build_ui()
 	_bargain_tooltip = _build_bargain_tooltip()
-	add_child(_bargain_tooltip)
+	_panel_holder.add_child(_bargain_tooltip)
+	get_viewport().size_changed.connect(_recenter_panel)
+
+
+func _recenter_panel() -> void:
+	if _panel_holder == null:
+		return
+	var vp := get_viewport().get_visible_rect().size
+	_panel_holder.position = Vector2(
+		roundf((vp.x - PANEL_W) * 0.5),
+		roundf((vp.y - PANEL_H) * 0.5)
+	)
 
 
 func present(customer: Dictionary, weapon: Dictionary) -> void:
+	_recenter_panel()
 	var show_bargain_tip := not GameManager.has_tutorial_seen("bargain_shown")
 	_customer    = customer
 	_resolving   = false
@@ -330,7 +396,9 @@ func present(customer: Dictionary, weapon: Dictionary) -> void:
 
 	var ctype: String = customer.get("type", "")
 	_rport_body.color = CUST_COLORS.get(ctype, Color(0.5, 0.3, 0.3))
+	_load_customer_portrait_sprite(ctype)
 	_rport_name.text  = customer.get("name", "Khách")
+	_update_affinity_badge(ctype)
 
 	# Phase 1 bị bỏ qua — NPC tự chọn vũ khí từ kệ
 	_weapon_box.visible     = false
@@ -347,6 +415,8 @@ func present(customer: Dictionary, weapon: Dictionary) -> void:
 
 
 func close_ui() -> void:
+	if _portrait_tween != null and _portrait_tween.is_valid():
+		_portrait_tween.kill()
 	visible = false
 
 
@@ -356,55 +426,61 @@ func _build_ui() -> void:
 	add_child(_root)
 
 	# ── Overlay phủ màn hình để panel trung tâm đọc rõ hơn ────────────────────
-	var vp  := get_viewport().get_visible_rect()
 	var ov := ColorRect.new()
 	ov.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ov.color = C_OVR
 	_root.add_child(ov)
 
-	# Tính gốc panel căn giữa viewport.
-	_bx = int((vp.size.x - PANEL_W) * 0.5)   # outer border left
-	_by = int((vp.size.y - PANEL_H) * 0.5)   # outer border top
+	# Panel holder căn giữa viewport (tọa độ cục bộ bắt đầu từ 0,0)
+	_panel_holder = Control.new()
+	_panel_holder.size = Vector2(PANEL_W, PANEL_H)
+	_root.add_child(_panel_holder)
+	_recenter_panel()
+
+	_bx = 0
+	_by = 0
 	var px  := _bx + 2   # inner panel left
 	var py  := _by + 2   # inner panel top
 
-	# ── Viền vàng panel ───────────────────────────────────────────────────────
-	_r(Vector2(_bx,       _by),       Vector2(PANEL_W,   2), C_FRAME)
-	_r(Vector2(_bx,       _by + PANEL_H - 2), Vector2(PANEL_W,   2), C_FRAME)
-	_r(Vector2(_bx,       _by),       Vector2(  2, PANEL_H), C_FRAME)
-	_r(Vector2(_bx + PANEL_W - 2, _by),       Vector2(  2, PANEL_H), C_FRAME)
-
-	# ── Nền panel ────────────────────────────────────────────────────────────
-	_r(Vector2(px, py), Vector2(PANEL_W - 4, PANEL_H - 4), C_PANEL)
+	# ── Khung gỗ mun nạm đồng 9-slice 32-bit ──────────────────────────────────
+	var bg_panel := Panel.new()
+	bg_panel.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	bg_panel.position = Vector2(_bx, _by)
+	bg_panel.size = Vector2(PANEL_W, PANEL_H)
+	bg_panel.add_theme_stylebox_override("panel", HoaTamUI.make_wood_panel_style(0.0))
+	_panel_holder.add_child(bg_panel)
 
 	# ── Header ───────────────────────────────────────────────────────────────
-	_r(Vector2(px, py),       Vector2(PANEL_W - 4,  54), C_HDR)
-	_r(Vector2(_bx, py + 54), Vector2(PANEL_W,   1), C_SEP)
-	_lbl_hdr = _lbl("", px + 12, py + 11, PANEL_W - 28, 32, 22)
+	_r(Vector2(px + 22, py + 54), Vector2(PANEL_W - 48, 2), C_SEP)
+	_lbl_hdr = _lbl("", px + 12, py + 15, PANEL_W - 28, 32, 22)
 	_lbl_hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_hdr.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
 
-	# ── Dialogue bubble giữa hai chân dung ───────────────────────────────────
+	# ── Ô thoại chìm ấm giữa hai chân dung (không lồng khung dày bên trong khung chính) ─
 	_dialogue_box(Vector2(px + 178, py + 76), Vector2(PANEL_W - 360, 148))
-	_lbl_npc_speech = _lbl("", px + 194, py + 90, PANEL_W - 392, 120, 20)
+	_lbl_npc_speech = _lbl("", px + 200, py + 94, PANEL_W - 404, 112, 18)
 	_lbl_npc_speech.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_lbl_npc_speech.add_theme_color_override("font_color", Color(0.18, 0.08, 0.03, 1.0))
+	if _font_book != null:
+		_lbl_npc_speech.add_theme_font_override("font", _font_book)
+	_lbl_npc_speech.add_theme_color_override("font_color", HoaTamUI.COL_PARCHMENT)
 
 	# ── Phase 1: danh sách vũ khí ────────────────────────────────────────────
 	var p1_title := _lbl("Chọn vật phẩm muốn đề xuất:", px + 34, py + 300, 860, 24, 16)
 	p1_title.add_theme_color_override("font_color", C_MUTE)
+	p1_title.visible = false
 
 	_weapon_box = VBoxContainer.new()
 	_weapon_box.position = Vector2(px + 34, py + 334)
 	_weapon_box.size     = Vector2(PANEL_W - 72, 220)
 	_weapon_box.add_theme_constant_override("separation", 8)
-	_root.add_child(_weapon_box)
+	_panel_holder.add_child(_weapon_box)
 
 	# ── Phase 2: khu vực đàm phán ────────────────────────────────────────────
 	_p2_root = Control.new()
 	_p2_root.position = Vector2(px + 34, py + 300)
-	_p2_root.size     = Vector2(PANEL_W - 72, 230)
+	_p2_root.size     = Vector2(PANEL_W - 72, 244)
 	_p2_root.visible  = false
-	_root.add_child(_p2_root)
+	_panel_holder.add_child(_p2_root)
 	_build_phase2_layout()
 
 	# ── Separator trước nút ───────────────────────────────────────────────────
@@ -415,17 +491,17 @@ func _build_ui() -> void:
 	_btn_no_sale.position = Vector2(_bx + PANEL_W - 256, py + PANEL_H - 52)
 	_btn_no_sale.size     = Vector2(240, 44)
 	_btn_no_sale.pressed.connect(_on_decline)
-	_root.add_child(_btn_no_sale)
+	_panel_holder.add_child(_btn_no_sale)
 
 	# ── Nút Phase 2 (ẩn ban đầu) ─────────────────────────────────────────────
-	_btn_sell_npc   = _btn("Bán giá NPC", C_ACC,  C_ACCH, 14)
-	_btn_propose    = _btn("Đề xuất giá", C_BTN,  C_BTNH, 14)
-	_btn_threaten   = _btn("⚠ Đe dọa",   C_THRT, C_THRTH, 14)
-	_btn_trade      = _btn("Đổi hàng",   C_ACC,  C_ACCH, 14)
-	_btn_decline_p2 = _btn("Từ chối",    C_REJ,  C_REJH, 14)
+	_btn_sell_npc   = _btn("Bán giá NPC", C_ACC,  C_ACCH, 15)
+	_btn_propose    = _btn("Đề xuất giá", C_BTN,  C_BTNH, 15)
+	_btn_threaten   = _btn("Ép giá (Rủi ro)", C_THRT, C_THRTH, 15)
+	_btn_trade      = _btn("Đổi hàng",    C_ACC,  C_ACCH, 15)
+	_btn_decline_p2 = _btn("Từ chối",     C_REJ,  C_REJH, 15)
 	for b: Button in [_btn_sell_npc, _btn_propose, _btn_threaten, _btn_trade, _btn_decline_p2]:
 		b.visible = false
-		_root.add_child(b)
+		_panel_holder.add_child(b)
 	_btn_sell_npc.pressed.connect(_on_sell_npc_price)
 	_btn_propose.pressed.connect(_on_propose)
 	_btn_threaten.pressed.connect(_on_threaten)
@@ -479,20 +555,16 @@ func _build_bargain_tooltip() -> PanelContainer:
 
 	var ok_btn := Button.new()
 	ok_btn.text = "Đã hiểu"
-	ok_btn.custom_minimum_size = Vector2(120, 40)
+	ok_btn.custom_minimum_size = Vector2(150, 44)
 	ok_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	HoaTamUI.apply_primary_button(ok_btn, 17)
 	ok_btn.pressed.connect(_on_bargain_tooltip_confirmed)
 	vbox.add_child(ok_btn)
 	return panel
 
 
-func _make_tooltip_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.06, 0.035, 0.018, 0.96)
-	style.border_color = C_FRAME
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(8)
-	return style
+func _make_tooltip_style() -> StyleBox:
+	return HoaTamUI.make_wood_panel_style(16.0)
 
 
 func _show_bargain_tooltip() -> void:
@@ -509,6 +581,8 @@ func _on_bargain_tooltip_confirmed() -> void:
 func _set_action_buttons_disabled(disabled: bool) -> void:
 	for b: Button in [_btn_sell_npc, _btn_propose, _btn_threaten, _btn_trade, _btn_decline_p2]:
 		b.disabled = disabled
+	if _price_slider != null:
+		_price_slider.editable = not disabled
 
 
 func _build_phase2_layout() -> void:
@@ -517,6 +591,8 @@ func _build_phase2_layout() -> void:
 	_lbl_wpn_name.position = Vector2(0, 0)
 	_lbl_wpn_name.size     = Vector2(520, 32)
 	_lbl_wpn_name.clip_text = true
+	if _font_pixel != null:
+		_lbl_wpn_name.add_theme_font_override("font", _font_pixel)
 	_lbl_wpn_name.add_theme_font_size_override("font_size", 21)
 	_lbl_wpn_name.add_theme_color_override("font_color", C_TEXT)
 	_p2_root.add_child(_lbl_wpn_name)
@@ -526,7 +602,9 @@ func _build_phase2_layout() -> void:
 	_lbl_wpn_stats.position = Vector2(0, 38)
 	_lbl_wpn_stats.size     = Vector2(500, 24)
 	_lbl_wpn_stats.clip_text = true
-	_lbl_wpn_stats.add_theme_font_size_override("font_size", 15)
+	if _font_book != null:
+		_lbl_wpn_stats.add_theme_font_override("font", _font_book)
+	_lbl_wpn_stats.add_theme_font_size_override("font_size", 14)
 	_lbl_wpn_stats.add_theme_color_override("font_color", C_MUTE)
 	_p2_root.add_child(_lbl_wpn_stats)
 
@@ -535,6 +613,8 @@ func _build_phase2_layout() -> void:
 	_lbl_negotiate_info.position           = Vector2(510, 38)
 	_lbl_negotiate_info.size               = Vector2(358, 24)
 	_lbl_negotiate_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	if _font_pixel != null:
+		_lbl_negotiate_info.add_theme_font_override("font", _font_pixel)
 	_lbl_negotiate_info.add_theme_font_size_override("font_size", 15)
 	_lbl_negotiate_info.add_theme_color_override("font_color", C_MUTE)
 	_p2_root.add_child(_lbl_negotiate_info)
@@ -546,14 +626,18 @@ func _build_phase2_layout() -> void:
 	lbl_ofr.text     = "NPC:"
 	lbl_ofr.position = Vector2(0, 94)
 	lbl_ofr.size     = Vector2(58, 26)
+	if _font_pixel != null:
+		lbl_ofr.add_theme_font_override("font", _font_pixel)
 	lbl_ofr.add_theme_font_size_override("font_size", 16)
 	lbl_ofr.add_theme_color_override("font_color", C_MUTE)
 	_p2_root.add_child(lbl_ofr)
 
 	_lbl_npc_offer = Label.new()
-	_lbl_npc_offer.position = Vector2(70, 84)
-	_lbl_npc_offer.size     = Vector2(154, 52)
-	_lbl_npc_offer.add_theme_font_size_override("font_size", 40)
+	_lbl_npc_offer.position = Vector2(64, 84)
+	_lbl_npc_offer.size     = Vector2(166, 52)
+	if _font_pixel != null:
+		_lbl_npc_offer.add_theme_font_override("font", _font_pixel)
+	_lbl_npc_offer.add_theme_font_size_override("font_size", 38)
 	_lbl_npc_offer.add_theme_color_override("font_color", C_GOLD)
 	_p2_root.add_child(_lbl_npc_offer)
 
@@ -562,20 +646,35 @@ func _build_phase2_layout() -> void:
 	lbl_inp.text     = "Giá của bạn:"
 	lbl_inp.position = Vector2(246, 146)
 	lbl_inp.size     = Vector2(126, 26)
-	lbl_inp.add_theme_font_size_override("font_size", 16)
+	if _font_pixel != null:
+		lbl_inp.add_theme_font_override("font", _font_pixel)
+	lbl_inp.add_theme_font_size_override("font_size", 15)
 	lbl_inp.add_theme_color_override("font_color", C_MUTE)
 	_p2_root.add_child(lbl_inp)
 
-	# Gợi ý khoảng giá — cập nhật mỗi lần weapon được chọn và sau mỗi counter
+	# Gợi ý khoảng giá — Day 0 hiện vùng gợi ý; Day 1+ ẩn, chỉ Khách Quen (>=15) mới hiện sổ tay Nấm
 	_lbl_hint = Label.new()
-	_lbl_hint.position = Vector2(380, 142)
-	_lbl_hint.size     = Vector2(366, 44)
+	_lbl_hint.position = Vector2(376, 142)
+	_lbl_hint.size     = Vector2(492, 22)
 	_lbl_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_lbl_hint.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	_lbl_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lbl_hint.clip_text = true
+	if _font_book != null:
+		_lbl_hint.add_theme_font_override("font", _font_book)
 	_lbl_hint.add_theme_font_size_override("font_size", 14)
 	_lbl_hint.add_theme_color_override("font_color", Color(0.54, 0.78, 0.54))
 	_p2_root.add_child(_lbl_hint)
+
+	# Ngôn ngữ cơ thể 4 tầng — cập nhật theo thời gian thực khi kéo thanh giá
+	_lbl_body_lang = Label.new()
+	_lbl_body_lang.position = Vector2(246, 168)
+	_lbl_body_lang.size     = Vector2(622, 24)
+	_lbl_body_lang.clip_text = true
+	if _font_italic != null:
+		_lbl_body_lang.add_theme_font_override("font", _font_italic)
+	_lbl_body_lang.add_theme_font_size_override("font_size", 14)
+	_lbl_body_lang.add_theme_color_override("font_color", C_TEXT)
+	_p2_root.add_child(_lbl_body_lang)
 
 	_zone_low_rect = ColorRect.new()
 	_zone_low_rect.position = Vector2(246, 132)
@@ -603,16 +702,18 @@ func _build_phase2_layout() -> void:
 	_p2_root.add_child(_price_slider)
 
 	_lbl_price_display = Label.new()
-	_lbl_price_display.position = Vector2(760, 88)
-	_lbl_price_display.size     = Vector2(108, 54)
+	_lbl_price_display.position = Vector2(752, 88)
+	_lbl_price_display.size     = Vector2(116, 54)
 	_lbl_price_display.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_lbl_price_display.add_theme_font_size_override("font_size", 38)
+	if _font_pixel != null:
+		_lbl_price_display.add_theme_font_override("font", _font_pixel)
+	_lbl_price_display.add_theme_font_size_override("font_size", 36)
 	_lbl_price_display.add_theme_color_override("font_color", C_GOLD)
 	_p2_root.add_child(_lbl_price_display)
 
 	# Khu vực đổi hàng (ẩn khi không có trade)
 	_trade_section = Control.new()
-	_trade_section.position = Vector2(0, 186)
+	_trade_section.position = Vector2(0, 196)
 	_trade_section.size     = Vector2(868, 34)
 	_trade_section.visible  = false
 	_p2_root.add_child(_trade_section)
@@ -639,44 +740,120 @@ func _build_player_portrait() -> void:
 	var lx := _bx + 34; var ly := _by + 78
 	_r(Vector2(lx - 2, ly - 2), Vector2(PPW + 4, PPH + 4), C_FRAME)
 	_r(Vector2(lx,     ly),     Vector2(PPW, PPH),          Color(0.08, 0.05, 0.03))
-	var avatar_tex: Texture2D = load("res://assets/sprites/characters/nam_portrait.png")
+	var avatar_tex: Texture2D = load("res://assets/pixel/ui/portraits/portrait_nam_256.png")
 	if avatar_tex:
 		var portrait := TextureRect.new()
 		portrait.texture    = avatar_tex
+		portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		portrait.position   = Vector2(lx, ly)
 		portrait.size       = Vector2(PPW, PPH)
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		portrait.expand_mode  = TextureRect.EXPAND_IGNORE_SIZE
-		_root.add_child(portrait)
+		_panel_holder.add_child(portrait)
 	var lbl := _lbl("Nấm", lx, ly + PPH + 10, PPW, 26, 15)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.add_theme_color_override("font_color", C_MUTE)
 
 
 func _build_npc_portrait() -> void:
-	# Chân dung NPC nằm gọn trong panel trung tâm.
+	# Chân dung NPC nằm gọn trong panel trung tâm — bọc trong holder để lắc/nhún 4 tầng.
 	var rx := _bx + PANEL_W - PPW - 34; var ry := _by + 78
-	_r(Vector2(rx - 2, ry - 2), Vector2(PPW + 4, PPH + 4), C_FRAME)
-	_r(Vector2(rx,     ry),     Vector2(PPW, PPH),          Color(0.16, 0.11, 0.06))
+	_npc_portrait_base_pos = Vector2(rx, ry)
+	_npc_portrait_holder = Control.new()
+	_npc_portrait_holder.position = _npc_portrait_base_pos
+	_npc_portrait_holder.size = Vector2(PPW, PPH)
+	_panel_holder.add_child(_npc_portrait_holder)
+
+	_r_in(_npc_portrait_holder, Vector2(-2, -2), Vector2(PPW + 4, PPH + 4), C_FRAME)
+	_r_in(_npc_portrait_holder, Vector2(0, 0), Vector2(PPW, PPH), Color(0.11, 0.075, 0.06))
 	_rport_body = ColorRect.new()
-	_rport_body.position = Vector2(rx + 20, ry + 78)
+	_rport_body.position = Vector2(20, 78)
 	_rport_body.size     = Vector2(88, 96)
 	_rport_body.color    = Color(0.5, 0.3, 0.3)
-	_root.add_child(_rport_body)
-	_r(Vector2(rx + 32, ry + 24), Vector2(64, 50), C_SKIN)
+	_rport_body.visible  = false
+	_npc_portrait_holder.add_child(_rport_body)
+
+	# Chân dung 32-bit Thú Nhân từ sprite sheet khách hàng (ô idle 0: 64x64)
+	_rport_sprite = TextureRect.new()
+	_rport_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_rport_sprite.position = Vector2(0, 26)
+	_rport_sprite.size = Vector2(PPW, PPH - 28)
+	_rport_sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_rport_sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_rport_sprite.flip_h = true
+	_npc_portrait_holder.add_child(_rport_sprite)
+
 	_mood_overlay = ColorRect.new()
-	_mood_overlay.position = Vector2(rx, ry)
+	_mood_overlay.position = Vector2.ZERO
 	_mood_overlay.size     = Vector2(PPW, PPH)
 	_mood_overlay.color    = Color(0, 0, 0, 0)
-	_root.add_child(_mood_overlay)
+	_npc_portrait_holder.add_child(_mood_overlay)
+
+	# Bong bóng biểu cảm 32-bit (customer_mood_emotes_32.png — 6 ô 32x32)
+	_emote_icon = TextureRect.new()
+	_emote_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_emote_icon.position = Vector2(PPW - 38, 28)
+	_emote_icon.size = Vector2(36, 36)
+	_emote_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_emote_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_emote_icon.visible = false
+	_npc_portrait_holder.add_child(_emote_icon)
+
+	# Nhãn biểu cảm góc trên khung chân dung NPC
+	var badge_bg := ColorRect.new()
+	badge_bg.position = Vector2(4, 4)
+	badge_bg.size = Vector2(PPW - 8, 22)
+	badge_bg.color = Color(0.06, 0.03, 0.02, 0.78)
+	_npc_portrait_holder.add_child(badge_bg)
+	_lbl_mood_badge = Label.new()
+	_lbl_mood_badge.position = Vector2(4, 4)
+	_lbl_mood_badge.size = Vector2(PPW - 8, 22)
+	_lbl_mood_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_mood_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_lbl_mood_badge.add_theme_font_size_override("font_size", 12)
+	_lbl_mood_badge.add_theme_color_override("font_color", C_TEXT)
+	_npc_portrait_holder.add_child(_lbl_mood_badge)
+
 	_patience_bar = ColorRect.new()
-	_patience_bar.position = Vector2(rx + (PPW - 160) * 0.5, ry + PPH + 10)
-	_patience_bar.size     = Vector2(160, 8)
+	_patience_bar.position = Vector2(rx + (PPW - 140) * 0.5, ry + PPH + 8)
+	_patience_bar.size     = Vector2(140, 8)
 	_patience_bar.color    = C_TGRN
-	_root.add_child(_patience_bar)
-	_rport_name = _lbl("Khách", rx, ry + PPH + 26, PPW, 26, 15)
+	_panel_holder.add_child(_patience_bar)
+
+	_rport_name = _lbl("Khách", rx - 14, ry + PPH + 20, PPW + 28, 22, 14)
 	_rport_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_rport_name.add_theme_color_override("font_color", C_MUTE)
+	_rport_name.add_theme_color_override("font_color", C_TEXT)
+
+	_lbl_affinity_badge = _lbl("", rx - 14, ry + PPH + 42, PPW + 28, 20, 12)
+	_lbl_affinity_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_affinity_badge.add_theme_color_override("font_color", C_GOLD)
+
+
+func _update_affinity_badge(ctype: String) -> void:
+	if _lbl_affinity_badge == null:
+		return
+	var aff := GameManager.get_npc_affinity(ctype)
+	var tier := GameManager.get_npc_affinity_tier(ctype)
+	if tier >= 2:
+		_lbl_affinity_badge.text = "★★ Tri Kỷ (%d)" % aff
+		_lbl_affinity_badge.add_theme_color_override("font_color", C_GOLD)
+	elif tier >= 1:
+		_lbl_affinity_badge.text = "★ Khách Quen (%d)" % aff
+		_lbl_affinity_badge.add_theme_color_override("font_color", C_TGRN)
+	else:
+		_lbl_affinity_badge.text = "Thân thiết: %d" % aff
+		_lbl_affinity_badge.add_theme_color_override("font_color", C_MUTE)
+
+
+func _is_preferred_weapon(customer: Dictionary, weapon: Dictionary) -> bool:
+	var preferred: Array = customer.get("preferred", [])
+	if preferred.is_empty():
+		return false
+	for key: String in ["blank_id", "suffix", "phase2_prefix", "element"]:
+		var val := String(weapon.get(key, ""))
+		if not val.is_empty() and val in preferred:
+			return true
+	return false
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -724,30 +901,30 @@ func _on_weapon_selected(weapon: Dictionary) -> void:
 
 	# Cập nhật dialogue → lời chào giá NPC
 	var ctype: String = _customer.get("type", "")
+	_matched_pref = _is_preferred_weapon(_customer, weapon)
+	var affinity_tier := GameManager.get_npc_affinity_tier(ctype)
 	var offer_line: String = NPC_OFFER_LINES.get(ctype, "Tôi trả %dG.")
 	var speech_text: String = offer_line % _offer_gold
 
 	# Cập nhật phase 2 fields
 	_lbl_wpn_name.text  = weapon.get("weapon_name", "???")
-	_lbl_wpn_stats.text = "ATK %d  ·  MAG %d  ·  SPD %d  ·  DUR %d/%d  ·  Giá trị ước tính ~%dG" % [
+	_lbl_wpn_stats.text = "ATK %d  ·  MAG %d  ·  SPD %d  ·  DUR %d/%d  ·  Định giá xưởng: %dG" % [
 		weapon.get("atk", 0), weapon.get("magic", 0), weapon.get("speed", 0),
 		weapon.get("durability", 50), weapon.get("durability_max", 50),
 		_weapon_value(weapon),
 	]
 	_lbl_npc_offer.text      = "%dG" % _offer_gold
 
-	# Tính giới hạn giá và gợi ý cho vòng đàm phán này
+	# Tính giới hạn giá và đặc quyền Tri Kỷ Nhà Nghề (>= 35 thân thiết)
 	var val_w:    int   = _weapon_value(weapon)
 	var budget_w: int   = _customer.get("budget_this_visit", 500)
-	_npc_max_price  = mini(budget_w, int(val_w * _get_class_max_factor(_customer.get("type", ""))))
-	_price_cap_hard = int(val_w * 1.6)
-	_hint_min       = _offer_gold + 10
-	_hint_max       = int(_npc_max_price * randf_range(0.82, 0.93))
-	_lbl_hint.text  = "Gợi ý: ~%dG – %dG" % [_hint_min, _hint_max]
-	var show_bargain_tip := not GameManager.has_tutorial_seen("first_price_hint_seen")
-	if show_bargain_tip:
-		_lbl_hint.text = "Tutorial: kéo giá trong khoảng gợi ý; quá cao làm khách mất kiên nhẫn."
-		GameManager.mark_tutorial_seen("first_price_hint_seen")
+	_npc_max_price  = mini(budget_w, int(val_w * _get_class_max_factor(ctype)))
+	if affinity_tier >= 2 and _matched_pref:
+		_npc_max_price = int(_npc_max_price * 1.10)
+	_price_cap_hard = maxi(_npc_max_price + 40, int(val_w * 1.6))
+	_hint_min       = mini(_price_cap_hard, _offer_gold + 10)
+	_hint_max       = maxi(_hint_min, mini(_price_cap_hard, int(_npc_max_price * randf_range(0.82, 0.93))))
+	_update_hint_label()
 	_refresh_slider_range()
 	# Trade offer
 	if not _trade_offer.is_empty():
@@ -761,16 +938,47 @@ func _on_weapon_selected(weapon: Dictionary) -> void:
 	_weapon_box.visible  = false
 	_btn_no_sale.visible = false
 	_p2_root.visible     = true
-	# Khởi tạo patience, proposals và đe dọa cho vòng đàm phán này
-	_patience         = _customer.get("patience", 2)
+	# Khởi tạo patience (+1 nếu Tri Kỷ >= 35), proposals và đe dọa cho vòng đàm phán này
+	var base_patience: int = _customer.get("patience", 2)
+	_max_patience     = base_patience + (1 if affinity_tier >= 2 else 0)
+	_patience         = _max_patience
 	_proposals_used   = 0
 	_threat_used      = false
-	_threat_available = randf() < THREAT_APPEAR_RATE.get(_customer.get("type", ""), 0.0)
+	_threat_available = randf() < THREAT_APPEAR_RATE.get(ctype, 0.0)
 	_layout_p2_buttons(not _trade_offer.is_empty(), true, _threat_available)
 	_update_negotiate_info()
 	await _type_text(_lbl_npc_speech, speech_text)
 	if visible:
 		_resolving = false
+
+
+func _update_hint_label() -> void:
+	if _lbl_hint == null:
+		return
+	var is_day0 := GameManager.current_day == 0
+	var ctype: String = _customer.get("type", "")
+	var aff_tier := GameManager.get_npc_affinity_tier(ctype)
+	if is_day0:
+		_lbl_hint.visible = true
+		var show_bargain_tip := not GameManager.has_tutorial_seen("first_price_hint_seen")
+		if show_bargain_tip:
+			_lbl_hint.text = "Hướng dẫn: kéo giá trong vùng gợi ý (~%dG – %dG)." % [_hint_min, _hint_max]
+			GameManager.mark_tutorial_seen("first_price_hint_seen")
+		else:
+			_lbl_hint.text = "Gợi ý (Ngày 0): ~%dG – %dG" % [_hint_min, _hint_max]
+		_lbl_hint.add_theme_color_override("font_color", Color(0.54, 0.78, 0.54))
+	elif aff_tier >= 1:
+		# Khách Quen (>= 15): sổ tay Nấm ghi chép sơ bộ ngân sách khách
+		var rough_low := maxi(_offer_gold, int(_npc_max_price * 0.78))
+		var rough_high := maxi(rough_low, int(_npc_max_price * 0.96))
+		_lbl_hint.visible = true
+		_lbl_hint.text = "Sổ tay Nấm: khách quen thường chịu ~%dG – %dG" % [rough_low, rough_high]
+		_lbl_hint.add_theme_color_override("font_color", C_GOLD)
+	else:
+		# Từ Ngày 1+ (khách mới): ẩn hoàn toàn trần ngân sách, đọc biểu cảm!
+		_lbl_hint.visible = true
+		_lbl_hint.text = "Quan sát nét mặt khách khi kéo giá..."
+		_lbl_hint.add_theme_color_override("font_color", C_MUTE)
 
 
 func _layout_p2_buttons(
@@ -811,26 +1019,71 @@ func _layout_p2_buttons(
 
 
 func _type_text(label: Label, text: String, speed: float = 0.032) -> void:
+	_type_token += 1
+	var token := _type_token
 	label.text = ""
 	for i: int in text.length():
+		if not visible or not is_inside_tree() or token != _type_token:
+			return
 		label.text = text.left(i + 1)
 		await get_tree().create_timer(speed).timeout
+		if not visible or not is_inside_tree() or token != _type_token:
+			return
+
+
+func _load_customer_portrait_sprite(ctype: String) -> void:
+	if _rport_sprite == null:
+		return
+	var sheet_path := "res://assets/pixel/sprites/customers/%s_sheet_64.png" % ctype
+	if ResourceLoader.exists(sheet_path):
+		var sheet := load(sheet_path) as Texture2D
+		if sheet != null:
+			var atlas := AtlasTexture.new()
+			atlas.atlas = sheet
+			atlas.region = Rect2(0, 0, 64, 64)
+			_rport_sprite.texture = atlas
+			_rport_sprite.visible = true
+			if _rport_body != null:
+				_rport_body.visible = false
+			return
+	_rport_sprite.visible = false
+	if _rport_body != null:
+		_rport_body.visible = true
 
 
 func _set_mood(mood: Mood) -> void:
 	if _mood_overlay == null:
 		return
+	var emote_idx := -1
 	match mood:
 		Mood.NEUTRAL:
 			_mood_overlay.color = Color(0, 0, 0, 0)
+			emote_idx = -1
 		Mood.HAPPY:
-			_mood_overlay.color = Color(0.2, 0.8, 0.2, 0.30)
+			_mood_overlay.color = Color(0.2, 0.8, 0.2, 0.20)
+			emote_idx = 0
 		Mood.THINKING:
-			_mood_overlay.color = Color(0.6, 0.6, 0.0, 0.25)
+			_mood_overlay.color = Color(0.6, 0.6, 0.0, 0.18)
+			emote_idx = 1
 		Mood.ANNOYED:
-			_mood_overlay.color = Color(0.8, 0.4, 0.0, 0.30)
+			_mood_overlay.color = Color(0.8, 0.4, 0.0, 0.24)
+			emote_idx = 2
 		Mood.ANGRY:
-			_mood_overlay.color = Color(0.8, 0.1, 0.1, 0.40)
+			_mood_overlay.color = Color(0.8, 0.1, 0.1, 0.34)
+			emote_idx = 3
+
+	if _emote_icon != null:
+		const EMOTE_SHEET_PATH := "res://assets/pixel/ui/shop/customer_mood_emotes_32.png"
+		if emote_idx >= 0 and ResourceLoader.exists(EMOTE_SHEET_PATH):
+			var sheet := load(EMOTE_SHEET_PATH) as Texture2D
+			if sheet != null:
+				var atlas := AtlasTexture.new()
+				atlas.atlas = sheet
+				atlas.region = Rect2(emote_idx * 32, 0, 32, 32)
+				_emote_icon.texture = atlas
+				_emote_icon.visible = true
+				return
+		_emote_icon.visible = false
 
 
 func _refresh_slider_range() -> void:
@@ -839,8 +1092,17 @@ func _refresh_slider_range() -> void:
 	var max_price := _get_visible_slider_max(min_price, deal_end)
 	_price_slider.min_value = min_price
 	_price_slider.max_value = max_price
+	_last_reaction_tier = 0
 	_price_slider.value = clampf(float(maxi(_offer_gold, _hint_min)), min_price, max_price)
 	_on_price_slider_changed(_price_slider.value)
+
+	# Chỉ hiện 3 thanh màu gợi ý ở Ngày 0 (hướng dẫn); từ Ngày 1+ ẩn hoàn toàn!
+	var show_zones := GameManager.current_day == 0
+	_zone_low_rect.visible = show_zones
+	_zone_good_rect.visible = show_zones
+	_zone_high_rect.visible = show_zones
+	if not show_zones:
+		return
 
 	var instant_accept_end := clampf(float(int(_offer_gold * 1.05)), min_price, deal_end)
 	var good_end := clampf(deal_end, min_price, max_price)
@@ -870,11 +1132,91 @@ func _set_zone_rect(rect: ColorRect, start_price: float, end_price: float) -> vo
 
 
 func _on_price_slider_changed(value: float) -> void:
-	_lbl_price_display.text = "%dG" % int(value)
+	var proposed := int(value)
+	_lbl_price_display.text = "%dG" % proposed
+	_update_live_reaction(proposed)
+
+
+func _update_live_reaction(proposed: int) -> void:
+	var tier := get_reaction_tier(proposed, _offer_gold, _npc_max_price)
+	var col: Color = REACTION_COLORS.get(tier, C_TEXT)
+	if _lbl_body_lang != null:
+		_lbl_body_lang.text = String(REACTION_TEXTS.get(tier, ""))
+		_lbl_body_lang.add_theme_color_override("font_color", col)
+	if _lbl_mood_badge != null:
+		_lbl_mood_badge.text = String(REACTION_BADGES.get(tier, ""))
+		_lbl_mood_badge.add_theme_color_override("font_color", col)
+
+	match tier:
+		1: _set_mood(Mood.HAPPY)
+		2: _set_mood(Mood.NEUTRAL)
+		3: _set_mood(Mood.ANNOYED)
+		4: _set_mood(Mood.ANGRY)
+
+	if tier != _last_reaction_tier:
+		_last_reaction_tier = tier
+		_animate_portrait_for_tier(tier)
+
+
+func _animate_portrait_for_tier(tier: int) -> void:
+	if _npc_portrait_holder == null or not is_inside_tree():
+		return
+	if _portrait_tween != null and _portrait_tween.is_valid():
+		_portrait_tween.kill()
+	_npc_portrait_holder.position = _npc_portrait_base_pos
+	match tier:
+		1:
+			# Mắt sáng / gật đầu — nhún nhẹ vui vẻ
+			_portrait_tween = create_tween()
+			_portrait_tween.tween_property(
+				_npc_portrait_holder, "position:y", _npc_portrait_base_pos.y - 6.0, 0.10
+			)
+			_portrait_tween.tween_property(
+				_npc_portrait_holder, "position:y", _npc_portrait_base_pos.y, 0.12
+			)
+		3:
+			# Nhíu mày / mồ hôi — rung nhẹ
+			_portrait_tween = create_tween()
+			_portrait_tween.tween_property(
+				_npc_portrait_holder, "position:x", _npc_portrait_base_pos.x - 3.0, 0.05
+			)
+			_portrait_tween.tween_property(
+				_npc_portrait_holder, "position:x", _npc_portrait_base_pos.x + 3.0, 0.05
+			)
+			_portrait_tween.tween_property(
+				_npc_portrait_holder, "position:x", _npc_portrait_base_pos.x, 0.05
+			)
+		4:
+			# Lùi lại / mặt sầm — rung mạnh + hơi lùi sang phải
+			_portrait_tween = create_tween()
+			_portrait_tween.tween_property(
+				_npc_portrait_holder, "position:x", _npc_portrait_base_pos.x + 8.0, 0.06
+			)
+			_portrait_tween.tween_property(
+				_npc_portrait_holder, "position:x", _npc_portrait_base_pos.x - 6.0, 0.06
+			)
+			_portrait_tween.tween_property(
+				_npc_portrait_holder, "position:x", _npc_portrait_base_pos.x + 5.0, 0.06
+			)
+			_portrait_tween.tween_property(
+				_npc_portrait_holder, "position:x", _npc_portrait_base_pos.x, 0.08
+			)
 
 
 func _get_proposed_price() -> int:
 	return int(_price_slider.value)
+
+
+func _record_deal_success(final_price: int) -> void:
+	var ctype: String = _customer.get("type", "")
+	var aff_delta := 5 + (3 if _matched_pref else 0)
+	GameManager.add_npc_affinity(ctype, aff_delta)
+	GameManager.record_sold_weapon(_customer, _chosen_weapon, final_price, _matched_pref)
+
+
+func _record_deal_failure() -> void:
+	var ctype: String = _customer.get("type", "")
+	GameManager.add_npc_affinity(ctype, -3)
 
 
 # ── Xử lý kết quả ─────────────────────────────────────────────────────────────
@@ -884,8 +1226,16 @@ func _on_sell_npc_price() -> void:
 	_resolving = true
 	var ctype: String = _customer.get("type", "")
 	_set_mood(Mood.HAPPY)
-	await _type_text(_lbl_npc_speech, ACCEPT_LINES.get(ctype, "Cảm ơn!"))
+	var line: String = ACCEPT_LINES.get(ctype, "Cảm ơn!")
+	if _matched_pref:
+		line += " Đúng món tôi đang tìm!"
+	await _type_text(_lbl_npc_speech, line)
+	if not visible or not is_inside_tree():
+		return
 	await get_tree().create_timer(1.1).timeout
+	if not visible or not is_inside_tree():
+		return
+	_record_deal_success(_offer_gold)
 	close_ui()
 	deal_accepted.emit(_chosen_weapon, _offer_gold)
 
@@ -900,7 +1250,12 @@ func _on_propose() -> void:
 		var ctype_imm: String = _customer.get("type", "")
 		_set_mood(Mood.ANGRY)
 		await _type_text(_lbl_npc_speech, HAGGLE_TOO_HIGH_LINES.get(ctype_imm, "Quá đắt! Tôi đi."))
+		if not visible or not is_inside_tree():
+			return
 		await get_tree().create_timer(1.2).timeout
+		if not visible or not is_inside_tree():
+			return
+		_record_deal_failure()
 		close_ui()
 		deal_declined.emit()
 		return
@@ -911,8 +1266,10 @@ func _on_propose() -> void:
 	if not thinking_line.is_empty():
 		_set_mood(Mood.THINKING)
 		await _type_text(_lbl_npc_speech, thinking_line)
-		await get_tree().create_timer(1.2).timeout
-		if not visible:
+		if not visible or not is_inside_tree():
+			return
+		await get_tree().create_timer(0.85).timeout
+		if not visible or not is_inside_tree():
 			return
 
 	_proposals_used += 1
@@ -925,11 +1282,18 @@ func _on_propose() -> void:
 		_set_mood(Mood.ANGRY)
 		if _patience <= 0:
 			await _type_text(_lbl_npc_speech, HAGGLE_TOO_HIGH_LINES.get(ctype, "Quá đắt! Tôi đi."))
+			if not visible or not is_inside_tree():
+				return
 			await get_tree().create_timer(1.2).timeout
+			if not visible or not is_inside_tree():
+				return
+			_record_deal_failure()
 			close_ui()
 			deal_declined.emit()
 		else:
 			await _type_text(_lbl_npc_speech, "Giá đó... không ai trả nổi đâu. Nghiêm túc lại đi.")
+			if not visible or not is_inside_tree():
+				return
 			_check_proposal_limit()
 			_resolving = false
 		return
@@ -937,16 +1301,32 @@ func _on_propose() -> void:
 	if proposed <= _offer_gold:
 		# Player tự bán dưới giá NPC → chấp nhận ngay
 		_set_mood(Mood.HAPPY)
-		await _type_text(_lbl_npc_speech, ACCEPT_LINES.get(ctype, "Cảm ơn!"))
+		var line: String = ACCEPT_LINES.get(ctype, "Cảm ơn!")
+		if _matched_pref:
+			line += " Đúng thứ tôi cần!"
+		await _type_text(_lbl_npc_speech, line)
+		if not visible or not is_inside_tree():
+			return
 		await get_tree().create_timer(1.1).timeout
+		if not visible or not is_inside_tree():
+			return
+		_record_deal_success(proposed)
 		close_ui()
 		deal_accepted.emit(_chosen_weapon, proposed)
 
 	elif proposed <= int(_offer_gold * 1.05):
 		# Sát với giá NPC (≤5%) → chấp nhận, không mặc cả thêm
 		_set_mood(Mood.HAPPY)
-		await _type_text(_lbl_npc_speech, "Hm... %dG thôi, được rồi." % proposed)
+		var line_close := "Hm... %dG thôi, được rồi." % proposed
+		if _matched_pref:
+			line_close += " Hàng rất hợp tay tôi!"
+		await _type_text(_lbl_npc_speech, line_close)
+		if not visible or not is_inside_tree():
+			return
 		await get_tree().create_timer(1.1).timeout
+		if not visible or not is_inside_tree():
+			return
+		_record_deal_success(proposed)
 		close_ui()
 		deal_accepted.emit(_chosen_weapon, proposed)
 
@@ -959,8 +1339,8 @@ func _on_propose() -> void:
 		_lbl_npc_offer.text = "%dG" % counter
 		_btn_sell_npc.text  = "Bán giá NPC  ·  %dG" % counter
 		# Cập nhật gợi ý sau khi NPC đã nâng giá
-		_hint_min      = counter + 1
-		_lbl_hint.text = "Gợi ý: ~%dG – %dG" % [_hint_min, _hint_max]
+		_hint_min = counter + 1
+		_update_hint_label()
 		_refresh_slider_range()
 		var counter_line: String = HAGGLE_COUNTER_LINES.get(ctype, "Tôi chỉ trả %dG.")
 		_set_mood(Mood.ANNOYED)
@@ -977,6 +1357,7 @@ func _on_propose() -> void:
 		else:
 			_set_mood(Mood.ANNOYED)
 		if _patience <= 0:
+			_record_deal_failure()
 			await _type_text(_lbl_npc_speech, HAGGLE_TOO_HIGH_LINES.get(ctype, "Quá đắt! Tôi đi."))
 			await get_tree().create_timer(1.2).timeout
 			close_ui()
@@ -992,7 +1373,12 @@ func _on_trade_accept() -> void:
 	_resolving = true
 	_set_mood(Mood.HAPPY)
 	await _type_text(_lbl_npc_speech, "Tuyệt! Trao đổi thành công.")
+	if not visible or not is_inside_tree():
+		return
 	await get_tree().create_timer(1.1).timeout
+	if not visible or not is_inside_tree():
+		return
+	_record_deal_success(0)
 	close_ui()
 	trade_accepted.emit(_chosen_weapon, _trade_offer)
 
@@ -1008,14 +1394,19 @@ func _on_threaten() -> void:
 	var rep_loss: int
 
 	if success:
-		rep_loss     = randi_range(8, 13)
-		_patience   += randi_range(1, 2)
-		_npc_max_price = int(_npc_max_price * randf_range(1.15, 1.30))
-		_hint_max   = int(_npc_max_price * randf_range(0.82, 0.93))
-		_lbl_hint.text = "Gợi ý: ~%dG – %dG" % [_hint_min, _hint_max]
+		rep_loss        = randi_range(8, 13)
+		_patience      += randi_range(1, 2)
+		_max_patience   = maxi(_max_patience, _patience)
+		_npc_max_price  = int(_npc_max_price * randf_range(1.15, 1.30))
+		_price_cap_hard = maxi(_price_cap_hard, _npc_max_price + 40)
+		_hint_max       = mini(_price_cap_hard, int(_npc_max_price * randf_range(0.82, 0.93)))
+		_update_hint_label()
 		_refresh_slider_range()
 		_set_mood(Mood.ANNOYED)
 		await _type_text(_lbl_npc_speech, THREAT_SUCCESS_LINES.get(ctype, "...(run rẩy) Vâng..."))
+		if not visible or not is_inside_tree():
+			GameManager.add_reputation(-rep_loss)
+			return
 		_update_negotiate_info()
 	else:
 		rep_loss   = randi_range(16, 24)
@@ -1025,9 +1416,15 @@ func _on_threaten() -> void:
 		if _patience <= 0:
 			_resolving = true
 			_set_mood(Mood.ANGRY)
+			GameManager.add_reputation(-rep_loss)
 			await _type_text(_lbl_npc_speech, fail_line)
+			if not visible or not is_inside_tree():
+				return
 			_show_rep_loss(rep_loss)
 			await get_tree().create_timer(1.4).timeout
+			if not visible or not is_inside_tree():
+				return
+			_record_deal_failure()
 			close_ui()
 			deal_declined.emit()
 			return
@@ -1036,6 +1433,9 @@ func _on_threaten() -> void:
 		else:
 			_set_mood(Mood.ANNOYED)
 		await _type_text(_lbl_npc_speech, fail_line)
+		if not visible or not is_inside_tree():
+			GameManager.add_reputation(-rep_loss)
+			return
 
 	# Trừ uy tín (luôn xảy ra dù thành công hay thất bại)
 	_show_rep_loss(rep_loss)
@@ -1054,11 +1454,13 @@ func _on_decline() -> void:
 	if _resolving: return
 	_resolving = true
 	var ctype: String = _customer.get("type", "")
-	if _phase == Phase.PRICE:
-		await _type_text(_lbl_npc_speech, DECLINE_LINES.get(ctype, "Không sao."))
-	else:
-		await _type_text(_lbl_npc_speech, DECLINE_LINES.get(ctype, "Không sao."))
+	await _type_text(_lbl_npc_speech, DECLINE_LINES.get(ctype, "Không sao."))
+	if not visible or not is_inside_tree():
+		return
 	await get_tree().create_timer(0.9).timeout
+	if not visible or not is_inside_tree():
+		return
+	_record_deal_failure()
 	close_ui()
 	deal_declined.emit()
 
@@ -1138,8 +1540,8 @@ func _get_class_max_factor(ctype: String) -> float:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _update_negotiate_info() -> void:
-	var max_p    : int = _customer.get("patience", 2)
-	var dots_on  : String = "●".repeat(_patience)
+	var max_p    : int = maxi(1, _max_patience)
+	var dots_on  : String = "●".repeat(maxi(0, _patience))
 	var dots_off : String = "○".repeat(maxi(0, max_p - _patience))
 	var left     : int = PROPOSALS_MAX - _proposals_used
 	_lbl_negotiate_info.text = "Lượt còn: %d/%d  ·  Kiên nhẫn: %s%s" % [
@@ -1153,8 +1555,8 @@ func _update_negotiate_info() -> void:
 	else:
 		_lbl_negotiate_info.add_theme_color_override("font_color", C_MUTE)
 	if _patience_bar != null:
-		var ratio := float(_patience) / float(maxi(1, _customer.get("patience", 2)))
-		_patience_bar.size.x = 160.0 * ratio
+		var ratio := clampf(float(_patience) / float(max_p), 0.0, 1.0)
+		_patience_bar.size.x = 140.0 * ratio
 		_patience_bar.color = Color(1.0 - ratio, ratio * 0.8, 0.1)
 
 
@@ -1170,7 +1572,7 @@ func _check_proposal_limit() -> void:
 func _r(pos: Vector2, sz: Vector2, color: Color) -> void:
 	var c := ColorRect.new()
 	c.color = color; c.position = pos; c.size = sz
-	_root.add_child(c)
+	_panel_holder.add_child(c)
 
 
 func _r_in(parent: Control, pos: Vector2, sz: Vector2, color: Color) -> void:
@@ -1180,38 +1582,32 @@ func _r_in(parent: Control, pos: Vector2, sz: Vector2, color: Color) -> void:
 
 
 func _dialogue_box(pos: Vector2, sz: Vector2) -> void:
-	_r(pos, sz, C_SPCH)
-	_r(Vector2(pos.x, pos.y), Vector2(sz.x, 1), C_SEP)
-	_r(Vector2(pos.x, pos.y + sz.y - 1), Vector2(sz.x, 1), C_SEP)
-	_r(Vector2(pos.x, pos.y), Vector2(1, sz.y), C_SEP)
-	_r(Vector2(pos.x + sz.x - 1, pos.y), Vector2(1, sz.y), C_SEP)
+	var box := Panel.new()
+	box.position = pos
+	box.size = sz
+	box.add_theme_stylebox_override("panel", HoaTamUI.make_inset_surface_style(0.55, 14.0, C_SEP))
+	_panel_holder.add_child(box)
 
 
 func _lbl(text: String, x: int, y: int, w: int, h: int, font_size: int) -> Label:
 	var l := Label.new()
 	l.text = text; l.position = Vector2(x, y); l.size = Vector2(w, h)
+	if _font_pixel != null:
+		l.add_theme_font_override("font", _font_pixel)
 	l.add_theme_font_size_override("font_size", font_size)
 	l.add_theme_color_override("font_color", C_TEXT)
-	_root.add_child(l)
+	_panel_holder.add_child(l)
 	return l
 
 
-func _btn(label: String, c_norm: Color, c_hover: Color, font_size: int = 15) -> Button:
+func _btn(label: String, c_norm: Color, _c_hover: Color, font_size: int = 15) -> Button:
 	var btn := Button.new()
 	btn.text = label
-	btn.add_theme_color_override("font_color",       C_TEXT)
-	btn.add_theme_color_override("font_hover_color", C_TEXT)
-	btn.add_theme_font_size_override("font_size", font_size)
-	for state: String in ["normal", "focus"]:
-		var s := StyleBoxFlat.new()
-		s.bg_color = c_norm; s.set_corner_radius_all(5)
-		s.content_margin_left = 10.0; s.content_margin_right  = 10.0
-		s.content_margin_top  = 5.0;  s.content_margin_bottom = 5.0
-		btn.add_theme_stylebox_override(state, s)
-	for state: String in ["hover", "pressed"]:
-		var s := StyleBoxFlat.new()
-		s.bg_color = c_hover; s.set_corner_radius_all(5)
-		s.content_margin_left = 10.0; s.content_margin_right  = 10.0
-		s.content_margin_top  = 5.0;  s.content_margin_bottom = 5.0
-		btn.add_theme_stylebox_override(state, s)
+	var is_primary := (c_norm == C_ACC)
+	if is_primary:
+		HoaTamUI.apply_primary_button(btn, font_size)
+	else:
+		HoaTamUI.apply_secondary_button(btn, font_size)
+	if _font_pixel != null:
+		btn.add_theme_font_override("font", _font_pixel)
 	return btn

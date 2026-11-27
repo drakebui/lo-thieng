@@ -22,6 +22,11 @@ ad-hoc image code.
 
 ## 1. Non-Negotiable Core Rules (Read Before Generating)
 
+0. **ZERO LEGACY ASSET REUSE (100% Fresh 32-Bit Assets Only):**
+   - Legacy folders (`assets/weapons/`, `assets/UI/`, `assets/sprites/`, `assets/characters/`) exist **strictly as concept ideas / item lists**.
+   - **NEVER** load legacy textures into active scenes, **NEVER** keep fallback paths pointing to legacy folders, **NEVER** downscale legacy images, and **NEVER** build new 32-bit frames/pedestals/anvils/tubs that wrap around old high-res weapon or material PNGs.
+   - Every visual element rendered in the game (backgrounds, characters, weapons, blanks, materials, UI frames, icons, props) must be **100% newly created in 32-bit Hoả Tâm Pixel Art** inside `res://assets/pixel/`.
+
 1. **Every Character Must Be Movable (Never Static Statues):**
    - Characters, customers, visiting NPCs, and enemies move across **4 environments**:
      `WorkshopHub`, `ShopScene` (store), `ExplorationScene` (dungeon/region patrol & chase), and `CombatScene`.

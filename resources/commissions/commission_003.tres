@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CommissionData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/CommissionData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+commission_id = "commission_003"
+giver_npc_id = "tho_san"
+reason_text = "Thợ Săn Cáo cần một cây Giáo Dài hệ Phong nhanh nhẹn để dẫn đầu cuộc đi săn ngoài Đồng Mây."
+hint_region = "Rèn Giáo Dài theo hướng Nhu (Thần Tốc/Cân Bằng) và khắc ấn Phong tại Bể Tôi."
+req_blank = "giao_dai"
+req_element = "phong"
+req_min_rarity = 1
+reward_gold = 720
+reward_reputation = 1
+reward_affinity = 3
+flavor_accept = "Gió đồng mạnh lắm — cho ta một ngọn giáo nhẹ gió, vươn tới trước cả khi thú kịp gầm."
+flavor_fulfilled = "Đúng mũi thương ta mong! Cầm lên thấy gió luồn theo cán giáo rồi."

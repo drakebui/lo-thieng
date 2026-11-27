@@ -82,6 +82,8 @@ var _atmosphere: WorkshopAtmosphere = null
 var _debt_agents: Dictionary = {}
 var _forge_recipe_book_ui: ForgeRecipeBookUI = null
 var _visitor_clg: Node2D = null
+var _visitor_clg_sprite: AnimatedSprite2D = null
+var _visitor_clg_has_4dir: bool = false
 
 func _init_layout() -> void:
 	var vp := get_viewport_rect().size
@@ -114,7 +116,11 @@ func _ready() -> void:
 	if not GameManager.save_restored:
 		if SaveSystem.has_save():
 			var data := SaveSystem.load_game()
-			GameManager.restore_from_save(data)
+			if data.is_empty():
+				GameManager.init_new_game()
+				GameManager.save_restored = true
+			else:
+				GameManager.restore_from_save(data)
 		else:
 			GameManager.init_new_game()
 			GameManager.save_restored = true
@@ -143,6 +149,7 @@ func _ready() -> void:
 	_sync_debt_overlays()
 	if not _show_day_start_card_if_needed():
 		_tutorial_ctrl.sync_script()
+		_try_start_day1_debt_visit()
 	_tutorial_ctrl.sync_day1_scripted()
 	_build_hub_visitors()
 	AudioManager.play_sfx_loop("furnace_burn", 0.14)
@@ -162,12 +169,11 @@ func _process(_delta: float) -> void:
 	var prox := clampf(1.0 - dist / 950.0, 0.0, 1.0)
 	var target_vol := 0.06 if blocked else lerpf(0.08, 0.34, prox)
 	AudioManager.set_sfx_loop_volume(target_vol)
+	_update_visitor_facing()
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _day_card_overlay != null:
-		return
-	if _forge_recipe_book_ui != null and _forge_recipe_book_ui.visible:
+	if _has_blocking_overlay():
 		return
 	if not (event is InputEventKey):
 		return
@@ -303,6 +309,60 @@ func _build_player() -> void:
 	_player.set("enable_footsteps", true)
 	_player.position = Vector2(vp.x * 0.50, vp.y * 0.71)
 	add_child(_player)
+	_sync_player_shadow_lights(GameManager.current_phase)
+
+
+func _sync_player_shadow_lights(phase: int) -> void:
+	if _player == null or not _player.has_method("set_shadow_lights"):
+		return
+	var vp := get_viewport_rect().size
+	var sx := vp.x / 640.0
+	var sy := vp.y / 360.0
+	var is_night := phase == GameManager.GamePhase.NIGHT
+	# Tọa độ nguồn sáng đo trực tiếp từ ảnh nền workshop_hub_bg_640x360.png:
+	# - Cửa ngoài trái: tâm vệt sáng (88.8, 230.3), góc luồng nắng +40.2° (phải-xuống)
+	# - Lửa lò rèn:     tâm miệng lò (196.0, 126.7)
+	# - Đèn treo giường: tâm đèn treo (441.0, 80.3) -> chiếu xuống sàn gần giường/rương
+	# - Đèn cửa tiệm phải: tâm đèn (577.9, 231.4)
+	var lights: Array[Dictionary] = [
+		{
+			"pos": Vector2(88.8 * sx, 230.3 * sy),
+			"radius": 310.0 * sx,
+			"strength": 0.25 if is_night else 1.25,
+			"max_alpha": 0.24 if is_night else 0.58,
+			"max_length": 0.98,
+			"flicker": 0.0,
+			"bias_dir": Vector2(cos(deg_to_rad(40.2)), sin(deg_to_rad(40.2))),
+		},
+		{
+			"pos": Vector2(196.0 * sx, 142.0 * sy),
+			"radius": 295.0 * sx,
+			"strength": 1.20 if is_night else 0.95,
+			"max_alpha": 0.56 if is_night else 0.52,
+			"max_length": 0.96,
+			"flicker": 0.06,
+			"bias_dir": Vector2(0.06, 0.98),
+		},
+		{
+			"pos": Vector2(441.0 * sx, 128.0 * sy),
+			"radius": 285.0 * sx,
+			"strength": 1.10 if is_night else 0.85,
+			"max_alpha": 0.54 if is_night else 0.48,
+			"max_length": 0.92,
+			"flicker": 0.03,
+			"bias_dir": Vector2(-0.08, 0.96),
+		},
+		{
+			"pos": Vector2(577.9 * sx, 231.4 * sy),
+			"radius": 255.0 * sx,
+			"strength": 1.05 if is_night else 0.82,
+			"max_alpha": 0.54 if is_night else 0.48,
+			"max_length": 0.92,
+			"flicker": 0.03,
+			"bias_dir": Vector2(-0.90, 0.34),
+		},
+	]
+	_player.call("set_shadow_lights", lights)
 
 
 func _build_zones() -> void:
@@ -343,6 +403,7 @@ func _connect_signals() -> void:
 func _on_phase_changed(phase: GameManager.GamePhase) -> void:
 	if _atmosphere != null:
 		_atmosphere.set_phase(phase)
+	_sync_player_shadow_lights(phase)
 	_sync_debt_agent_scene()
 	_sync_debt_payment()
 	_tutorial_ctrl.sync_day1_scripted()
@@ -506,7 +567,21 @@ func _build_hub_visitors() -> void:
 	add_child(npc)
 	_visitor_clg = npc
 
+	var clg_shadow := Polygon2D.new()
+	clg_shadow.name = "ContactShadow"
+	clg_shadow.color = BaseCharacter.SHADOW_COLOR
+	clg_shadow.z_index = -1
+	var spts := PackedVector2Array()
+	for i in range(14):
+		var ang := (float(i) / 14.0) * TAU
+		spts.append(Vector2(cos(ang) * 8.0 * NPC_RENDER_SCALE, sin(ang) * 2.6 * NPC_RENDER_SCALE))
+	clg_shadow.polygon = spts
+	npc.add_child(clg_shadow)
+
+	var clg_tex := load(CO_LONG_GIO_SHEET_PATH) as Texture2D
+	_visitor_clg_has_4dir = clg_tex != null and clg_tex.get_height() >= NPC_FRAME_SIZE * 8
 	var clg_sprite := _build_npc_animated_sprite(CO_LONG_GIO_SHEET_PATH)
+	_visitor_clg_sprite = clg_sprite
 	if clg_sprite != null:
 		npc.add_child(clg_sprite)
 	else:
@@ -518,7 +593,7 @@ func _build_hub_visitors() -> void:
 
 	var name_lbl := Label.new()
 	name_lbl.text = "Cô Lộng Gió"
-	name_lbl.position = Vector2(-78, -90)
+	name_lbl.position = Vector2(-78, -168)
 	name_lbl.size = Vector2(156, 28)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", 18)
@@ -555,25 +630,41 @@ func _build_hub_visitors() -> void:
 
 
 func _build_npc_animated_sprite(sheet_path: String) -> AnimatedSprite2D:
-	var texture := load(sheet_path) as Texture2D
-	if texture == null:
+	var frames := BaseCharacter.get_or_build_frames(sheet_path)
+	if frames == null:
 		return null
 	var sprite := AnimatedSprite2D.new()
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	var frames := SpriteFrames.new()
-	frames.add_animation("idle")
-	frames.set_animation_speed("idle", 6.0)
-	frames.set_animation_loop("idle", true)
-	for col in 4:
-		var atlas := AtlasTexture.new()
-		atlas.atlas = texture
-		atlas.region = Rect2(col * NPC_FRAME_SIZE, 0, NPC_FRAME_SIZE, NPC_FRAME_SIZE)
-		frames.add_frame("idle", atlas)
 	sprite.sprite_frames = frames
-	sprite.offset = Vector2(0.0, -16.0)
+	sprite.offset = Vector2(0.0, -28.0)
 	sprite.scale = Vector2(NPC_RENDER_SCALE, NPC_RENDER_SCALE)
-	sprite.play("idle")
+	var default_anim := "idle_down" if _visitor_clg_has_4dir and frames.has_animation("idle_down") else "idle"
+	sprite.play(default_anim)
 	return sprite
+
+
+func _update_visitor_facing() -> void:
+	if _visitor_clg == null or _visitor_clg_sprite == null or _player == null:
+		return
+	var delta := _player.position - _visitor_clg.position
+	if delta.length() > 260.0:
+		if _visitor_clg_has_4dir and _visitor_clg_sprite.sprite_frames.has_animation("idle_down"):
+			_visitor_clg_sprite.flip_h = false
+			if _visitor_clg_sprite.animation != "idle_down":
+				_visitor_clg_sprite.play("idle_down")
+		else:
+			_visitor_clg_sprite.flip_h = false
+		return
+	if _visitor_clg_has_4dir:
+		_visitor_clg_sprite.flip_h = false
+		var dir := "right" if delta.x >= 0.0 else "left"
+		if absf(delta.y) > absf(delta.x):
+			dir = "down" if delta.y >= 0.0 else "up"
+		var anim := "idle_%s" % dir
+		if _visitor_clg_sprite.sprite_frames.has_animation(anim) and _visitor_clg_sprite.animation != anim:
+			_visitor_clg_sprite.play(anim)
+	elif absf(delta.x) > 8.0:
+		_visitor_clg_sprite.flip_h = delta.x < 0.0
 
 
 func _talk_to_hub_visitor_clg() -> void:
@@ -588,6 +679,7 @@ func _talk_to_hub_visitor_clg() -> void:
 				GameManager.mark_tutorial_seen("co_long_gio_met")
 				_visitor_clg.queue_free()
 				_visitor_clg = null
+				_visitor_clg_sprite = null
 				_overlapping_zones.erase(ZONE_VISITOR_CLG)
 				_refresh_near_zone()
 		)
@@ -598,6 +690,7 @@ func _talk_to_hub_visitor_clg() -> void:
 			func() -> void:
 				_visitor_clg.queue_free()
 				_visitor_clg = null
+				_visitor_clg_sprite = null
 				_overlapping_zones.erase(ZONE_VISITOR_CLG)
 				_refresh_near_zone()
 		)
@@ -617,11 +710,10 @@ func _go_forge() -> void:
 
 
 func _go_shop() -> void:
-	if _tutorial_ctrl.is_day1_active() and _tutorial_ctrl.tutorial_step < 3:
-		_tutorial_ctrl.request_hint("Chiều mới mở cửa bán hàng.")
+	if GameManager.current_phase == GameManager.GamePhase.NIGHT:
+		_tutorial_ctrl.request_hint("Tiệm đã đóng cửa buổi tối — hãy nghỉ ngơi!")
 		return
-	if _debt_ctrl.should_show_c1_debt_agent():
-		_debt_ctrl.show_c1_debt_notice()
+	if _debt_ctrl != null and _debt_ctrl.is_day1_visit_running:
 		return
 	if _tutorial_ctrl.should_show_before_shop():
 		_tutorial_ctrl.show_tutorial_then(
@@ -630,8 +722,10 @@ func _go_shop() -> void:
 			_go_shop
 		)
 		return
-	if GameManager.current_day <= 1 and InventorySystem.get_weapons().is_empty():
-		_tutorial_ctrl.request_hint("Hãy bày vũ khí lên kệ trước khi mở cửa tiệm!")
+	var has_any_weapon := not InventorySystem.get_weapons().is_empty() \
+		or not InventorySystem.get_shelf_weapons().is_empty()
+	if GameManager.current_day <= 1 and not has_any_weapon:
+		_tutorial_ctrl.request_hint("Hãy rèn ít nhất 1 vũ khí trước khi mở cửa tiệm!")
 		return
 	# Đảm bảo mở shop luôn bước vào buổi chiều, kể cả khi bỏ qua rèn.
 	if GameManager.current_phase == GameManager.GamePhase.MORNING:
@@ -696,6 +790,7 @@ func _open_region_select() -> void:
 		_region_select = scr.new() as CanvasLayer
 		(_region_select as RegionSelectUI).region_chosen.connect(_on_region_chosen)
 		add_child(_region_select)
+	(_region_select as RegionSelectUI).refresh()
 	_region_select.visible = true
 
 
@@ -820,6 +915,15 @@ func _on_day_start_card_closed() -> void:
 	_day_card_overlay = null
 	_sync_debt_overlays()
 	_tutorial_ctrl.sync_script()
+	_try_start_day1_debt_visit()
+
+
+func _try_start_day1_debt_visit() -> void:
+	if _debt_ctrl == null or not _debt_ctrl.should_run_day1_debt_visit():
+		return
+	# Người Thu Nợ bước vào từ Cửa Ngoài bên trái (exit_center)
+	var left_door_pos := Vector2(exit_center.x - 18.0, exit_center.y + 8.0)
+	_debt_ctrl.run_day1_debt_visit(left_door_pos, _player)
 
 
 func _open_guide_book() -> void:

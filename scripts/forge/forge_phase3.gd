@@ -1,7 +1,8 @@
-# Phase 3: Tôi Luyện — Nhúng linh lực và căn nhịp Cổ Ngữ hội tụ
-# Player chọn nguyên tố (Linh Lực) → vũ khí được nhúng → suffix xác định
+# Phase 3: Tôi Luyện — Khắc Ấn Linh Lực (hoặc Tôi Nước Thuần) & căn nhịp Cổ Ngữ hội tụ
 # Kết quả emit EventBus.phase3_completed(weapon_result: Dictionary)
 extends Node
+
+const PURE_WATER_COLOR := Color(0.45, 0.74, 0.88)
 
 const ELEMENTS: Dictionary = {
 	"hoa": {
@@ -48,7 +49,7 @@ const SUFFIX_NAMES: Dictionary = {
 # Thời gian tôi luyện 2.4s (0..1.0 trong 2.4s)
 const QUENCH_DURATION := 2.4
 
-# Vùng tâm hội tụ cổ ngữ: 0.70 ± 0.08
+# Vùng tâm hội tụ cổ ngữ: 0.70 ± 0.08 (0.62 .. 0.78)
 const TARGET_PROGRESS  := 0.70
 const TARGET_TOLERANCE := 0.08
 
@@ -61,7 +62,7 @@ var _quench_pressed: bool = false
 
 
 func start_phase(element: String) -> void:
-	element_key = element
+	element_key = element if ELEMENTS.has(element) else ""
 	is_active = true
 	is_quenching = true
 	quench_progress = 0.0
@@ -77,7 +78,7 @@ func _process(delta: float) -> void:
 		is_quenching = false
 
 
-# Người chơi nhấn Space căn nhịp hội tụ
+# Người chơi nhấn Space / Chuột Trái căn nhịp hội tụ
 func try_quench_press() -> bool:
 	if not is_active or not is_quenching or _quench_pressed:
 		return false
@@ -104,9 +105,9 @@ func complete(phase1_tier: String, phase2_prefix: String, is_perfect_quench: boo
 		"phase1_tier":      phase1_tier,
 		"phase2_prefix":    phase2_prefix,
 		"element":          element_key,
-		"suffix":           elem.get("suffix", ""),
-		"element_name":     elem.get("name", ""),
-		"element_color":    elem.get("color", Color.WHITE),
+		"suffix":           String(elem.get("suffix", "")),
+		"element_name":     String(elem.get("name", "")),
+		"element_color":    elem.get("color", PURE_WATER_COLOR),
 		"perfect_quench":   final_perfect,
 		"price_mult":       1.10 if final_perfect else 1.0,
 		"durability_bonus": 10 if final_perfect else 0,
@@ -116,7 +117,13 @@ func complete(phase1_tier: String, phase2_prefix: String, is_perfect_quench: boo
 
 
 func get_element_data(element: String) -> Dictionary:
-	return ELEMENTS.get(element, {})
+	if ELEMENTS.has(element):
+		return ELEMENTS[element]
+	return {
+		"name": "Nước Thuần",
+		"suffix": "",
+		"color": PURE_WATER_COLOR,
+	}
 
 
 func get_suffix_name(suffix: String) -> String:

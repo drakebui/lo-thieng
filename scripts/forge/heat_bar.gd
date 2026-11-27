@@ -1,31 +1,44 @@
 class_name HeatBar
 extends Control
 
-# Thanh nhiệt Phase 1 vẽ bằng _draw(): khung kim loại rèn 2 lớp,
-# 4 chốt đinh tán đồng, sóng nhiệt vùng đỉnh và kim chỉ 2 đầu nhọn.
+# Thanh nhiệt Phase 1 chuẩn 32-bit Hoả Tâm Pixel Art (0% mixel, 0% vector gradient):
+# - Khung 9-slice thép rèn ốp tai đồng có đinh tán (forge_heat_frame_9s.png)
+# - 4 vùng nhiệt dithered trên lưới pixel cứng 3x3 (Lạnh / Cam / Đỏ Rực / Cháy)
+# - Chốt chia ngưỡng đồng rèn (forge_heat_divider.png)
+# - Kim chỉ nhiệt 2 đầu mũi tên đồng nạm ngọc (forge_heat_needle.png)
 
-const COLOR_BG           := Color(0.024, 0.016, 0.008)
-const COLOR_BORDER_IDLE  := Color(0.46, 0.31, 0.14, 0.95)
-const COLOR_FRAME_OUTER  := Color(0.14, 0.09, 0.06, 0.98)
-const COLOR_RIVET_DARK   := Color(0.18, 0.10, 0.05)
-const COLOR_RIVET_FILL   := Color(0.76, 0.52, 0.22)
-const COLOR_RIVET_HI     := Color(1.00, 0.86, 0.56)
-const COLOR_COLD_START   := Color(0.10, 0.20, 0.45)
-const COLOR_COLD_END     := Color(0.18, 0.48, 0.72)
-const COLOR_CAM_START    := Color(0.35, 0.12, 0.00)
-const COLOR_CAM_END      := Color(0.85, 0.45, 0.08)
-const COLOR_DORUC_START  := Color(0.72, 0.18, 0.00)
-const COLOR_DORUC_END    := Color(1.00, 0.78, 0.05)
-const COLOR_CHAY_START   := Color(0.22, 0.09, 0.02)
-const COLOR_CHAY_END     := Color(0.08, 0.03, 0.01)
-const COLOR_TICK         := Color(1.0, 1.0, 1.0, 0.12)
-const COLOR_CAM_MARK     := Color(0.95, 0.86, 0.20, 0.78)
-const COLOR_PEAK_MARK    := Color(1.00, 0.48, 0.06, 0.88)
-const COLOR_BURN_MARK    := Color(0.85, 0.12, 0.06, 0.82)
-const COLOR_SHEEN        := Color(1.0, 1.0, 1.0, 0.10)
-const COLOR_DANGER_FLASH := Color(1.0, 0.12, 0.08, 0.22)
-const COLOR_INDICATOR    := Color(1.0, 0.98, 0.90, 0.98)
-const COLOR_NEEDLE_EDGE  := Color(0.10, 0.05, 0.02, 0.96)
+const _TEX_FRAME_PATH := "res://assets/pixel/ui/forge/forge_heat_frame_9s.png"
+const _TEX_NEEDLE_PATH := "res://assets/pixel/ui/forge/forge_heat_needle.png"
+const _TEX_DIVIDER_PATH := "res://assets/pixel/ui/forge/forge_heat_divider.png"
+
+const PX := 3.0  # 1 native pixel art = 3x3 screen pixel (khớp 640x360 -> 1920x1080)
+const FRAME_INSET_X := 30.0  # 10 native px * 3 (tai đồng 2 bên)
+const FRAME_INSET_Y := 12.0  # 4 native px * 3 (thanh thép trên/dưới)
+
+# Bảng màu Hoả Tâm 32-bit cho 4 vùng nhiệt (không dùng smooth lerp vector)
+const COL_OUTLINE := Color(0.071, 0.047, 0.063, 1.0)    # #120C10
+const COL_UNFILLED := Color(0.065, 0.042, 0.048, 0.72)  # Lớp tối phủ phần nhiệt chưa đạt
+
+# Vùng Lạnh (thép nguội)
+const COL_COLD_DARK := Color(0.110, 0.165, 0.255)
+const COL_COLD_MID  := Color(0.176, 0.275, 0.392)
+const COL_COLD_HI   := Color(0.275, 0.420, 0.560)
+
+# Vùng Cam (than hồng)
+const COL_CAM_DARK := Color(0.455, 0.165, 0.090)
+const COL_CAM_MID  := Color(0.760, 0.310, 0.110)
+const COL_CAM_HI   := Color(0.910, 0.478, 0.141)
+
+# Vùng Đỏ Rực ★ (lõi lửa vàng sáng)
+const COL_PEAK_DARK := Color(0.860, 0.380, 0.100)
+const COL_PEAK_MID  := Color(0.980, 0.675, 0.195)
+const COL_PEAK_HI   := Color(1.000, 0.890, 0.440)
+const COL_PEAK_CORE := Color(1.000, 0.960, 0.820)
+
+# Vùng Cháy (than đen nứt đỏ báo động)
+const COL_BURN_DARK := Color(0.130, 0.075, 0.090)
+const COL_BURN_MID  := Color(0.380, 0.100, 0.110)
+const COL_BURN_HI   := Color(0.820, 0.220, 0.160)
 
 @export var heat_percent: float = 0.0:
 	set(value):
@@ -36,8 +49,33 @@ var sweet_min: float = 0.60   # Cam bắt đầu
 var peak_frac: float = 0.80   # Đỏ Rực bắt đầu
 var burn_frac: float = 0.92   # Cháy bắt đầu
 
-var _danger_flash: float = 0.0
 var _anim_time: float = 0.0
+var _frame_style: StyleBoxTexture
+var _needle_tex: Texture2D
+var _divider_tex: Texture2D
+
+
+func _ready() -> void:
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_load_pixel_assets()
+
+
+func _load_pixel_assets() -> void:
+	if _frame_style == null and ResourceLoader.exists(_TEX_FRAME_PATH):
+		var frame_tex := load(_TEX_FRAME_PATH) as Texture2D
+		if frame_tex != null:
+			_frame_style = StyleBoxTexture.new()
+			_frame_style.texture = frame_tex
+			_frame_style.texture_margin_left = 36.0
+			_frame_style.texture_margin_right = 36.0
+			_frame_style.texture_margin_top = 15.0
+			_frame_style.texture_margin_bottom = 15.0
+			_frame_style.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
+			_frame_style.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	if _needle_tex == null and ResourceLoader.exists(_TEX_NEEDLE_PATH):
+		_needle_tex = load(_TEX_NEEDLE_PATH) as Texture2D
+	if _divider_tex == null and ResourceLoader.exists(_TEX_DIVIDER_PATH):
+		_divider_tex = load(_TEX_DIVIDER_PATH) as Texture2D
 
 
 func set_thresholds(new_sweet_min: float, new_peak_frac: float, new_burn_frac: float) -> void:
@@ -49,8 +87,6 @@ func set_thresholds(new_sweet_min: float, new_peak_frac: float, new_burn_frac: f
 
 func tick_animation(delta: float) -> void:
 	_anim_time += delta
-	if is_overheated():
-		_danger_flash = sin(Time.get_ticks_msec() * 0.015) * 0.5 + 0.5
 	queue_redraw()
 
 
@@ -81,169 +117,187 @@ func _draw() -> void:
 	var height: float = size.y
 	if width <= 0.0 or height <= 0.0:
 		return
+	if _frame_style == null:
+		_load_pixel_assets()
 
-	var bounds: Rect2 = Rect2(Vector2.ZERO, size)
-	draw_rect(bounds, COLOR_BG)
-
-	_draw_zone(0.0,       sweet_min, COLOR_COLD_START,  COLOR_COLD_END)
-	_draw_zone(sweet_min, peak_frac, COLOR_CAM_START,   COLOR_CAM_END)
-	_draw_zone(peak_frac, burn_frac, COLOR_DORUC_START, COLOR_DORUC_END)
-	_draw_zone(burn_frac, 1.0,       COLOR_CHAY_START,  COLOR_CHAY_END)
-
-	_draw_sweet_marks(width, height)
-	_draw_fill_overlay(width, height)
-	_draw_forged_frame(width, height)
-	_draw_heat_indicator(width, height)
-
-	if is_overheated():
-		draw_rect(
-			bounds,
-			Color(
-				COLOR_DANGER_FLASH.r,
-				COLOR_DANGER_FLASH.g,
-				COLOR_DANGER_FLASH.b,
-				COLOR_DANGER_FLASH.a * _danger_flash
-			)
-		)
-
-
-func _draw_zone(
-	start_pct: float,
-	end_pct: float,
-	start_color: Color,
-	end_color: Color
-) -> void:
-	if end_pct <= start_pct:
-		return
-
-	var width: float = size.x
-	var height: float = size.y
-	var steps: int = max(1, int((end_pct - start_pct) * 32.0))
-	var zone_width: float = width * (end_pct - start_pct)
-	for i in range(steps):
-		var t0: float = float(i) / float(steps)
-		var t1: float = float(i + 1) / float(steps)
-		var x0: float = width * start_pct + zone_width * t0
-		var x1: float = width * start_pct + zone_width * t1
-		var col: Color = start_color.lerp(end_color, t0)
-		draw_rect(Rect2(Vector2(x0, 0.0), Vector2(x1 - x0 + 1.0, height)), col)
-
-
-func _draw_sweet_marks(width: float, height: float) -> void:
-	var tick_positions: Array[float] = [0.25, 0.50, sweet_min, peak_frac, burn_frac]
-	for pct: float in tick_positions:
-		var x: float = width * pct
-		var tick_color: Color = COLOR_TICK
-		var tick_w: float = 1.0
-		if is_equal_approx(pct, sweet_min):
-			tick_color = COLOR_CAM_MARK
-			tick_w = 2.0
-		elif is_equal_approx(pct, peak_frac):
-			tick_color = COLOR_PEAK_MARK
-			tick_w = 2.0
-		elif is_equal_approx(pct, burn_frac):
-			tick_color = COLOR_BURN_MARK
-			tick_w = 2.0
-		draw_line(Vector2(x, 0.0), Vector2(x, height), tick_color, tick_w)
-
-	# Vùng Cam — sáng dịu
-	draw_rect(
-		Rect2(Vector2(width * sweet_min, 0.0), Vector2(width * (peak_frac - sweet_min), height)),
-		Color(COLOR_CAM_MARK.r, COLOR_CAM_MARK.g, COLOR_CAM_MARK.b, 0.08)
+	var inner := Rect2(
+		Vector2(FRAME_INSET_X, FRAME_INSET_Y),
+		Vector2(maxf(PX * 4.0, width - FRAME_INSET_X * 2.0), maxf(PX * 4.0, height - FRAME_INSET_Y * 2.0))
 	)
 
-	# Vùng Đỏ Rực — hiệu ứng sóng nhiệt nhấp nháy & vệt quét sáng
-	var peak_x: float = width * peak_frac
-	var peak_w: float = width * (burn_frac - peak_frac)
-	if peak_w > 1.0:
-		var pulse: float = 0.5 + sin(_anim_time * 6.5) * 0.5
+	# 1. Nền lòng ống tối màu mận đen
+	draw_rect(inner, COL_OUTLINE)
+
+	# 2. Vẽ 4 vùng nhiệt theo lưới pixel cứng 3x3 (dithered pixel art)
+	var anim_step: int = int(floor(_anim_time * 8.0))
+	_draw_pixel_zones(inner, anim_step)
+
+	# 3. Phủ tối phần nhiệt chưa nung tới + vạch sáng đầu mức nhiệt (snap lưới 3px)
+	_draw_heat_progress_mask(inner)
+
+	# 4. Chốt chia ngưỡng đồng rèn 32-bit tại 3 mốc Cam / Đỏ Rực / Cháy
+	_draw_threshold_dividers(inner)
+
+	# 5. Khung 9-slice thép rèn & tai đồng đinh tán 32-bit
+	_draw_pixel_frame(width, height, anim_step)
+
+	# 6. Kim chỉ nhiệt đồng thau nạm ngọc 32-bit
+	_draw_pixel_needle(inner, height)
+
+
+func _draw_pixel_zones(inner: Rect2, anim_step: int) -> void:
+	var cols: int = maxi(1, int(floor(inner.size.x / PX)))
+	var rows: int = maxi(1, int(floor(inner.size.y / PX)))
+
+	var cam_col: int = int(round(sweet_min * float(cols)))
+	var peak_col: int = int(round(peak_frac * float(cols)))
+	var burn_col: int = int(round(burn_frac * float(cols)))
+
+	for gx in range(cols):
+		var px_x: float = inner.position.x + float(gx) * PX
+		var cell_w: float = minf(PX, inner.end.x - px_x)
+		if cell_w <= 0.0:
+			continue
+		for gy in range(rows):
+			var px_y: float = inner.position.y + float(gy) * PX
+			var cell_h: float = minf(PX, inner.end.y - px_y)
+			if cell_h <= 0.0:
+				continue
+			var col: Color = _sample_zone_pixel(
+				gx, gy, rows, cam_col, peak_col, burn_col, anim_step
+			)
+			draw_rect(Rect2(Vector2(px_x, px_y), Vector2(cell_w, cell_h)), col)
+
+
+func _sample_zone_pixel(
+	gx: int,
+	gy: int,
+	rows: int,
+	cam_col: int,
+	peak_col: int,
+	burn_col: int,
+	anim_step: int
+) -> Color:
+	var is_top := (gy == 0)
+	var is_sub_top := (gy == 1)
+	var is_bot := (gy >= rows - 1)
+	var is_sub_bot := (gy == rows - 2)
+	var checker := ((gx + gy) % 2) == 0
+
+	# Vùng 1: Lạnh (xanh thép nguội + dither chuyển sáng về phía Cam)
+	if gx < cam_col:
+		if is_bot:
+			return COL_COLD_DARK
+		if is_top:
+			return COL_COLD_HI if (gx % 3 != 0) else COL_COLD_MID
+		var near_cam := (cam_col - gx) <= 5
+		if near_cam and checker:
+			return COL_COLD_HI
+		if is_sub_bot:
+			return COL_COLD_DARK if checker else COL_COLD_MID
+		return COL_COLD_MID
+
+	# Vùng 2: Cam (than hồng rực ấm)
+	if gx < peak_col:
+		if is_bot:
+			return COL_CAM_DARK
+		if is_top:
+			return COL_CAM_HI if ((gx + anim_step) % 4 != 0) else COL_PEAK_MID
+		if is_sub_top:
+			return COL_CAM_HI if checker else COL_CAM_MID
+		if is_sub_bot:
+			return COL_CAM_DARK if checker else COL_CAM_MID
+		return COL_CAM_HI if (((gx + gy + anim_step / 2) % 5) == 0) else COL_CAM_MID
+
+	# Vùng 3: Đỏ Rực ★ (lõi lửa vàng kem + hạt lửa pixel nhảy bước 8 FPS)
+	if gx < burn_col:
+		var spark_hash := (gx * 7 + gy * 13 + anim_step * 3) % 11
+		if is_bot:
+			return COL_PEAK_DARK
+		if is_top:
+			return COL_PEAK_CORE if ((gx - anim_step) % 4 == 0) else COL_PEAK_HI
+		if spark_hash == 0:
+			return COL_PEAK_CORE
+		if is_sub_top or spark_hash <= 3:
+			return COL_PEAK_HI
+		if is_sub_bot:
+			return COL_PEAK_DARK if checker else COL_PEAK_MID
+		return COL_PEAK_MID
+
+	# Vùng 4: Cháy (than đen sọc cảnh báo đỏ pixel art)
+	var stripe := ((gx - gy + anim_step) % 4) == 0
+	if is_bot:
+		return COL_BURN_DARK
+	if stripe:
+		return COL_BURN_HI if not is_sub_bot else COL_BURN_MID
+	return COL_BURN_MID if (is_top or checker) else COL_BURN_DARK
+
+
+func _draw_heat_progress_mask(inner: Rect2) -> void:
+	var fill_w: float = snappedf(inner.size.x * heat_percent, PX)
+	var fill_x: float = inner.position.x + clampf(fill_w, 0.0, inner.size.x)
+
+	# Lớp che tối cho phần nhiệt chưa nung tới (rõ mức nhiệt đã đạt)
+	if fill_x < inner.end.x:
 		draw_rect(
-			Rect2(Vector2(peak_x, 0.0), Vector2(peak_w, height)),
-			Color(1.0, 0.78, 0.22, 0.12 + pulse * 0.14)
+			Rect2(Vector2(fill_x, inner.position.y), Vector2(inner.end.x - fill_x, inner.size.y)),
+			COL_UNFILLED
 		)
-		var wave_frac: float = fmod(_anim_time * 1.15, 1.0)
-		var band_w: float = maxf(6.0, peak_w * 0.24)
-		var band_x: float = peak_x + wave_frac * maxf(0.0, peak_w - band_w)
+
+	# Vệt sáng pixel 3px ở ngay đầu cột nhiệt khi đang có lửa
+	if fill_w >= PX and fill_x < inner.end.x:
 		draw_rect(
-			Rect2(Vector2(band_x, 2.0), Vector2(band_w, height - 4.0)),
-			Color(1.0, 0.96, 0.65, 0.24)
+			Rect2(Vector2(fill_x - PX, inner.position.y), Vector2(PX, inner.size.y)),
+			Color(1.0, 0.96, 0.78, 0.65)
 		)
 
 
-func _draw_fill_overlay(width: float, height: float) -> void:
-	if heat_percent <= 0.001:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.0, 0.0, 0.0, 0.48))
-		return
-
-	var fill_width: float = width * heat_percent
-	if fill_width < width:
-		draw_rect(
-			Rect2(Vector2(fill_width, 0.0), Vector2(width - fill_width, height)),
-			Color(0.0, 0.0, 0.0, 0.54)
-		)
-	draw_rect(Rect2(Vector2.ZERO, Vector2(fill_width, height * 0.32)), COLOR_SHEEN)
-
-
-func _draw_forged_frame(width: float, height: float) -> void:
-	var outer_rect := Rect2(Vector2.ZERO, Vector2(width, height))
-	var inner_rect := Rect2(Vector2(3.0, 3.0), Vector2(width - 6.0, height - 6.0))
-	draw_rect(outer_rect, COLOR_FRAME_OUTER, false, 4.0)
-	draw_rect(inner_rect, _get_border_color(), false, 2.0)
-
-	# 4 chốt đinh tán đồng ở 4 góc khung
-	var inset := 8.0
-	var corners: Array[Vector2] = [
-		Vector2(inset, inset),
-		Vector2(width - inset, inset),
-		Vector2(inset, height - inset),
-		Vector2(width - inset, height - inset),
+func _draw_threshold_dividers(inner: Rect2) -> void:
+	var marks: Array[Dictionary] = [
+		{"pct": sweet_min, "tint": Color(1.00, 0.88, 0.45, 1.0)},
+		{"pct": peak_frac, "tint": Color(1.00, 0.68, 0.24, 1.0)},
+		{"pct": burn_frac, "tint": Color(1.00, 0.36, 0.28, 1.0)},
 	]
-	for pos: Vector2 in corners:
-		draw_circle(pos, 4.2, COLOR_RIVET_DARK)
-		draw_circle(pos, 3.0, COLOR_RIVET_FILL)
-		draw_rect(Rect2(pos - Vector2(1.5, 1.5), Vector2(1.8, 1.8)), COLOR_RIVET_HI)
+	for mark: Dictionary in marks:
+		var pct: float = float(mark["pct"])
+		var mx: float = inner.position.x + snappedf(inner.size.x * pct, PX)
+		if _divider_tex != null:
+			var dw: float = float(_divider_tex.get_width())
+			var dh: float = inner.size.y + 6.0
+			var rect := Rect2(
+				Vector2(mx - dw * 0.5, inner.position.y - 3.0),
+				Vector2(dw, dh)
+			)
+			draw_texture_rect(_divider_tex, rect, false, mark["tint"])
+		else:
+			draw_rect(
+				Rect2(Vector2(mx - PX * 0.5, inner.position.y), Vector2(PX, inner.size.y)),
+				mark["tint"]
+			)
 
 
-func _draw_heat_indicator(width: float, height: float) -> void:
-	var x: float = clampf(width * heat_percent, 0.0, width)
-	# Thân kim sắc nét có viền tối tương phản
-	draw_rect(Rect2(Vector2(x - 3.5, -2.0), Vector2(7.0, height + 4.0)), COLOR_NEEDLE_EDGE)
-	draw_rect(Rect2(Vector2(x - 2.0, -1.0), Vector2(4.0, height + 2.0)), COLOR_INDICATOR)
-
-	# Mũi nhọn tam giác trên-dưới
-	var top_outer := PackedVector2Array([
-		Vector2(x - 8.5, -8.0),
-		Vector2(x + 8.5, -8.0),
-		Vector2(x, 4.0),
-	])
-	var top_inner := PackedVector2Array([
-		Vector2(x - 5.5, -6.5),
-		Vector2(x + 5.5, -6.5),
-		Vector2(x, 1.5),
-	])
-	var bot_outer := PackedVector2Array([
-		Vector2(x - 8.5, height + 8.0),
-		Vector2(x + 8.5, height + 8.0),
-		Vector2(x, height - 4.0),
-	])
-	var bot_inner := PackedVector2Array([
-		Vector2(x - 5.5, height + 6.5),
-		Vector2(x + 5.5, height + 6.5),
-		Vector2(x, height - 1.5),
-	])
-	draw_colored_polygon(top_outer, COLOR_NEEDLE_EDGE)
-	draw_colored_polygon(top_inner, COLOR_INDICATOR)
-	draw_colored_polygon(bot_outer, COLOR_NEEDLE_EDGE)
-	draw_colored_polygon(bot_inner, COLOR_INDICATOR)
+func _draw_pixel_frame(width: float, height: float, anim_step: int) -> void:
+	var frame_rect := Rect2(Vector2.ZERO, Vector2(width, height))
+	if _frame_style != null:
+		if is_overheated() and (anim_step % 2) == 0:
+			_frame_style.modulate_color = Color(1.20, 0.58, 0.50, 1.0)
+		elif is_at_peak():
+			_frame_style.modulate_color = Color(1.10, 1.02, 0.86, 1.0)
+		else:
+			_frame_style.modulate_color = Color.WHITE
+		draw_style_box(_frame_style, frame_rect)
+	else:
+		draw_rect(frame_rect, COL_OUTLINE, false, PX)
 
 
-func _get_border_color() -> Color:
-	if is_overheated():
-		return Color(0.95, 0.18, 0.12, 0.96)
-	if is_at_peak():
-		return Color(1.00, 0.56, 0.08, 0.96)
-	if is_in_sweet_spot():
-		return Color(0.92, 0.72, 0.20, 0.94)
-	if heat_percent >= 0.30:
-		return Color(0.78, 0.44, 0.12, 0.88)
-	return COLOR_BORDER_IDLE
+func _draw_pixel_needle(inner: Rect2, height: float) -> void:
+	var nx: float = inner.position.x + snappedf(inner.size.x * heat_percent, PX)
+	nx = clampf(nx, inner.position.x, inner.end.x)
+	if _needle_tex != null:
+		var nw: float = float(_needle_tex.get_width())
+		var nh: float = height + 24.0
+		var nrect := Rect2(Vector2(nx - nw * 0.5, -12.0), Vector2(nw, nh))
+		draw_texture_rect(_needle_tex, nrect, false)
+	else:
+		draw_rect(Rect2(Vector2(nx - PX, -6.0), Vector2(PX * 2.0, height + 12.0)), COL_OUTLINE)
+		draw_rect(Rect2(Vector2(nx - PX * 0.5, -3.0), Vector2(PX, height + 6.0)), COL_PEAK_CORE)

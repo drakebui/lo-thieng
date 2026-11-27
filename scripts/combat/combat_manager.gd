@@ -43,6 +43,7 @@ var _enemy_intent:   Dictionary  = {}
 var _pending_action: Dictionary  = {}
 var _is_counter_encounter: bool = false
 var _counter_bonus_applied: bool = false
+var _combat_session_id: int = 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -54,6 +55,7 @@ func _ready() -> void:
 
 
 func start_combat(p: Combatant, e: EnemyCombatUnit) -> void:
+	_combat_session_id += 1
 	player     = p
 	enemy      = e
 	_round_num = 0
@@ -120,6 +122,7 @@ func _enter_player_turn() -> void:
 # Resolve cả 2 hành động tuần tự với delay, tốc độ quyết định thứ tự
 
 func _enter_enemy_turn() -> void:
+	var session_id := _combat_session_id
 	state_changed.emit(CombatState.ENEMY_TURN)
 
 	_log("─── Lượt %d ───" % _round_num)
@@ -142,6 +145,8 @@ func _enter_enemy_turn() -> void:
 		can_continue = not _check_end()
 		if can_continue:
 			await get_tree().create_timer(ACTION_DELAY).timeout
+			if not is_inside_tree() or session_id != _combat_session_id:
+				return
 			can_continue = _state == CombatState.ENEMY_TURN
 		if can_continue:
 			_do_enemy_action()
@@ -151,6 +156,8 @@ func _enter_enemy_turn() -> void:
 		can_continue = not _check_end()
 		if can_continue:
 			await get_tree().create_timer(ACTION_DELAY).timeout
+			if not is_inside_tree() or session_id != _combat_session_id:
+				return
 			can_continue = _state == CombatState.ENEMY_TURN
 		if can_continue:
 			_do_player_action(_pending_action)
@@ -161,6 +168,8 @@ func _enter_enemy_turn() -> void:
 	# Delay nhỏ trước khi chuyển sang RESOLVE để player đọc log
 	if can_continue:
 		await get_tree().create_timer(ACTION_DELAY * 0.6).timeout
+		if not is_inside_tree() or session_id != _combat_session_id:
+			return
 		can_continue = _state == CombatState.ENEMY_TURN
 
 	if can_continue:
@@ -195,16 +204,17 @@ func _enter_resolve() -> void:
 func _do_player_action(action: Dictionary) -> void:
 	if player.lose_next_turn:
 		player.lose_next_turn = false
+		if player.freeze_turns > 0:
+			player.freeze_turns = maxi(0, player.freeze_turns - 1)
 		_log("> Bạn mất lượt này (hậu quả đòn trước)!")
 		combatant_updated.emit(true)
 		return
 
 	if player.freeze_turns > 0:
-		player.freeze_turns -= 1
-		if randf() < 0.5:
-			_log("> Bạn bị Đóng Băng — không thể hành động!")
-			combatant_updated.emit(true)
-			return
+		player.freeze_turns = maxi(0, player.freeze_turns - 1)
+		_log("> Bạn bị Đóng Băng — không thể hành động!")
+		combatant_updated.emit(true)
+		return
 
 	if action.get("type") == "switch":
 		var pu := player as PlayerCombatUnit
@@ -227,7 +237,7 @@ func _do_player_action(action: Dictionary) -> void:
 	if cost > 0:
 		var pu := player as PlayerCombatUnit
 		if pu and pu.spend_durability():
-			_log("> ⚠ Vũ khí bị hỏng! Sức mạnh giảm 50%.")
+			_log("> [Cảnh báo] Vũ khí bị hỏng! Sức mạnh giảm 50%.")
 
 	combatant_updated.emit(true)
 	combatant_updated.emit(false)
@@ -236,17 +246,18 @@ func _do_player_action(action: Dictionary) -> void:
 func _do_enemy_action() -> void:
 	if enemy.lose_next_turn:
 		enemy.lose_next_turn = false
+		if enemy.freeze_turns > 0:
+			enemy.freeze_turns = maxi(0, enemy.freeze_turns - 1)
 		_log("> %s mất lượt!" % enemy.combatant_name)
 		combatant_updated.emit(false)
 		return
 
 	if enemy.freeze_turns > 0:
-		enemy.freeze_turns -= 1
-		if randf() < 0.5:
-			_log("> %s bị Đóng Băng — không thể hành động!" % enemy.combatant_name)
-			combatant_updated.emit(false)
-			combatant_updated.emit(true)
-			return
+		enemy.freeze_turns = maxi(0, enemy.freeze_turns - 1)
+		_log("> %s bị Đóng Băng — không thể hành động!" % enemy.combatant_name)
+		combatant_updated.emit(false)
+		combatant_updated.emit(true)
+		return
 
 	match _enemy_intent.get("type", "attack"):
 		"attack":
@@ -293,7 +304,7 @@ func _do_enemy_action() -> void:
 
 		"run":
 			_log("> %s bỏ chạy khỏi trận!" % enemy.combatant_name)
-			_finish("win", _build_win_reward())
+			_finish("enemy_run", {})
 			return
 
 	combatant_updated.emit(false)
@@ -319,12 +330,14 @@ func _execute_skill(skill_data: Variant, attacker: Combatant, target: Combatant)
 	match effect:
 		"DAMAGE":
 			var raw: int
+			var eff_ignore: float = ignore_def
 			if skill.get("use_magic", false):
 				raw = attacker.calc_magic_damage(skill.get("magic_mult", 1.0))
+				eff_ignore = maxf(ignore_def, 0.5)
 			else:
 				raw = attacker.calc_raw_damage(mult, dice)
 			raw = _apply_counter_bonus(raw, attacker, target, effect)
-			var actual := target.take_damage(raw, ignore_def)
+			var actual := target.take_damage(raw, eff_ignore)
 			_log("> %s dùng %s: %s" % [attacker.combatant_name, name,
 				"chặn bởi khiên!" if actual == 0 else "-%d HP" % actual])
 			if actual > 0:
@@ -350,22 +363,29 @@ func _execute_skill(skill_data: Variant, attacker: Combatant, target: Combatant)
 
 		"DAMAGE_HEAL":
 			var raw    := attacker.calc_raw_damage(mult, dice)
+			raw = _apply_counter_bonus(raw, attacker, target, effect)
 			var actual := target.take_damage(raw)
 			var healed := attacker.heal(skill.get("heal_flat", 0))
-			_log("> %s dùng %s: -%d HP địch, +%d HP bản thân" % [
-				attacker.combatant_name, name, actual, healed])
+			_log("> %s dùng %s: %s, +%d HP bản thân" % [
+				attacker.combatant_name, name,
+				"chặn bởi khiên!" if actual == 0 else "-%d HP địch" % actual, healed])
 			if actual > 0:
 				hit_landed.emit(target_is_player, actual, false)
 				AudioManager.play_sfx_key("player_hurt" if target_is_player else "sword_hit")
+			elif actual == 0:
+				AudioManager.play_sfx_key("shield_block")
 
 		"DAMAGE_STATUS":
 			var raw    := attacker.calc_raw_damage(mult, dice)
 			raw = _apply_counter_bonus(raw, attacker, target, effect)
 			var actual := target.take_damage(raw)
 			var status: String = skill.get("status", "")
-			var applied: bool  = randf() <= skill.get("effect_chance", 1.0)
+			var applied: bool  = actual > 0 and randf() <= skill.get("effect_chance", 1.0)
 
-			var msg := "> %s dùng %s: -%d HP" % [attacker.combatant_name, name, actual]
+			var msg := "> %s dùng %s: %s" % [
+				attacker.combatant_name, name,
+				"chặn bởi khiên!" if actual == 0 else "-%d HP" % actual,
+			]
 			if applied and status != "":
 				match status:
 					"burn":
@@ -385,6 +405,8 @@ func _execute_skill(skill_data: Variant, attacker: Combatant, target: Combatant)
 						else "skill_ice" if status == "freeze" \
 						else ("player_hurt" if target_is_player else "sword_hit")
 				AudioManager.play_sfx_key(hit_sfx)
+			elif actual == 0:
+				AudioManager.play_sfx_key("shield_block")
 
 		"BUFF_DEF":
 			attacker.def_bonus       = skill.get("def_bonus",       0)
@@ -422,6 +444,8 @@ func _execute_skill(skill_data: Variant, attacker: Combatant, target: Combatant)
 				raw = _apply_counter_bonus(raw, attacker, target, effect)
 				var actual := target.take_damage(raw, ignore_def)
 				total += actual
+				if not target.is_alive():
+					break
 			_log("> %s dùng %s: 2 đòn, -%d HP tổng!" % [
 				attacker.combatant_name, name, total])
 			if total > 0:
@@ -468,6 +492,7 @@ func _apply_counter_bonus(
 	if effect not in [
 		"DAMAGE",
 		"DAMAGE_IGNORE_DEF",
+		"DAMAGE_HEAL",
 		"DAMAGE_STATUS",
 		"DAMAGE_SKIP_TURN",
 		"DAMAGE_TWICE",

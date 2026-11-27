@@ -22,7 +22,13 @@ func check_day(day: int) -> void:
 		if checkpoint.is_paid:
 			continue
 
-		if checkpoint.trigger_day <= day and not checkpoint.has_notified:
+		# Mốc C1 Ngày 1 do cutscene Người Thu Nợ trực tiếp bước vào báo nợ — không auto-trigger ngầm khi vừa sang ngày
+		var is_day1_scripted_c1 := (
+			checkpoint.id == "c1_mat_bang"
+			and day == checkpoint.trigger_day
+			and not GameManager.has_tutorial_seen("debt_notice_shown")
+		)
+		if not is_day1_scripted_c1 and checkpoint.trigger_day <= day and not checkpoint.has_notified:
 			checkpoint.has_notified = true
 			debt_triggered.emit(checkpoint)
 
@@ -31,8 +37,16 @@ func check_day(day: int) -> void:
 			debt_penalty_applied.emit(checkpoint, checkpoint.penalty_gold)
 
 		var days_left: int = checkpoint.deadline_day - day
-		if days_left >= 0 and days_left <= 1:
+		if days_left >= 0 and days_left <= 1 and checkpoint.has_notified:
 			debt_deadline_warning.emit(checkpoint, days_left)
+	refresh_debt_summary()
+
+
+func mark_checkpoint_notified(id: String) -> void:
+	var checkpoint := get_checkpoint(id)
+	if checkpoint == null:
+		return
+	checkpoint.has_notified = true
 	refresh_debt_summary()
 
 
@@ -41,6 +55,13 @@ func get_checkpoint(id: String) -> DebtCheckpoint:
 		if checkpoint.id == id:
 			return checkpoint
 	return null
+
+
+func reset_checkpoints() -> void:
+	for checkpoint in checkpoints:
+		checkpoint.is_paid = false
+		checkpoint.is_late = false
+		checkpoint.has_notified = false
 
 
 func pay_checkpoint(id: String) -> bool:
@@ -58,9 +79,9 @@ func pay_checkpoint(id: String) -> bool:
 		if GameManager.gold < total_amount:
 			return false
 
+		checkpoint.is_paid = true
 		GameManager.gold -= total_amount
 		GameManager.gold_changed.emit(GameManager.gold)
-		checkpoint.is_paid = true
 		debt_paid.emit(checkpoint)
 		refresh_debt_summary()
 		return true
@@ -77,6 +98,9 @@ func refresh_debt_summary() -> void:
 		if checkpoint.is_paid:
 			continue
 		if checkpoint.trigger_day > GameManager.current_day:
+			continue
+		# Ngày bắt đầu báo nợ (vd: Ngày 1 với C1): chỉ hiện số nợ trên HUD SAU KHI Người Thu Nợ đã thông báo
+		if checkpoint.trigger_day == GameManager.current_day and not checkpoint.has_notified:
 			continue
 		var amount := checkpoint.amount_gold
 		if checkpoint.is_late:

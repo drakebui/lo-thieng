@@ -10,6 +10,8 @@ const _COMMISSION_DELIVERY_SCENE := preload(
 
 var _lbl_quest: Label = null
 var _lbl_commission: Label = null
+var _phase_icon_rect: TextureRect = null
+var _debt_icon_rect: TextureRect = null
 var _commission_offer_ui: CanvasLayer = null
 var _commission_delivery_ui: CanvasLayer = null
 
@@ -38,6 +40,7 @@ var _commission_delivery_ui: CanvasLayer = null
 
 
 func _ready() -> void:
+	_apply_hoa_tam_skin()
 	_build_quest_label()
 	_build_commission_label()
 	_spawn_commission_offer_ui()
@@ -58,6 +61,54 @@ func _ready() -> void:
 	_refresh_commission_label()
 
 
+func _apply_hoa_tam_skin() -> void:
+	var top_bar := get_node_or_null("VBoxContainer/TopBar") as Control
+	if top_bar is PanelContainer or top_bar is Panel:
+		top_bar.add_theme_stylebox_override("panel", HoaTamUI.make_hud_strip_style(16.0, 6.0, false))
+	var hint_bar := get_node_or_null("VBoxContainer/HintBar") as Control
+	if hint_bar is PanelContainer or hint_bar is Panel:
+		hint_bar.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+
+	if _btn_guide_book != null:
+		HoaTamUI.apply_flat_tab_button(_btn_guide_book, false, 17)
+
+	_phase_icon_rect = _prepend_slot_icon(
+		"VBoxContainer/TopBar/HBoxContainer/PhaseSlot",
+		HoaTamUI.HudIcon.MORNING
+	)
+	_prepend_slot_icon(
+		"VBoxContainer/TopBar/HBoxContainer/GoldSlot",
+		HoaTamUI.HudIcon.GOLD
+	)
+	_prepend_slot_icon(
+		"VBoxContainer/TopBar/HBoxContainer/RepSlot",
+		HoaTamUI.HudIcon.REPUTATION
+	)
+	_prepend_slot_icon(
+		"VBoxContainer/TopBar/HBoxContainer/StaminaSlot",
+		HoaTamUI.HudIcon.STAMINA
+	)
+	_debt_icon_rect = _prepend_slot_icon(
+		"VBoxContainer/TopBar/HBoxContainer/DebtSlot",
+		HoaTamUI.HudIcon.DEBT
+	)
+	_lbl_gold.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
+	_lbl_stamina.add_theme_color_override("font_color", HoaTamUI.COL_JADE)
+	_lbl_day.add_theme_color_override("font_color", HoaTamUI.COL_PARCHMENT)
+	_lbl_phase.add_theme_color_override("font_color", HoaTamUI.COL_PARCHMENT)
+	_lbl_rep.add_theme_color_override("font_color", HoaTamUI.COL_PARCHMENT)
+
+
+func _prepend_slot_icon(slot_path: String, icon: HoaTamUI.HudIcon) -> TextureRect:
+	var slot := get_node_or_null(slot_path)
+	if slot == null:
+		return null
+	var rect := HoaTamUI.make_icon_rect(HoaTamUI.get_hud_icon(icon), 24)
+	slot.add_child(rect)
+	slot.move_child(rect, 0)
+	return rect
+
+
 func _build_quest_label() -> void:
 	var root := get_node("VBoxContainer") as VBoxContainer
 	_lbl_quest = Label.new()
@@ -65,7 +116,7 @@ func _build_quest_label() -> void:
 	_lbl_quest.custom_minimum_size = Vector2(0, 28)
 	_lbl_quest.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_quest.add_theme_font_size_override("font_size", 18)
-	_lbl_quest.add_theme_color_override("font_color", Color(1.0, 0.84, 0.36))
+	_lbl_quest.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
 	root.add_child(_lbl_quest)
 	root.move_child(_lbl_quest, 1)
 
@@ -74,6 +125,7 @@ func _refresh_all() -> void:
 	var gm := GameManager
 	_lbl_day.text = "Ngày %d" % gm.current_day
 	_lbl_phase.text = _phase_name(gm.current_phase)
+	_update_phase_icon(gm.current_phase)
 	_lbl_gold.text = "%d G" % gm.gold
 	_lbl_rep.text = "Tiếng tăm: %d" % gm.reputation
 	_lbl_stamina.text = "%d/%d" % [
@@ -99,15 +151,20 @@ func _on_stamina_changed(current: int, maximum: int) -> void:
 func _on_day_phase_changed(day: int, phase: int) -> void:
 	_lbl_day.text = "Ngày %d" % day
 	_lbl_phase.text = _phase_name(phase)
+	_update_phase_icon(phase)
 
 
 func _on_debt_updated(amount: int, days_left: int) -> void:
 	if amount > 0:
 		_lbl_debt.text = "Nợ: %dG (còn %d ngày)" % [amount, days_left]
-		_lbl_debt.modulate = Color.RED
+		_lbl_debt.modulate = HoaTamUI.COL_CRIMSON
+		if _debt_icon_rect != null:
+			_debt_icon_rect.visible = true
 	else:
 		_lbl_debt.text = ""
-		_lbl_debt.modulate = Color.WHITE
+		_lbl_debt.modulate = HoaTamUI.COL_PARCHMENT
+		if _debt_icon_rect != null:
+			_debt_icon_rect.visible = false
 
 
 func _on_hint_requested(text: String) -> void:
@@ -135,6 +192,20 @@ func _phase_name(phase: int) -> String:
 	return ""
 
 
+func _update_phase_icon(phase: int) -> void:
+	if _phase_icon_rect == null:
+		return
+	var icon := HoaTamUI.HudIcon.MORNING
+	match phase:
+		GameManager.GamePhase.NOON:
+			icon = HoaTamUI.HudIcon.NOON
+		GameManager.GamePhase.AFTERNOON:
+			icon = HoaTamUI.HudIcon.AFTERNOON
+		GameManager.GamePhase.NIGHT:
+			icon = HoaTamUI.HudIcon.NIGHT
+	_phase_icon_rect.texture = HoaTamUI.get_hud_icon(icon)
+
+
 func _update_debt() -> void:
 	var ds := DebtSystem
 	if ds and ds.current_debt > 0:
@@ -142,10 +213,14 @@ func _update_debt() -> void:
 			ds.current_debt,
 			ds.days_until_checkpoint,
 		]
-		_lbl_debt.modulate = Color.RED
+		_lbl_debt.modulate = HoaTamUI.COL_CRIMSON
+		if _debt_icon_rect != null:
+			_debt_icon_rect.visible = true
 	else:
 		_lbl_debt.text = ""
-		_lbl_debt.modulate = Color.WHITE
+		_lbl_debt.modulate = HoaTamUI.COL_PARCHMENT
+		if _debt_icon_rect != null:
+			_debt_icon_rect.visible = false
 
 
 func _refresh_quest() -> void:
@@ -163,11 +238,9 @@ func _build_commission_label() -> void:
 	_lbl_commission.custom_minimum_size = Vector2(0, 26)
 	_lbl_commission.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_commission.add_theme_font_size_override("font_size", 16)
-	_lbl_commission.add_theme_color_override("font_color",
-		Color(0.74, 0.92, 0.78))
+	_lbl_commission.add_theme_color_override("font_color", HoaTamUI.COL_JADE)
 	_lbl_commission.visible = false
 	root.add_child(_lbl_commission)
-	# Đặt ngay dưới quest label (vị trí 2 sau TopBar và quest_label).
 	root.move_child(_lbl_commission, 2)
 
 

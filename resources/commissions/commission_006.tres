@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CommissionData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/CommissionData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+commission_id = "commission_006"
+giver_npc_id = "vo_tang"
+reason_text = "Võ Tăng Gấu đặt rèn một cây Búa Chiến Bậc II+ hệ Hỏa uy lực để phá giáp quái tinh anh."
+hint_region = "Búa Chiến là Phôi Nặng (80–92%), đập Búa Cương để đạt Tổ Nghề/Nặng Tay rồi tôi ấn Hỏa."
+req_blank = "bua_chien"
+req_element = "hoa"
+req_min_rarity = 2
+reward_gold = 1150
+reward_reputation = 2
+reward_affinity = 4
+flavor_accept = "Ta cần một cây chiến chùy nặng tay rực lửa — một đòn giáng xuống phải làm nứt giáp yêu thú."
+flavor_fulfilled = "Nặng trịch mà cân tay! Hơi nóng từ mặt búa tỏa ra hừng hực — đa tạ tiểu sư phụ!"

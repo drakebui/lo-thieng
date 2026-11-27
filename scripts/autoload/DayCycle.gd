@@ -11,6 +11,8 @@ func advance_phase() -> void:
 	var old_phase: GameManager.GamePhase = GameManager.current_phase
 	var new_phase: GameManager.GamePhase = _get_next_phase(old_phase)
 
+	# Cập nhật current_phase trước khi bắn signal đổi ngày để listener đọc đúng buổi mới
+	GameManager.current_phase = new_phase
 	if old_phase == GameManager.GamePhase.NIGHT:
 		GameManager.current_day += 1
 		GameManager.day_start_gold = GameManager.gold
@@ -21,12 +23,10 @@ func advance_phase() -> void:
 		)
 		GameManager.day_changed.emit(GameManager.current_day)
 
-	GameManager.current_phase = new_phase
 	GameManager.phase_changed.emit(new_phase)
 	phase_advanced.emit(old_phase, new_phase, GameManager.current_day)
 	if new_phase == GameManager.GamePhase.MORNING:
 		GameManager._check_zero_gold_streak()
-		DebtSystem.check_day(GameManager.current_day)
 
 
 func force_to_night() -> void:

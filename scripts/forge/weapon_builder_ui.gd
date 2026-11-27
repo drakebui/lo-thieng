@@ -1,2 +1,2 @@
-# Scene chọn vũ khí chính dùng giao diện sách mới.
-extends "res://scripts/forge/forge_book_ui.gd"
+# Scene chuẩn bị rèn chính dùng Bàn Chuẩn Bị Rèn 3 Cột 32-bit Hỏa Tâm.
+extends "res://scripts/forge/forge_prep_ui.gd"

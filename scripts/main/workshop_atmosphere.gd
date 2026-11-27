@@ -204,16 +204,10 @@ func _build_floating_prompt() -> void:
 	add_child(_prompt_root)
 
 	_prompt_panel = PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.09, 0.055, 0.035, 0.94)
-	style.border_color = Color(0.92, 0.72, 0.30, 0.95)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(6)
-	style.content_margin_left = 10
-	style.content_margin_right = 12
-	style.content_margin_top = 6
-	style.content_margin_bottom = 6
-	_prompt_panel.add_theme_stylebox_override("panel", style)
+	_prompt_panel.add_theme_stylebox_override(
+		"panel",
+		HoaTamUI.make_inset_surface_style(0.88, 8.0, HoaTamUI.COL_BRASS)
+	)
 	_prompt_panel.position = Vector2(-115.0, -48.0)
 	_prompt_root.add_child(_prompt_panel)
 
@@ -223,8 +217,7 @@ func _build_floating_prompt() -> void:
 
 	var key_box := PanelContainer.new()
 	var key_style := StyleBoxFlat.new()
-	key_style.bg_color = Color(0.92, 0.72, 0.24, 1.0)
-	key_style.set_corner_radius_all(4)
+	key_style.bg_color = HoaTamUI.COL_GOLD
 	key_style.content_margin_left = 7
 	key_style.content_margin_right = 7
 	key_style.content_margin_top = 2
@@ -235,7 +228,7 @@ func _build_floating_prompt() -> void:
 	_prompt_key_lbl = Label.new()
 	_prompt_key_lbl.text = "E"
 	_prompt_key_lbl.add_theme_font_size_override("font_size", 16)
-	_prompt_key_lbl.add_theme_color_override("font_color", Color(0.10, 0.05, 0.02))
+	_prompt_key_lbl.add_theme_color_override("font_color", HoaTamUI.COL_OUTLINE)
 	key_box.add_child(_prompt_key_lbl)
 
 	_prompt_text_lbl = Label.new()

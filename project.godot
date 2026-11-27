@@ -31,7 +31,13 @@ CommissionSystem="*res://scripts/autoload/CommissionSystem.gd"
 
 window/size/viewport_width=1920
 window/size/viewport_height=1080
+window/size/window_width_override=1280
+window/size/window_height_override=720
 window/stretch/mode="canvas_items"
+
+[gui]
+
+theme/custom="res://assets/fonts/hoa_tam_pixel_theme.tres"
 
 [input]
 

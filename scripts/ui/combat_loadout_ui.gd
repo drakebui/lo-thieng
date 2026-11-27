@@ -3,7 +3,7 @@ extends CanvasLayer
 
 signal loadout_confirmed(region_id: String, weapons: Array)
 
-const PANEL_SIZE := Vector2(760, 620)
+const PANEL_SIZE := Vector2(780, 620)
 const MAX_SELECTED := 3
 
 var _root: Control
@@ -42,70 +42,78 @@ func _build_ui() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_root)
 
-	var bg := ColorRect.new()
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.03, 0.02, 0.01, 0.84)
-	_root.add_child(bg)
+	_root.add_child(HoaTamUI.make_dim_backdrop())
 
-	var panel := ColorRect.new()
-	panel.size = PANEL_SIZE
-	panel.set_anchors_preset(Control.PRESET_CENTER)
-	panel.position = -PANEL_SIZE * 0.5
-	panel.color = Color(0.12, 0.08, 0.04, 0.97)
-	_root.add_child(panel)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_root.add_child(center)
+
+	var panel := HoaTamUI.make_panel_container(false, 36.0)
+	panel.add_theme_stylebox_override("panel", HoaTamUI.make_leather_chest_style(36.0))
+	panel.custom_minimum_size = PANEL_SIZE
+	center.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	panel.add_child(vbox)
+
+	var header := HBoxContainer.new()
+	header.alignment = BoxContainer.ALIGNMENT_CENTER
+	header.add_theme_constant_override("separation", 12)
+	vbox.add_child(header)
+	header.add_child(HoaTamUI.make_icon_rect(HoaTamUI.get_hud_icon(HoaTamUI.HudIcon.ATK), 34))
 
 	_title_lbl = Label.new()
-	_title_lbl.text = "Chọn Vũ Khí Mang Theo"
-	_title_lbl.position = Vector2(32, 24)
-	_title_lbl.size = Vector2(PANEL_SIZE.x - 64, 42)
-	_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title_lbl.text = "CHỌN VŨ KHÍ MANG THEO"
 	_title_lbl.add_theme_font_size_override("font_size", 30)
-	_title_lbl.add_theme_color_override("font_color", Color(1.0, 0.84, 0.36))
-	panel.add_child(_title_lbl)
+	_title_lbl.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
+	header.add_child(_title_lbl)
 
 	_hint_lbl = Label.new()
-	_hint_lbl.position = Vector2(32, 74)
-	_hint_lbl.size = Vector2(PANEL_SIZE.x - 64, 34)
 	_hint_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint_lbl.add_theme_font_size_override("font_size", 20)
-	_hint_lbl.add_theme_color_override("font_color", Color(0.86, 0.78, 0.62))
-	panel.add_child(_hint_lbl)
+	_hint_lbl.add_theme_color_override("font_color", HoaTamUI.COL_PARCHMENT)
+	vbox.add_child(_hint_lbl)
 
 	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(34, 124)
-	scroll.size = Vector2(PANEL_SIZE.x - 68, 370)
-	panel.add_child(scroll)
+	scroll.custom_minimum_size = Vector2(0, 360)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vbox.add_child(scroll)
 
 	_list_box = VBoxContainer.new()
 	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_list_box.add_theme_constant_override("separation", 8)
+	_list_box.add_theme_constant_override("separation", 10)
 	scroll.add_child(_list_box)
+
+	var btn_row := HBoxContainer.new()
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_row.add_theme_constant_override("separation", 24)
+	vbox.add_child(btn_row)
 
 	var close_btn := Button.new()
 	close_btn.text = "Hủy"
-	close_btn.position = Vector2(196, 530)
-	close_btn.size = Vector2(150, 48)
-	close_btn.add_theme_font_size_override("font_size", 22)
+	close_btn.custom_minimum_size = Vector2(180, 56)
+	HoaTamUI.apply_secondary_button(close_btn, 22)
 	close_btn.pressed.connect(hide_loadout)
-	panel.add_child(close_btn)
+	btn_row.add_child(close_btn)
 
 	_confirm_btn = Button.new()
-	_confirm_btn.position = Vector2(410, 530)
-	_confirm_btn.size = Vector2(180, 48)
-	_confirm_btn.add_theme_font_size_override("font_size", 22)
+	_confirm_btn.custom_minimum_size = Vector2(220, 56)
+	HoaTamUI.apply_primary_button(_confirm_btn, 22)
 	_confirm_btn.pressed.connect(_on_confirm_pressed)
-	panel.add_child(_confirm_btn)
+	btn_row.add_child(_confirm_btn)
 
 
 func _refresh() -> void:
 	_clear_list()
 	var weapons := InventorySystem.get_weapons()
-	_hint_lbl.text = "Chọn tối đa %d vũ khí cho combat." % MAX_SELECTED
-	_confirm_btn.text = "Xuất phát"
+	_hint_lbl.text = "Chọn tối đa %d vũ khí cho hành trình khám phá." % MAX_SELECTED
+	_confirm_btn.text = "Xuất Phát"
 
 	if weapons.is_empty():
-		_hint_lbl.text = "Kho không có vũ khí. Bạn vẫn có thể đi tay không."
-		_confirm_btn.text = "Đi tay không"
+		_hint_lbl.text = "Kho chưa có vũ khí. Bạn vẫn có thể lên đường tay không."
+		_confirm_btn.text = "Đi Tay Không"
 		_list_box.add_child(_make_info_label("Không có vũ khí trong kho."))
 		return
 
@@ -114,10 +122,15 @@ func _refresh() -> void:
 
 
 func _make_weapon_row(weapon: Dictionary) -> Button:
+	var is_selected := weapon in _selected_weapons
 	var button := Button.new()
-	button.text = _weapon_label(weapon)
+	button.text = _weapon_label(weapon, is_selected)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	button.add_theme_font_size_override("font_size", 20)
+	button.custom_minimum_size = Vector2(0, 54)
+	if is_selected:
+		HoaTamUI.apply_primary_button(button, 20)
+	else:
+		HoaTamUI.apply_secondary_button(button, 20)
 	button.pressed.connect(_toggle_weapon.bind(weapon))
 	return button
 
@@ -127,18 +140,16 @@ func _make_info_label(text: String) -> Label:
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", 22)
-	label.add_theme_color_override("font_color", Color(0.90, 0.82, 0.66))
+	label.add_theme_color_override("font_color", HoaTamUI.COL_PARCHMENT)
 	return label
 
 
-func _weapon_label(weapon: Dictionary) -> String:
-	var marker := "[ ]"
-	if weapon in _selected_weapons:
-		marker = "[x]"
-	var name: String = weapon.get("weapon_name", weapon.get("name", "???"))
+func _weapon_label(weapon: Dictionary, is_selected: bool) -> String:
+	var marker := "[ĐÃ CHỌN]" if is_selected else "[   ]"
+	var w_name: String = weapon.get("weapon_name", weapon.get("name", "???"))
 	var atk: int = int(weapon.get("atk", weapon.get("base_atk", 0)))
 	var speed: int = int(weapon.get("speed", 5))
-	return "%s %s  ATK %d  SPD %d" % [marker, name, atk, speed]
+	return "%s  %s  ·  ATK %d  ·  SPD %d" % [marker, w_name, atk, speed]
 
 
 func _toggle_weapon(weapon: Dictionary) -> void:

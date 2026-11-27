@@ -2,12 +2,15 @@
 # Luồng: _setup_mock_combat() → manager.start_combat() → lắng nghe signals
 extends Control
 
-const HP_BAR_W := 500.0
-const HP_BAR_H := 48.0
+const HP_BAR_W := 380.0
+const HP_BAR_H := 36.0
 const _ENEMY_CYCLE: Array[String] = [
 	"soi_dong_co_t1",
 	"bandit_tre_t1",
 	"soi_gia_t2",
+	"hon_rung_t1",
+	"quy_rung_t1",
+	"thu_ma_rung_t2",
 ]
 # [PIXEL ART CONFIG] Chuẩn 32-bit 4 hướng (1024x896, 16 cột x 14 hàng, ô 64x64):
 # Hàng 2 = idle_right (16f), Hàng 6 = walk_right (16f), SPRITE_RENDER_SCALE = 3.0 (integer scale).
@@ -17,6 +20,8 @@ const FRAME_H := 64
 const PLAYER_FEET_Y := 60
 const SPRITE_RENDER_SCALE := 3.0
 const COMBAT_BG_PATH := "res://assets/pixel/backgrounds/combat_v1_dong_may_640x360.png"
+const COMBAT_BG_V2_PATH := "res://assets/pixel/backgrounds/combat_v2_rung_tram_hon_640x360.png"
+const V2_ENEMIES: Array[String] = ["hon_rung_t1", "quy_rung_t1", "thu_ma_rung_t2"]
 const ENEMY_FRAME_W := 64
 const ENEMY_FRAME_H := 64
 const ENEMY_RENDER_SCALE := 3.0
@@ -24,7 +29,12 @@ const ENEMY_SHEET_PATHS: Dictionary = {
 	"soi_dong_co_t1": "res://assets/pixel/sprites/enemies/soi_dong_co_t1_sheet_64.png",
 	"bandit_tre_t1": "res://assets/pixel/sprites/enemies/bandit_tre_t1_sheet_64.png",
 	"soi_gia_t2": "res://assets/pixel/sprites/enemies/soi_gia_t2_sheet_64.png",
+	"hon_rung_t1": "res://assets/pixel/sprites/enemies/hon_rung_t1_sheet_64.png",
+	"quy_rung_t1": "res://assets/pixel/sprites/enemies/quy_rung_t1_sheet_64.png",
+	"thu_ma_rung_t2": "res://assets/pixel/sprites/enemies/thu_ma_rung_t2_sheet_64.png",
 }
+
+var _battle_bg_img: TextureRect = null
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NODES
@@ -36,7 +46,7 @@ var _manager: CombatManager
 var _p_name_lbl:   Label
 var _p_hp_fill:    ColorRect
 var _p_hp_lbl:     Label
-var _p_sta_pips:   Array[ColorRect] = []
+var _p_sta_pips:   Array[TextureRect] = []
 var _p_status_lbl: Label
 var _p_stat_lbl:   Label
 var _p_sprite:     AnimatedSprite2D
@@ -97,9 +107,9 @@ func _ready() -> void:
 	# 82%  ├────────────────┤
 	#      │  action menu   │  18%
 	#100%  └────────────────┘
-	_add_anchored(_build_battle_area(), 0.0, 0.0, 1.0, 0.60)
-	_add_anchored(_build_log_area(),    0.0, 0.60, 1.0, 0.82)
-	_add_anchored(_build_action_menu(), 0.0, 0.82, 1.0, 1.0)
+	_add_anchored(_build_battle_area(), 0.0, 0.0, 1.0, 0.68)
+	_add_anchored(_build_log_area(),    0.0, 0.68, 1.0, 0.84)
+	_add_anchored(_build_action_menu(), 0.0, 0.84, 1.0, 1.0)
 
 	_result_overlay = _build_result_overlay()
 	add_child(_result_overlay)
@@ -165,6 +175,7 @@ func _build_battle_area() -> Control:
 		bg_img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		bg_img.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		area.add_child(bg_img)
+		_battle_bg_img = bg_img
 		# Phủ lớp tối nhẹ 18% giúp chữ HUD nổi rõ trên nền thảo nguyên sáng
 		var shade := ColorRect.new()
 		shade.color = Color(0.06, 0.04, 0.03, 0.18)
@@ -294,6 +305,16 @@ func _build_enemy_sprite_area() -> Control:
 	var wrap := Control.new()
 	wrap.clip_contents = false
 
+	# Bóng tiếp đất oval dưới chân quái (đồng bộ với Nấm)
+	var shadow := Polygon2D.new()
+	shadow.color = Color(0.06, 0.03, 0.04, 0.42)
+	var pts := PackedVector2Array()
+	for i in range(14):
+		var ang := (float(i) / 14.0) * TAU
+		pts.append(Vector2(cos(ang) * 11.5, sin(ang) * 3.4) * ENEMY_RENDER_SCALE)
+	shadow.polygon = pts
+	wrap.add_child(shadow)
+
 	_e_fallback_rect = ColorRect.new()
 	_e_fallback_rect.size = Vector2(160, 200)
 	_e_fallback_rect.color = Color(0.55, 0.25, 0.12)
@@ -310,14 +331,23 @@ func _build_enemy_sprite_area() -> Control:
 	)
 	wrap.add_child(_e_sprite)
 
+	var feet_off_y := float(PLAYER_FEET_Y - ENEMY_FRAME_H / 2) * ENEMY_RENDER_SCALE
 	wrap.resized.connect(func() -> void:
-		_e_sprite.position = wrap.size * 0.5
+		var pos := Vector2(roundf(wrap.size.x * 0.52), roundf(wrap.size.y * 0.72))
+		_e_sprite.position = pos
+		shadow.position = Vector2(pos.x, roundf(pos.y + feet_off_y))
 		_e_fallback_rect.position = (wrap.size - _e_fallback_rect.size) * 0.5
 	)
 	return wrap
 
 
 func _load_enemy_sprite_sheet(enemy_key: String, fallback_color: Color) -> void:
+	if _battle_bg_img != null:
+		var use_v2 := (enemy_key in V2_ENEMIES) or (GameManager.current_region_id == "RungTramHon")
+		var bg_path := COMBAT_BG_V2_PATH if use_v2 else COMBAT_BG_PATH
+		if ResourceLoader.exists(bg_path):
+			_battle_bg_img.texture = load(bg_path) as Texture2D
+
 	var path: String = String(ENEMY_SHEET_PATHS.get(enemy_key, ""))
 	var texture := load(path) as Texture2D if not path.is_empty() else null
 	if texture == null:
@@ -397,14 +427,23 @@ func _build_hp_bar(is_player: bool) -> Control:
 	bar.custom_minimum_size = Vector2(HP_BAR_W, HP_BAR_H)
 
 	var bar_bg := ColorRect.new()
-	bar_bg.color = Color(0.22, 0.18, 0.16)
-	bar_bg.size  = Vector2(HP_BAR_W, HP_BAR_H)
+	bar_bg.color = HoaTamUI.COL_WOOD_DARK
+	bar_bg.position = Vector2(6, 6)
+	bar_bg.size = Vector2(HP_BAR_W - 12, HP_BAR_H - 12)
 	bar.add_child(bar_bg)
 
 	var fill := ColorRect.new()
-	fill.color = Color(0.22, 0.72, 0.32) if is_player else Color(0.82, 0.28, 0.18)
-	fill.size  = Vector2(HP_BAR_W, HP_BAR_H)
+	fill.color = HoaTamUI.COL_JADE if is_player else HoaTamUI.COL_CRIMSON
+	fill.position = Vector2(6, 6)
+	fill.size = Vector2(HP_BAR_W - 12, HP_BAR_H - 12)
 	bar.add_child(fill)
+
+	var frame := Panel.new()
+	frame.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	frame.position = Vector2.ZERO
+	frame.size = Vector2(HP_BAR_W, HP_BAR_H)
+	frame.add_theme_stylebox_override("panel", HoaTamUI.make_bar_frame_style())
+	bar.add_child(frame)
 
 	if is_player: _p_hp_fill = fill
 	else:         _e_hp_fill = fill
@@ -412,7 +451,8 @@ func _build_hp_bar(is_player: bool) -> Control:
 	wrapper.add_child(bar)
 
 	var lbl := Label.new()
-	lbl.add_theme_font_size_override("font_size", 44)
+	lbl.add_theme_font_size_override("font_size", 24)
+	lbl.add_theme_color_override("font_color", HoaTamUI.COL_PARCHMENT)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if is_player: _p_hp_lbl = lbl
 	else:         _e_hp_lbl = lbl
@@ -424,18 +464,19 @@ func _build_hp_bar(is_player: bool) -> Control:
 func _build_stamina_bar() -> Control:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 10)
+	row.add_theme_constant_override("separation", 8)
 
 	var lbl := Label.new()
 	lbl.text = "STA"
-	lbl.add_theme_font_size_override("font_size", 40)
-	lbl.add_theme_color_override("font_color", Color(0.72, 0.68, 0.58))
+	lbl.add_theme_font_size_override("font_size", 24)
+	lbl.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
 	row.add_child(lbl)
 
 	for i in 5:
-		var pip := ColorRect.new()
-		pip.custom_minimum_size = Vector2(36, 36)
-		pip.color = Color(0.28, 0.58, 0.88)
+		var pip := HoaTamUI.make_icon_rect(
+			HoaTamUI.get_pip_texture(HoaTamUI.PipState.FULL),
+			32
+		)
 		row.add_child(pip)
 		_p_sta_pips.append(pip)
 
@@ -443,24 +484,15 @@ func _build_stamina_bar() -> Control:
 
 
 func _build_log_area() -> Control:
-	# plain Control — anchor layout kiểm soát size từ ngoài.
-	# clip_contents đảm bảo label không leak ra ngoài vùng log khi text nhiều.
-	var outer := Control.new()
+	var outer := PanelContainer.new()
 	outer.clip_contents = true
-
-	var bg := ColorRect.new()
-	bg.color = Color(0.11, 0.09, 0.08)
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	outer.add_child(bg)
+	outer.add_theme_stylebox_override("panel", HoaTamUI.make_hud_strip_style(22.0, 12.0, true))
 
 	_log_label = Label.new()
-	_log_label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_log_label.offset_left   = 16
-	_log_label.offset_top    = 12
-	_log_label.offset_right  = -16
-	_log_label.offset_bottom = -12
-	_log_label.add_theme_font_size_override("font_size", 38)
-	_log_label.add_theme_color_override("font_color", Color(0.82, 0.78, 0.68))
+	_log_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_log_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_log_label.add_theme_font_size_override("font_size", 22)
+	_log_label.add_theme_color_override("font_color", HoaTamUI.COL_PARCHMENT)
 	_log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	outer.add_child(_log_label)
 
@@ -468,22 +500,34 @@ func _build_log_area() -> Control:
 
 
 func _build_action_menu() -> Control:
-	# plain Control — anchor layout kiểm soát size từ ngoài.
-	# HBoxContainer bên trong fill FULL_RECT, button text không làm outer phình ra.
-	var outer := Control.new()
+	var outer := PanelContainer.new()
 	outer.clip_contents = true
+	outer.add_theme_stylebox_override("panel", HoaTamUI.make_inset_surface_style(0.92, 12.0))
 
 	var container := HBoxContainer.new()
-	container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	container.add_theme_constant_override("separation", 12)
+	container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	container.add_theme_constant_override("separation", 14)
 
-	var labels := ["Tấn Công\nThường", "Skill 1\n—", "Skill 2\n—", "Bỏ Chạy", "Đổi Vũ Khí\n(W)"]
+	var labels := ["Tấn Công\nThường", "Kỹ Năng 1\n—", "Kỹ Năng 2\n—", "Bỏ Chạy", "Đổi Vũ Khí\n(W)"]
+	var icons := [
+		HoaTamUI.CombatIcon.BASIC_SLASH,
+		HoaTamUI.CombatIcon.SKILL_1,
+		HoaTamUI.CombatIcon.SKILL_2,
+		HoaTamUI.CombatIcon.RUN,
+		HoaTamUI.CombatIcon.SWAP_WEAPON,
+	]
 	for i in 5:
 		var btn := Button.new()
 		btn.text = labels[i]
+		btn.icon = HoaTamUI.get_combat_icon(icons[i])
+		btn.expand_icon = false
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.size_flags_vertical   = Control.SIZE_EXPAND_FILL
-		btn.add_theme_font_size_override("font_size", 48)
+		if i == 0:
+			HoaTamUI.apply_primary_button(btn, 22)
+		else:
+			HoaTamUI.apply_secondary_button(btn, 21)
 		btn.pressed.connect(_on_action_btn_pressed.bind(i))
 		container.add_child(btn)
 		_action_btns.append(btn)
@@ -495,44 +539,49 @@ func _build_action_menu() -> Control:
 func _build_result_overlay() -> Control:
 	var overlay := Control.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.72)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.add_child(dim)
+	overlay.add_child(HoaTamUI.make_dim_backdrop())
 
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(center)
 
+	var card := HoaTamUI.make_panel_container(false, 40.0)
+	card.add_theme_stylebox_override("panel", HoaTamUI.make_forged_steel_style(40.0))
+	card.custom_minimum_size = Vector2(720, 400)
+	center.add_child(card)
+
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 40)
-	center.add_child(vbox)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 24)
+	card.add_child(vbox)
 
 	_result_title = Label.new()
-	_result_title.add_theme_font_size_override("font_size", 120)
+	_result_title.add_theme_font_size_override("font_size", 52)
+	_result_title.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
 	_result_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(_result_title)
 
 	_result_body = Label.new()
-	_result_body.add_theme_font_size_override("font_size", 56)
-	_result_body.add_theme_color_override("font_color", Color(0.82, 0.78, 0.68))
+	_result_body.add_theme_font_size_override("font_size", 26)
+	_result_body.add_theme_color_override("font_color", HoaTamUI.COL_PARCHMENT)
 	_result_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(_result_body)
 
 	var btn_row := HBoxContainer.new()
 	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	btn_row.add_theme_constant_override("separation", 32)
+	btn_row.add_theme_constant_override("separation", 24)
 
 	_retry_btn = Button.new()
-	_retry_btn.text = "[ Đánh lại  (R) ]"
-	_retry_btn.add_theme_font_size_override("font_size", 52)
+	_retry_btn.text = "Đánh Lại (R)"
+	_retry_btn.custom_minimum_size = Vector2(220, 58)
+	HoaTamUI.apply_primary_button(_retry_btn, 22)
 	_retry_btn.pressed.connect(_on_retry)
 	btn_row.add_child(_retry_btn)
 
 	_return_btn = Button.new()
-	_return_btn.text = "[ Quay lại Khám Phá ]"
-	_return_btn.add_theme_font_size_override("font_size", 52)
+	_return_btn.text = "Quay Lại Khám Phá"
+	_return_btn.custom_minimum_size = Vector2(260, 58)
+	HoaTamUI.apply_primary_button(_return_btn, 22)
 	_return_btn.visible = false
 	_return_btn.pressed.connect(_on_return_to_exploration)
 	btn_row.add_child(_return_btn)
@@ -557,6 +606,8 @@ func _setup_mock_combat(enemy_key: String) -> void:
 			var w: Dictionary = GameManager.equipped_weapons[i]
 			if not w.is_empty():
 				p.equip_weapon(i, w)
+		if p.is_slot_empty(p.active_slot):
+			p.switch_to_next_slot()
 
 	var tmpl: Dictionary
 	var ed: EnemyData = EnemyDatabase.get_enemy(enemy_key)
@@ -604,7 +655,7 @@ func _on_round_started(_round_num: int) -> void:
 
 
 func _on_enemy_telegraphed(intent: Dictionary) -> void:
-	_e_intent_lbl.text = "⚠ %s đang %s" % [
+	_e_intent_lbl.text = "[Dự định] %s đang %s" % [
 		_manager.enemy.combatant_name, intent.get("label", "...")]
 
 
@@ -615,8 +666,8 @@ func _on_combatant_updated(is_player: bool) -> void:
 		_tween_hp_bar(true, p.hp, p.max_hp)
 		_p_hp_lbl.text    = "HP  %d / %d" % [p.hp, p.max_hp]
 		for i in _p_sta_pips.size():
-			_p_sta_pips[i].color = Color(0.28, 0.58, 0.88) if i < p.stamina \
-								else Color(0.22, 0.22, 0.28)
+			var state := HoaTamUI.PipState.FULL if i < p.stamina else HoaTamUI.PipState.EMPTY
+			_p_sta_pips[i].texture = HoaTamUI.get_pip_texture(state)
 		_p_status_lbl.text = p.status_summary()
 		_p_stat_lbl.text   = _stat_line(p)
 		# Refresh skill buttons ngay khi vũ khí thay đổi (switch weapon)
@@ -674,7 +725,21 @@ func _on_combat_ended(result: String, data: Dictionary) -> void:
 			_result_title.add_theme_color_override("font_color", Color(0.95, 0.86, 0.2))
 			_result_body.text = _loot_result_body(gold, dropped_loot)
 			_result_body.text += "\nKhông tốn thêm thể lực"
-			_retry_btn.visible = false
+			if GameManager.post_combat_return.is_empty():
+				_retry_btn.text = "Trận Tiếp (R)"
+				_retry_btn.visible = true
+			else:
+				_retry_btn.visible = false
+		"enemy_run":
+			_prepare_exploration_return()
+			_result_title.text = "QUÁI BỎ CHẠY"
+			_result_title.add_theme_color_override("font_color", Color(0.86, 0.72, 0.42))
+			_result_body.text = "Kẻ địch đã bỏ chạy khỏi trận!\nKhông có chiến lợi phẩm."
+			if GameManager.post_combat_return.is_empty():
+				_retry_btn.text = "Trận Tiếp (R)"
+				_retry_btn.visible = true
+			else:
+				_retry_btn.visible = false
 		"lose":
 			var penalty: int = int(GameManager.gold * 0.20)
 			GameManager.gold = max(0, GameManager.gold - penalty)
@@ -686,12 +751,14 @@ func _on_combat_ended(result: String, data: Dictionary) -> void:
 			_result_body.text  = "Mất 20% vàng (%dG)" % penalty
 			_result_body.text += "\nTốn thêm %d thể lực" % stamina_spent
 			_result_body.text += "\nNhấn R để thử lại"
+			_retry_btn.text = "Đánh Lại (R)"
 			_retry_btn.visible = true
 		"run":
 			_prepare_exploration_return()
 			_result_title.text = "BỎ CHẠY"
 			_result_title.add_theme_color_override("font_color", Color(0.72, 0.72, 0.72))
 			_result_body.text  = "Bạn đã rời khỏi trận.\nKhông tốn thêm thể lực\nNhấn R để đánh lại"
+			_retry_btn.text = "Đánh Lại (R)"
 			_retry_btn.visible = true
 	# Hiện nút quay lại nếu đến từ exploration
 	if not GameManager.post_combat_return.is_empty():
@@ -808,7 +875,7 @@ func _input(event: InputEvent) -> void:
 		KEY_4: _on_action_btn_pressed(3)
 		KEY_W: _on_action_btn_pressed(4)
 		KEY_R:
-			if _retry_btn.visible:
+			if _result_overlay.visible and _retry_btn.visible:
 				_on_retry()
 
 
@@ -816,6 +883,9 @@ func _on_retry() -> void:
 	if _result_overlay.visible and not _retry_btn.visible:
 		return
 	_return_btn.visible = false
+	if not GameManager.post_combat_return.is_empty():
+		_setup_mock_combat(_active_enemy_key)
+		return
 	_enemy_cycle_idx = (_enemy_cycle_idx + 1) % _ENEMY_CYCLE.size()
 	_setup_mock_combat(_ENEMY_CYCLE[_enemy_cycle_idx])
 
@@ -838,15 +908,15 @@ func _refresh_all_ui() -> void:
 	if _p_hp_tween and _p_hp_tween.is_valid(): _p_hp_tween.kill()
 	if _e_hp_tween and _e_hp_tween.is_valid(): _e_hp_tween.kill()
 
-	_p_hp_fill.size.x = HP_BAR_W * clampf(float(p.hp) / float(p.max_hp), 0.0, 1.0)
+	_p_hp_fill.size.x = (HP_BAR_W - 12.0) * clampf(float(p.hp) / float(p.max_hp), 0.0, 1.0)
 	_p_hp_lbl.text    = "HP  %d / %d" % [p.hp, p.max_hp]
 	for i in _p_sta_pips.size():
-		_p_sta_pips[i].color = Color(0.28, 0.58, 0.88) if i < p.stamina \
-							else Color(0.22, 0.22, 0.28)
+		var state := HoaTamUI.PipState.FULL if i < p.stamina else HoaTamUI.PipState.EMPTY
+		_p_sta_pips[i].texture = HoaTamUI.get_pip_texture(state)
 	_p_status_lbl.text = p.status_summary()
 	_p_stat_lbl.text   = _stat_line(p)
 
-	_e_hp_fill.size.x  = HP_BAR_W * clampf(float(e.hp) / float(e.max_hp), 0.0, 1.0)
+	_e_hp_fill.size.x  = (HP_BAR_W - 12.0) * clampf(float(e.hp) / float(e.max_hp), 0.0, 1.0)
 	_e_hp_lbl.text     = "HP  %d / %d" % [e.hp, e.max_hp]
 	_e_name_lbl.text   = e.combatant_name
 	_e_status_lbl.text = e.status_summary()
@@ -856,7 +926,7 @@ func _refresh_all_ui() -> void:
 # Animate HP bar mượt từ giá trị hiện tại xuống giá trị mới
 func _tween_hp_bar(is_player: bool, new_hp: int, max_hp: int) -> void:
 	var fill   := _p_hp_fill if is_player else _e_hp_fill
-	var target := HP_BAR_W * clampf(float(new_hp) / float(max_hp), 0.0, 1.0)
+	var target := (HP_BAR_W - 12.0) * clampf(float(new_hp) / float(max_hp), 0.0, 1.0)
 
 	var old_tw := _p_hp_tween if is_player else _e_hp_tween
 	if old_tw and old_tw.is_valid():
@@ -876,8 +946,12 @@ func _update_action_buttons() -> void:
 
 	var s1: Dictionary = p.skill1
 	var s1c: int       = s1.get("stamina_cost", 0)
-	_action_btns[1].text     = "%s\n[%d STA]" % [s1.get("name", "—"), s1c]
-	_action_btns[1].disabled = p.stamina < s1c or s1.is_empty()
+	if s1.get("effect", "") == "PASSIVE_NO_DURABILITY":
+		_action_btns[1].text     = "%s\n[Bị Động]" % s1.get("name", "Eternal")
+		_action_btns[1].disabled = true
+	else:
+		_action_btns[1].text     = "%s\n[%d STA]" % [s1.get("name", "—"), s1c]
+		_action_btns[1].disabled = p.stamina < s1c or s1.is_empty()
 
 	var s2: Dictionary = p.skill2
 	var s2c: int       = s2.get("stamina_cost", 0)

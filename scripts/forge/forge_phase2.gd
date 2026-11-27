@@ -1,4 +1,7 @@
-# Phase 2: Rèn Búa — 5 nhát búa, timing-based con lắc liên tục
+# Phase 2: Rèn Búa 2 Hướng "Cương / Nhu" Tất Định — 5 nhát búa con lắc liên tục
+# - Búa Nặng — Hướng CƯƠNG (Space / Chuột Trái): thiên Công/Thủ (cuong_hits += 1)
+# - Búa Khéo — Hướng NHU (Enter / Chuột Phải): thiên Tốc/Linh (nhu_hits += 1)
+# Xóa bỏ hoàn toàn ngẫu nhiên (.pick_random()): 100% ánh xạ tất định từ (score, cuong_hits, nhu_hits)
 # Kết quả emit EventBus.phase2_completed(score, prefix_tier)
 extends Node
 
@@ -7,6 +10,9 @@ signal strike_resolved(result: int, strike_index: int, running_score: int)
 
 enum HitResult { PERFECT, GOOD, MISS }
 
+const STYLE_CUONG := "cuong"
+const STYLE_NHU := "nhu"
+
 const TOTAL_STRIKES      := 5
 const BASE_BEAT_DURATION := 1.5   # giây mỗi nhát ở rarity 1
 const BEAT_SPEEDUP_STEP  := 0.07  # mỗi nhát sau nhanh hơn 7% tạo cao trào nhát 4-5
@@ -14,9 +20,20 @@ const PERFECT_HALF_WIDTH := 0.08  # ±8% quanh tâm
 const GOOD_HALF_WIDTH    := 0.18  # ±18% quanh tâm
 const BREATH_DURATION    := 0.22  # nhịp thở 0.22s khi đổi chiều / sau mỗi nhát đập
 
+# GATE D — Trần tiền tố theo bậc nguyên liệu (T1 max 1, T2 max 3, T3 max 5)
+const MATERIAL_PREFIX_CAP: Dictionary = {
+	1: 1,
+	2: 3,
+	3: 5,
+}
+
 var score: int = 0
 var combo_count: int = 0
 var current_strike: int = 0
+var cuong_hits: int = 0
+var nhu_hits: int = 0
+var last_strike_style: String = STYLE_CUONG
+var strike_styles: Array[String] = []
 var is_active: bool = false
 var beat_progress: float = 0.0
 var perfect_center: float = 0.55
@@ -41,6 +58,10 @@ func start_phase(
 	score = 0
 	combo_count = 0
 	current_strike = 0
+	cuong_hits = 0
+	nhu_hits = 0
+	last_strike_style = STYLE_CUONG
+	strike_styles.clear()
 	is_active = true
 	_is_breathing = false
 	_breath_timer = 0.0
@@ -53,11 +74,12 @@ func start_phase(
 	_next_beat()
 
 
-func try_hit() -> void:
+func try_hit(style: String = STYLE_CUONG) -> void:
 	if not is_active or _hit_this_beat or _between_beats or _is_breathing:
 		return
+	var normalized_style := STYLE_NHU if style == STYLE_NHU else STYLE_CUONG
 	_hit_this_beat = true
-	_resolve_hit(beat_progress)
+	_resolve_hit(beat_progress, normalized_style)
 
 
 func get_combo_count() -> int:
@@ -81,21 +103,32 @@ func _process(delta: float) -> void:
 		beat_progress = 1.0
 		if not _hit_this_beat:
 			_hit_this_beat = true
-			_resolve_hit(1.0)
+			_resolve_hit(1.0, "")
 	elif direction < 0.0 and beat_progress <= 0.0:
 		beat_progress = 0.0
 		if not _hit_this_beat:
 			_hit_this_beat = true
-			_resolve_hit(0.0)
+			_resolve_hit(0.0, "")
 
 
-func _resolve_hit(progress: float) -> void:
+func _resolve_hit(progress: float, style: String = STYLE_CUONG) -> void:
 	var dist := absf(progress - perfect_center)
 	var perfect_w := PERFECT_HALF_WIDTH * window_scale
 	var good_w    := GOOD_HALF_WIDTH    * window_scale
 
+	if style == STYLE_CUONG:
+		cuong_hits += 1
+	elif style == STYLE_NHU:
+		nhu_hits += 1
+	last_strike_style = style
+	strike_styles.append(style)
+
 	var result: HitResult
-	if dist <= perfect_w:
+	if style == "":
+		result = HitResult.MISS
+		score -= 1
+		combo_count = 0
+	elif dist <= perfect_w:
 		result = HitResult.PERFECT
 		score += 1
 		combo_count += 1
@@ -112,10 +145,11 @@ func _resolve_hit(progress: float) -> void:
 
 	if current_strike >= TOTAL_STRIKES:
 		is_active = false
-		EventBus.phase2_completed.emit(score, _score_to_prefix(score))
+		var prefix_tier := _score_to_prefix(score)
+		EventBus.phase2_completed.emit(score, prefix_tier)
 		return
 
-	# Nhịp thở 0.22s mượt mà sau nhát đập, không dùng create_timer gây khựng đơ
+	# Nhịp thở 0.22s mượt mà sau nhát đập
 	_is_breathing = true
 	_breath_timer = BREATH_DURATION
 	_between_beats = true
@@ -139,51 +173,42 @@ func _next_beat() -> void:
 	beat_started.emit(current_strike, perfect_center)
 
 
-func _score_to_prefix(s: int) -> String:
-	# GATE D — Prefix Eligibility Cap
-	# Material rarity acts as tier (1=T1 Thô, 2=T2 Tinh, 3=T3 Thượng).
-	# T1 max prefix score = 1  → "Tot" prefix ceiling
-	# T2 max prefix score = 3  → "Kiet Tac"/"Can Bang" ceiling
-	# T3 max prefix score = 5  → full "Perfect" unlock
-	const MATERIAL_PREFIX_CAP: Dictionary = {
-		1: 1,
-		2: 3,
-		3: 5,
-	}
-	s = mini(s, MATERIAL_PREFIX_CAP.get(_material_rarity, 5))
-	# GDD Section 6.2: score +2/+3/+4/+5 mỗi mức có 2 prefix ngẫu nhiên
-	var prefix_tier := "thuong"
-	match s:
-		-5, -4:
-			prefix_tier = "phan_chu"
-		-3, -2:
-			prefix_tier = "curse_nang"
-		-1:
-			prefix_tier = "curse_nhe"
-		1:
-			prefix_tier = (["tot", "nang_tay", "than_toc"] as Array).pick_random()
-		2:
-			prefix_tier = (["kiet_tac", "can_bang"] as Array).pick_random()
-		3:
-			prefix_tier = (["to_nghe", "huyen_bi"] as Array).pick_random()
-		4:
-			prefix_tier = (["cung_nhu_da", "khi_phach"] as Array).pick_random()
-		5:
-			prefix_tier = (["truong_sinh", "perfect"] as Array).pick_random()
-		_:
-			pass
-	return prefix_tier
+func _score_to_prefix(raw_score: int) -> String:
+	return resolve_deterministic_prefix(raw_score, _material_rarity, cuong_hits, nhu_hits)
+
+
+## Bảng Ánh Xạ Tiền Tố Tất Định 100% — xóa sạch ngẫu nhiên, trả về đúng tiền tố theo ý đồ Cương/Nhu
+static func resolve_deterministic_prefix(
+	raw_score: int,
+	material_rarity: int,
+	p_cuong_hits: int,
+	p_nhu_hits: int
+) -> String:
+	var cap: int = MATERIAL_PREFIX_CAP.get(clampi(material_rarity, 1, 3), 1)
+	var capped_score: int = mini(raw_score, cap)
+
+	if capped_score <= -4:
+		return "phan_chu"
+	if capped_score in [-3, -2]:
+		return "curse_nang"
+	if capped_score == -1:
+		return "curse_nhe"
+	if capped_score == 0:
+		return "thuong"
+	if capped_score == 1:
+		if p_cuong_hits >= 4:
+			return "nang_tay"
+		if p_nhu_hits >= 4:
+			return "than_toc"
+		return "tot"
+	if capped_score == 2:
+		return "kiet_tac" if p_cuong_hits > p_nhu_hits else "can_bang"
+	if capped_score == 3:
+		return "to_nghe" if p_cuong_hits > p_nhu_hits else "huyen_bi"
+	if capped_score == 4:
+		return "cung_nhu_da" if p_cuong_hits > p_nhu_hits else "khi_phach"
+	return "perfect" if p_cuong_hits > p_nhu_hits else "truong_sinh"
 
 
 func get_prefix_name(tier: String) -> String:
-	return {
-		"phan_chu":   "Phản Chủ",
-		"curse_nang": "Lời Nguyền",
-		"curse_nhe":  "Nguyền Nhẹ",
-		"thuong":     "Thường",
-		"tot":        "Tốt",
-		"kiet_tac":   "Kiệt Tác",
-		"to_nghe":    "Tổ Nghề",
-		"khi_phach":  "Khí Phách",
-		"perfect":    "PERFECT",
-	}.get(tier, tier)
+	return ForgeConverter.PREFIX_NAMES.get(tier, tier)

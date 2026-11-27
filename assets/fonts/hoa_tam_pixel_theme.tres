@@ -1,0 +1,85 @@
+[gd_resource type="Theme" load_steps=7 format=3]
+
+[ext_resource type="FontFile" path="res://assets/fonts/PixelifySans.ttf" id="1_pix"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+bg_color = Color(0.106, 0.071, 0.078, 0.88)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.49, 0.36, 0.21, 0.75)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_n"]
+content_margin_left = 14.0
+content_margin_top = 8.0
+content_margin_right = 14.0
+content_margin_bottom = 8.0
+bg_color = Color(0.18, 0.115, 0.095, 0.92)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 2
+border_color = Color(0.62, 0.45, 0.24, 0.85)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_h"]
+content_margin_left = 14.0
+content_margin_top = 8.0
+content_margin_right = 14.0
+content_margin_bottom = 8.0
+bg_color = Color(0.28, 0.17, 0.11, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 2
+border_color = Color(0.95, 0.76, 0.34, 0.98)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_p"]
+content_margin_left = 14.0
+content_margin_top = 9.0
+content_margin_right = 14.0
+content_margin_bottom = 7.0
+bg_color = Color(0.12, 0.075, 0.065, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.50, 0.36, 0.19, 0.85)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_d"]
+content_margin_left = 14.0
+content_margin_top = 8.0
+content_margin_right = 14.0
+content_margin_bottom = 8.0
+bg_color = Color(0.11, 0.08, 0.08, 0.72)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.32, 0.24, 0.18, 0.55)
+
+[resource]
+default_font = ExtResource("1_pix")
+default_font_size = 24
+Button/colors/font_color = Color(0.918, 0.843, 0.718, 1)
+Button/colors/font_disabled_color = Color(0.56, 0.48, 0.42, 0.85)
+Button/colors/font_focus_color = Color(0.992, 0.918, 0.678, 1)
+Button/colors/font_hover_color = Color(0.992, 0.918, 0.678, 1)
+Button/colors/font_pressed_color = Color(0.84, 0.74, 0.58, 1)
+Button/fonts/font = ExtResource("1_pix")
+Button/styles/disabled = SubResource("StyleBoxFlat_btn_d")
+Button/styles/focus = SubResource("StyleBoxFlat_btn_h")
+Button/styles/hover = SubResource("StyleBoxFlat_btn_h")
+Button/styles/normal = SubResource("StyleBoxFlat_btn_n")
+Button/styles/pressed = SubResource("StyleBoxFlat_btn_p")
+CheckButton/fonts/font = ExtResource("1_pix")
+Label/colors/font_color = Color(0.918, 0.843, 0.718, 1)
+Label/fonts/font = ExtResource("1_pix")
+LineEdit/fonts/font = ExtResource("1_pix")
+Panel/styles/panel = SubResource("StyleBoxFlat_panel")
+PanelContainer/styles/panel = SubResource("StyleBoxFlat_panel")
+RichTextLabel/fonts/normal_font = ExtResource("1_pix")

@@ -48,17 +48,8 @@ func sync_script() -> void:
 
 
 func sync_day1_scripted() -> void:
-	if not is_day1_active():
-		_set_tutorial_step(4)
-		return
-	if GameManager.current_phase == GameManager.GamePhase.AFTERNOON:
-		_set_tutorial_step(3)
-	elif GameManager.has_tutorial_seen("debt_notice_shown"):
-		_set_tutorial_step(2)
-	elif GameManager.has_tutorial_seen("day1_forge_done"):
-		_set_tutorial_step(1)
-	else:
-		_set_tutorial_step(0)
+	# Ngày 1 sau khi Người Thu Nợ bước vào báo nợ và rời đi: mở khóa tự do toàn xưởng (không ép khóa Shop / đồng hồ 60s)
+	_set_tutorial_step(4)
 
 
 func handle_day_changed(day: int) -> void:
@@ -67,10 +58,7 @@ func handle_day_changed(day: int) -> void:
 
 
 func is_day1_active() -> bool:
-	return (
-		GameManager.current_day == 1
-		and GameManager.has_tutorial_seen("opening_seen")
-	)
+	return GameManager.current_day == 1 and not GameManager.has_tutorial_seen("debt_notice_shown")
 
 
 func is_overlay_active() -> bool:
@@ -137,6 +125,9 @@ func should_show_before_explore() -> bool:
 
 func show_tutorial_then(steps: Array[Dictionary], flag: String, callback: Callable) -> void:
 	_show_tutorial(steps, flag)
+	if not _tutorial_overlay.visible:
+		callback.call()
+		return
 	_tutorial_overlay.completed.connect(callback, CONNECT_ONE_SHOT)
 
 
@@ -146,16 +137,12 @@ func open_guide_book() -> void:
 
 
 func should_handle_day1_debt_notice() -> bool:
-	return is_day1_active() and not GameManager.has_tutorial_seen("debt_notice_shown")
+	return false
 
 
 func on_day1_debt_notice_closed() -> void:
 	GameManager.mark_tutorial("debt_notice_shown")
-	show_day1_post_ntn_if_needed()
-	if GameManager.current_phase == GameManager.GamePhase.MORNING:
-		advance_phase_requested.emit()
-	elif GameManager.current_phase == GameManager.GamePhase.NOON:
-		advance_phase_requested.emit()
+	DebtSystem.mark_checkpoint_notified("c1_mat_bang")
 	sync_day1_scripted()
 
 
@@ -165,42 +152,16 @@ func show_day1_post_ntn_if_needed() -> void:
 
 
 func _set_tutorial_step(step: int) -> void:
-	if not is_day1_active() and step < 4:
+	if step < 4:
 		step = 4
-	if tutorial_step == step and step != 1:
+	if tutorial_step == step:
 		return
 	tutorial_step = step
 	EventBus.tutorial_step_changed.emit(tutorial_step)
 	_hide_tutorial_advance_button()
-
-	match tutorial_step:
-		0:
-			_set_tutorial_locks([ZONE_BED, ZONE_EXIT, ZONE_SHOP, ZONE_FORGE_BOOK])
-			request_hint("Đến lò rèn và rèn vũ khí đầu tiên của ngươi.")
-			_show_tutorial_arrow(_zone_center(ZONE_FORGE), "Lò Rèn")
-		1:
-			_set_tutorial_locks([ZONE_BED, ZONE_EXIT, ZONE_SHOP, ZONE_FORGE_BOOK])
-			request_hint("Người Thu Nợ đang chờ ở cửa tiệm.")
-			_show_tutorial_arrow(
-				_zone_center(ZONE_SHOP) + Vector2(-float(_tile()) * 1.5, 0.0),
-				"Người Thu Nợ"
-			)
-			debt_agent_sync_requested.emit()
-			_show_day1_debt_notice()
-		2:
-			_set_tutorial_locks([ZONE_EXIT, ZONE_SHOP])
-			request_hint("Buổi trưa: Rèn thêm hoặc chờ đến chiều.")
-			_hide_tutorial_arrow()
-			_show_tutorial_advance_button()
-			_start_tutorial_noon_timer()
-		3:
-			_set_tutorial_locks([ZONE_EXIT, ZONE_BED])
-			request_hint("Đặt vũ khí lên kệ trước khi mở cửa!")
-			_show_tutorial_arrow(_zone_center(ZONE_SHOP), "Mở Tiệm")
-		_:
-			_set_tutorial_locks([])
-			clear_hint()
-			_hide_tutorial_arrow()
+	_set_tutorial_locks([])
+	clear_hint()
+	_hide_tutorial_arrow()
 
 
 func _set_tutorial_locks(zone_ids: Array) -> void:
@@ -465,6 +426,11 @@ func _tutorial_allows_zone(zone_id: String) -> bool:
 				request_hint("Tutorial: quay lại Lò Rèn và lưu vũ khí vào túi trước.")
 		elif not GameManager.has_tutorial_seen("day0_customer_done"):
 			allowed = zone_id in [ZONE_SHOP, ZONE_FORGE, ZONE_FORGE_BOOK]
+	elif GameManager.current_phase == GameManager.GamePhase.AFTERNOON \
+			and not GameManager.has_tutorial_seen("day0_customer_done"):
+		allowed = zone_id in [ZONE_SHOP]
+		if not allowed:
+			request_hint("Tutorial ngày 0: hãy vào Tiệm tiếp vị khách đầu tiên.")
 			if not allowed:
 				request_hint("Tutorial: hãy mở tiệm và bán vũ khí trước khi làm việc khác.")
 	return allowed

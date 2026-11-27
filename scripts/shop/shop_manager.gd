@@ -14,17 +14,19 @@ signal shop_opened
 signal shop_closed(session_stats: Dictionary)
 signal customer_arrived(customer: Dictionary)
 signal customer_left(customer: Dictionary, reason: String)   # "sale"|"browsed"|"timeout"
+signal echo_event_triggered(echo_record: Dictionary)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Recettear model: toàn bộ khách vào 1 lần khi mở cửa
+# Moonlighter-style flow: khách vào lần lượt từng người một
 const MIN_CUSTOMERS     := 3
 const MAX_CUSTOMERS     := 7
-const STAGGER_INTERVAL  := 0.6    # giây giữa mỗi khách bước qua cửa
+const STAGGER_INTERVAL  := 2.0    # giây giữa mỗi khách bước qua cửa
 # Mỗi item trên kệ khớp preferred của template → +MATCH_BONUS vào weight
 const MATCH_BONUS       := 1.5
+const ECHO_TRIGGER_CHANCE := 0.35  # 35% cơ hội khách cũ quay lại kể Tiếng Vọng Vũ Khí
 const CUSTOMER_DIR := "res://resources/customers"
 const DEMO_CUSTOMER_IDS: Array[String] = [
 	"hiep_khach",
@@ -56,6 +58,7 @@ var _in_shop: Array[Dictionary] = []
 var _gold_earned:       int = 0
 var _customers_served:  int = 0
 var _customers_visited: int = 0
+var _echo_triggered_this_session: bool = false
 
 
 func _ready() -> void:
@@ -84,6 +87,7 @@ func open_shop(slot_count: int = 0) -> void:
 	_gold_earned       = 0
 	_customers_served  = 0
 	_customers_visited = 0
+	_echo_triggered_this_session = false
 
 	if _should_run_tutorial_scripted_customer():
 		_spawn_queue.append(_spawn_scripted_customer(_get_scripted_customer_id()))
@@ -96,6 +100,42 @@ func open_shop(slot_count: int = 0) -> void:
 
 	shop_opened.emit()
 	EventBus.shop_opened.emit()
+	if not _should_run_tutorial_scripted_customer():
+		_try_trigger_weapon_echo()
+
+
+func _try_trigger_weapon_echo() -> void:
+	if _echo_triggered_this_session:
+		return
+	var candidates := GameManager.get_pending_echo_candidates()
+	if candidates.is_empty():
+		return
+	if randf() >= ECHO_TRIGGER_CHANCE:
+		return
+	var chosen: Dictionary = candidates[randi() % candidates.size()]
+	trigger_weapon_echo_now(chosen)
+
+
+func trigger_weapon_echo_now(record: Dictionary) -> bool:
+	if _echo_triggered_this_session or record.is_empty():
+		return false
+	_echo_triggered_this_session = true
+	GameManager.mark_echo_resolved(record)
+	echo_event_triggered.emit(record)
+	return true
+
+
+# Đuổi 1 khách trong hàng chờ (hậu quả khi từ chối bồi thường Tiếng Vọng Vũ Khí Lời Nguyền).
+func dismiss_one_queued_customer() -> bool:
+	for i in range(_spawn_queue.size() - 1, -1, -1):
+		if not bool(_spawn_queue[i].get("is_commission_giver", false)):
+			_spawn_queue.remove_at(i)
+			return true
+	for i in range(_in_shop.size() - 1, -1, -1):
+		if not bool(_in_shop[i].get("is_commission_giver", false)):
+			_remove_customer(_in_shop[i], "dismissed")
+			return true
+	return false
 
 
 # Đóng cửa sớm hoặc kết thúc phiên.
@@ -328,7 +368,7 @@ func _should_run_tutorial_scripted_customer() -> bool:
 
 func _get_scripted_customer_id() -> String:
 	if GameManager.current_day == 1:
-		return "hiep_khach_lang_bat"
+		return "hiep_khach"
 	return "nong_dan"
 
 
@@ -352,7 +392,7 @@ func _make_default_scripted_customer(customer_id: String) -> NPCData:
 	customer.budget_min = 500
 	customer.budget_max = 1500
 	customer.patience = 2
-	customer.preferred_tags = ["kiem", "bua_chien"]
+	customer.preferred_tags = ["kiem_don", "bua_chien"]
 	customer.disliked_tags = []
 	customer.walk_speed = 100.0
 	customer.min_day = 1

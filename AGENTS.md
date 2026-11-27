@@ -125,6 +125,7 @@ Tất cả nhân vật có thể di chuyển (Player Nấm, NPCs, Quái Overworl
 3. ❌ **Không hard-code dữ liệu** (chỉ số vũ khí, quái vật, giá bán) trực tiếp trong script — dữ liệu phải nằm trong `.tres` Resource hoặc Database.
 4. ❌ **Không dùng `get_node()` đường dẫn tuyệt đối** giữa các Scene khác nhau.
 5. ❌ **Không xóa hoặc đổi tên file tùy tiện** mà không cập nhật các nơi tham chiếu.
+6. ❌ **TUYỆT ĐỐI KHÔNG DÙNG LẠI HOẶC VẼ ART MỚI BỌC XUNG QUANH ASSETS CŨ (ZERO LEGACY ASSET REUSE):** Toàn bộ thư mục cũ (`assets/weapons/`, `assets/UI/`, `assets/sprites/`, `assets/characters/`) **chỉ dùng để đọc ý tưởng / danh sách vật phẩm (concept reference)**, không được load hiển thị trong game, không giữ `FALLBACK_PATH` về ảnh cũ, và không lấy khung/bục/lò 32-bit mới bọc bên ngoài icon vũ khí hay nguyên liệu cũ. Mọi hình ảnh hiển thị phải thuộc bộ **32-bit Hoả Tâm tạo mới 100% trong `res://assets/pixel/`** (xem thêm [docs/PITFALLS.md](file:///c:/Users/builo/.gemini/antigravity/scratch/lo-thieng/docs/PITFALLS.md)).
 
 ---
 

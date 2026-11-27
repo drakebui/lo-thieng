@@ -11,14 +11,32 @@ const PATH_COMBAT   := "res://scenes/combat/CombatScene.tscn"
 const PATH_EXPLORATION := "res://scenes/regions/ExplorationScene.tscn"
 const PATH_PAUSE_MENU := "res://scenes/ui/PauseMenu.tscn"
 const PATH_TUTORIAL_OVERLAY_SCRIPT := "res://scripts/ui/tutorial_overlay_ui.gd"
-const PATH_TEMP_EXPLORATION_BG := "res://assets/reference/exploration_scale_reference.png"
+const PATH_TEMP_EXPLORATION_BG := ""
+const EXPLORE_BG_PATHS: Dictionary = {
+	"DongMay": "res://assets/pixel/backgrounds/explore_v1_dong_may_640x360.png",
+	"RungTramHon": "res://assets/pixel/backgrounds/explore_v2_rung_tram_hon_640x360.png",
+}
+const EXPLORE_PROPS_PATHS: Dictionary = {
+	"DongMay": "res://assets/pixel/tilesets/explore/v1_props_sheet.png",
+	"RungTramHon": "res://assets/pixel/tilesets/explore/v2_props_sheet.png",
+}
+const EXPLORE_ENEMY_SHEETS: Dictionary = {
+	"soi_dong_co_t1": "res://assets/pixel/sprites/enemies/soi_dong_co_t1_sheet_64.png",
+	"bandit_tre_t1": "res://assets/pixel/sprites/enemies/bandit_tre_t1_sheet_64.png",
+	"soi_gia_t2": "res://assets/pixel/sprites/enemies/soi_gia_t2_sheet_64.png",
+	"hon_rung_t1": "res://assets/pixel/sprites/enemies/hon_rung_t1_sheet_64.png",
+	"quy_rung_t1": "res://assets/pixel/sprites/enemies/quy_rung_t1_sheet_64.png",
+	"thu_ma_rung_t2": "res://assets/pixel/sprites/enemies/thu_ma_rung_t2_sheet_64.png",
+}
+const CO_LONG_GIO_SHEET := "res://assets/pixel/sprites/npcs/co_long_gio_sheet_64.png"
+const TUONG_NAI_SHEET := "res://assets/pixel/sprites/npcs/tuong_nai_bong_rung_sheet_64.png"
 const FLAG_CO_LONG_GIO_MET := "co_long_gio_met"
 const FLAG_CO_LONG_GIO_SECOND := "co_long_gio_second_met"
 const FLAG_MOVE_HINT_SEEN := "move_hint_seen"
 const SPEED_PATROL := 55.0
 const SPEED_CHASE  := 110.0
 const ENEMY_SPAWN_RETRIES := 30
-const USE_TEMP_EXPLORATION_BG := true
+const USE_TEMP_EXPLORATION_BG := false
 
 const MINI_W: int = 200
 const MINI_H: int = 112
@@ -126,7 +144,15 @@ var _player:       CharacterBody2D
 var _near_exit:    bool       = false
 var _near_exit_right: bool = false
 var _near_co_long_gio: bool = false
+var _near_tuong_nai: bool = false
+var _co_long_gio_node: Node2D = null
+var _co_long_gio_sprite: AnimatedSprite2D = null
+var _co_long_gio_has_4dir: bool = false
+var _tuong_nai_node: Node2D = null
+var _tuong_nai_sprite: AnimatedSprite2D = null
+var _tuong_nai_has_4dir: bool = false
 var _is_leaving_region: bool = false
+var _is_entering_combat: bool = false
 var _enemy_nodes:  Array[CharacterBody2D] = []
 var _enemy_states: Dictionary = {}
 var _pending_meta: Dictionary = {}
@@ -171,7 +197,7 @@ func _ready() -> void:
 	GameManager.current_sub_scene_idx = _scene_idx
 	GameManager.current_sub_scene_type = _scene_type
 	_region_was_cleared_on_entry = GameManager.is_region_cleared(_region_id)
-	if _scene_type == "LANDMARK" and not _region_was_cleared_on_entry:
+	if _scene_type == "LANDMARK" and _region_id != "RungTramHon" and not _region_was_cleared_on_entry:
 		GameManager.mark_region_cleared(_region_id)
 
 	var meta: Dictionary = REGION_META.get(_region_id, REGION_META["DongMay"])
@@ -225,6 +251,7 @@ func _process(delta: float) -> void:
 		_update_enemy(entry, delta)
 	_update_mini_map()
 	_clamp_player_in_bounds()
+	_update_special_npc_facing()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -241,6 +268,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_E:
 			if _near_exit:
 				_leave_region()
+			elif _near_tuong_nai:
+				_interact_tuong_nai_shrine()
 			elif _near_co_long_gio:
 				_open_co_long_gio_dialogue()
 			elif _near_gather_idx >= 0:
@@ -271,20 +300,43 @@ func _build_map(meta: Dictionary) -> void:
 	floor_bg.color    = meta["floor"]
 	add_child(floor_bg)
 
-	if USE_TEMP_EXPLORATION_BG:
-		_build_temp_exploration_background()
+	var has_pixel_bg := false
+	var region_bg_path: String = String(EXPLORE_BG_PATHS.get(_region_id, ""))
+	if not region_bg_path.is_empty() and ResourceLoader.exists(region_bg_path):
+		var bg_tex := load(region_bg_path) as Texture2D
+		if bg_tex != null:
+			has_pixel_bg = true
+			var bg_spr := Sprite2D.new()
+			bg_spr.name = "RegionPixelBackground"
+			bg_spr.texture = bg_tex
+			bg_spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			bg_spr.texture_repeat = CanvasItem.TEXTURE_REPEAT_MIRROR
+			bg_spr.centered = false
+			bg_spr.position = Vector2.ZERO
+			var map_sz := Vector2(TILE * COLS, TILE * ROWS)
+			var bg_scale := 1.5
+			bg_spr.scale = Vector2(bg_scale, bg_scale)
+			bg_spr.region_enabled = true
+			bg_spr.region_rect = Rect2(Vector2.ZERO, map_sz / bg_scale)
+			add_child(bg_spr)
 
-	# Vân nền xen kẽ
-	var floor_alt := Color(meta["floor"].r * 0.91, meta["floor"].g * 0.91, meta["floor"].b * 0.91)
-	for r in range(1, ROWS - 1):
-		if r % 2 == 0: continue
-		var stripe := ColorRect.new()
-		stripe.position = Vector2(TILE, r * TILE)
-		stripe.size     = Vector2(TILE * (COLS - 2), TILE)
-		stripe.color    = floor_alt
-		if USE_TEMP_EXPLORATION_BG:
-			stripe.color = Color(floor_alt.r, floor_alt.g, floor_alt.b, 0.08)
-		add_child(stripe)
+			var sub_tint := ColorRect.new()
+			var raw_tint: Color = _scene_cfg.get("tint", Color(0, 0, 0, 0))
+			sub_tint.color = Color(raw_tint.r, raw_tint.g, raw_tint.b, raw_tint.a * 0.45)
+			sub_tint.position = Vector2.ZERO
+			sub_tint.size = map_sz
+			add_child(sub_tint)
+
+	if not has_pixel_bg:
+		# Vân nền xen kẽ chỉ dùng cho các vùng Chương 2+ chưa có ảnh 32-bit
+		var floor_alt := Color(meta["floor"].r * 0.91, meta["floor"].g * 0.91, meta["floor"].b * 0.91)
+		for r in range(1, ROWS - 1):
+			if r % 2 == 0: continue
+			var stripe := ColorRect.new()
+			stripe.position = Vector2(TILE, r * TILE)
+			stripe.size     = Vector2(TILE * (COLS - 2), TILE)
+			stripe.color    = floor_alt
+			add_child(stripe)
 
 	_build_wall_col()
 	_build_obstacles(meta)
@@ -489,25 +541,56 @@ func _spawn_enemy(
 	enemy.collision_mask = 5
 	add_child(enemy)
 
-	var visual := ColorRect.new()
-	visual.size = Vector2(200, 200)
-	visual.position = Vector2(-100, -100)
-	visual.color = enemy_data.color
-	enemy.add_child(visual)
+	# 1. Bóng tiếp đất chuẩn BaseCharacter
+	var shadow := Polygon2D.new()
+	shadow.color = Color(0.06, 0.03, 0.04, 0.42)
+	shadow.z_index = -1
+	var spts := PackedVector2Array()
+	for si in range(14):
+		var ang := (float(si) / 14.0) * TAU
+		spts.append(Vector2(cos(ang) * 14.0, sin(ang) * 5.0))
+	shadow.polygon = spts
+	enemy.add_child(shadow)
+
+	# 2. Sprite 32-bit 4x4 cho 6 quái V1–V2 (fallback ColorRect chỉ cho quái Chương 2+)
+	var sheet_path: String = String(EXPLORE_ENEMY_SHEETS.get(enemy_data.enemy_id, ""))
+	var sprite: AnimatedSprite2D = null
+	if not sheet_path.is_empty() and ResourceLoader.exists(sheet_path):
+		var frames: SpriteFrames = BaseCharacter.get_or_build_frames(sheet_path)
+		if frames != null:
+			sprite = AnimatedSprite2D.new()
+			sprite.name = "EnemySprite"
+			sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			sprite.sprite_frames = frames
+			sprite.offset = Vector2(0.0, -28.0)
+			sprite.scale = Vector2(1.4, 1.4)
+			sprite.play("idle")
+			enemy.add_child(sprite)
+	if sprite == null:
+		var visual := ColorRect.new()
+		visual.size = Vector2(72, 72)
+		visual.position = Vector2(-36, -72)
+		visual.color = enemy_data.color
+		enemy.add_child(visual)
 
 	var name_lbl := Label.new()
 	name_lbl.text = enemy_data.enemy_name
-	name_lbl.position = Vector2(-130, -140)
-	name_lbl.size = Vector2(260, 40)
+	name_lbl.position = Vector2(-110, -104)
+	name_lbl.size = Vector2(220, 32)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_lbl.add_theme_font_size_override("font_size", 24)
-	name_lbl.add_theme_color_override("font_color", Color(0.95, 0.82, 0.55))
+	name_lbl.add_theme_font_size_override("font_size", 18)
+	name_lbl.add_theme_color_override("font_color", Color(0.98, 0.86, 0.58))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0.07, 0.05, 0.06, 1.0))
+	name_lbl.add_theme_constant_override("outline_size", 4)
 	enemy.add_child(name_lbl)
 
 	var body_col := CollisionShape2D.new()
-	var body_shape := RectangleShape2D.new()
-	body_shape.size = Vector2(200, 200)
+	var body_shape := CapsuleShape2D.new()
+	body_shape.radius = 16.0
+	body_shape.height = 48.0
 	body_col.shape = body_shape
+	body_col.rotation = deg_to_rad(90.0)
+	body_col.position = Vector2(0.0, -14.0)
 	enemy.add_child(body_col)
 
 	var contact_area := Area2D.new()
@@ -517,7 +600,7 @@ func _spawn_enemy(
 	enemy.add_child(contact_area)
 	var contact_col := CollisionShape2D.new()
 	var contact_shape := CircleShape2D.new()
-	contact_shape.radius = 140.0
+	contact_shape.radius = 86.0
 	contact_col.shape = contact_shape
 	contact_area.add_child(contact_col)
 
@@ -530,6 +613,7 @@ func _spawn_enemy(
 		"origin": pos,
 		"enemy_data": enemy_data,
 		"node": enemy,
+		"sprite": sprite,
 		"contact_area": contact_area,
 		"alert_timer": 0.0,
 		"facing_dir": Vector2.RIGHT,
@@ -546,6 +630,7 @@ func _spawn_enemy(
 
 func _update_enemy(entry: Dictionary, delta: float) -> void:
 	var node: CharacterBody2D = entry["node"]
+	var sprite: AnimatedSprite2D = entry.get("sprite", null)
 	match entry["state"]:
 		"patrol":
 			var waypoints: Array = entry["waypoints"]
@@ -560,6 +645,8 @@ func _update_enemy(entry: Dictionary, delta: float) -> void:
 				entry["state"] = "alert"
 				entry["alert_timer"] = 0.0
 				node.velocity = Vector2.ZERO
+				if sprite != null and sprite.animation != "idle":
+					sprite.play("idle")
 				return
 			if node.position.distance_to(target) < 8.0:
 				entry["wp_idx"] = (wp_idx + 1) % 2
@@ -572,6 +659,8 @@ func _update_enemy(entry: Dictionary, delta: float) -> void:
 			var chase_dir: Vector2 = (_player.position - node.position).normalized()
 			node.velocity = chase_dir * SPEED_CHASE
 			node.move_and_slide()
+			if node.velocity.length() > 0.1:
+				entry["facing_dir"] = node.velocity.normalized()
 			if node.position.distance_to(_player.position) > 700.0:
 				entry["state"] = "return"
 		"return":
@@ -579,8 +668,20 @@ func _update_enemy(entry: Dictionary, delta: float) -> void:
 			var return_dir: Vector2 = (origin - node.position).normalized()
 			node.velocity = return_dir * SPEED_PATROL
 			node.move_and_slide()
+			if node.velocity.length() > 0.1:
+				entry["facing_dir"] = node.velocity.normalized()
 			if node.position.distance_to(origin) < 8.0:
 				entry["state"] = "patrol"
+
+	if sprite != null:
+		if node.velocity.length() > 6.0:
+			# Quái gốc nhìn sang trái (FacingSign = -1) -> flip_h = true khi đi sang phải
+			if absf(node.velocity.x) > 4.0:
+				sprite.flip_h = node.velocity.x > 0.0
+			if sprite.animation != "walk" and sprite.sprite_frames.has_animation("walk"):
+				sprite.play("walk")
+		elif sprite.animation != "idle" and sprite.sprite_frames.has_animation("idle"):
+			sprite.play("idle")
 
 
 func _check_vision_cone(entry: Dictionary) -> bool:
@@ -595,10 +696,13 @@ func _check_vision_cone(entry: Dictionary) -> bool:
 
 
 func _start_combat(enemy_node: CharacterBody2D) -> void:
+	if _is_entering_combat or _is_leaving_region:
+		return
 	for idx in _enemy_states.keys():
 		var entry: Dictionary = _enemy_states[idx]
 		if entry["node"] != enemy_node:
 			continue
+		_is_entering_combat = true
 		var enemy_data: EnemyData = entry["enemy_data"]
 		var to_player: Vector2 = _player.position - enemy_node.position
 		var facing: Vector2 = entry.get("facing_dir", Vector2.RIGHT)
@@ -703,6 +807,10 @@ func _leave_region() -> void:
 		GameManager.current_sub_scene_idx = _scene_idx - 1
 		GameManager.current_sub_scene_type = GameManager.SUB_SCENE_ORDER[_scene_idx - 1]
 		GameManager.exploration_state["entry_paid"] = true
+		GameManager.exploration_state["player_position"] = Vector2(
+			TILE * (COLS - 3.0),
+			TILE * (ROWS / 2.0)
+		)
 		SceneManager.go_to(PATH_EXPLORATION)
 
 
@@ -716,6 +824,16 @@ func _return_to_workshop_directly() -> void:
 	for item in GameManager.hand_inventory:
 		if not item.is_empty():
 			InventorySystem.add_material(item)
+	var pending_loot: Array = GameManager.exploration_state.get("pending_loot", [])
+	for loot in pending_loot:
+		if not (loot is Dictionary):
+			continue
+		var item_id := String((loot as Dictionary).get("item_id", ""))
+		if item_id.is_empty():
+			continue
+		var item: ItemData = ItemDatabase.get_item(item_id)
+		if item != null:
+			InventorySystem.add_material(_item_to_hand_entry(item))
 	GameManager.clear_hand()
 	GameManager.clear_exploration_state()
 	EventBus.region_exited.emit(_region_id)
@@ -733,6 +851,10 @@ func _advance_sub_scene() -> void:
 	GameManager.current_sub_scene_idx = _scene_idx + 1
 	GameManager.current_sub_scene_type = GameManager.SUB_SCENE_ORDER[_scene_idx + 1]
 	GameManager.exploration_state["entry_paid"] = true
+	GameManager.exploration_state["player_position"] = Vector2(
+		TILE * 3.0,
+		TILE * (ROWS / 2.0)
+	)
 	SceneManager.go_to(PATH_EXPLORATION)
 
 
@@ -741,8 +863,10 @@ func _advance_sub_scene() -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _build_special_npcs() -> void:
-	if _scene_already_visited:
-		return
+	# Tướng Nai Bóng Rừng & Bệ thờ Mảnh Cổ Khí tại LANDMARK của Rừng Trăm Hồn (V2)
+	if _region_id == "RungTramHon" and _scene_type == "LANDMARK":
+		_spawn_tuong_nai_landmark_npc()
+
 	if not _should_spawn_co_long_gio():
 		return
 
@@ -752,26 +876,53 @@ func _build_special_npcs() -> void:
 	npc.collision_layer = 2
 	npc.collision_mask = 0
 	add_child(npc)
+	_co_long_gio_node = npc
 
-	var visual := ColorRect.new()
-	visual.size = Vector2(38, 54)
-	visual.position = Vector2(-19, -27)
-	visual.color = Color(0.62, 0.82, 0.92)
-	npc.add_child(visual)
+	var clg_shadow := Polygon2D.new()
+	clg_shadow.color = Color(0.06, 0.03, 0.04, 0.42)
+	clg_shadow.z_index = -1
+	var cpts := PackedVector2Array()
+	for si in range(14):
+		var ang := (float(si) / 14.0) * TAU
+		cpts.append(Vector2(cos(ang) * 14.0, sin(ang) * 5.0))
+	clg_shadow.polygon = cpts
+	npc.add_child(clg_shadow)
 
-	var sash := ColorRect.new()
-	sash.size = Vector2(30, 8)
-	sash.position = Vector2(-15, -4)
-	sash.color = Color(0.94, 0.82, 0.42)
-	npc.add_child(sash)
+	var sprite_added := false
+	if ResourceLoader.exists(CO_LONG_GIO_SHEET):
+		var clg_tex := load(CO_LONG_GIO_SHEET) as Texture2D
+		_co_long_gio_has_4dir = clg_tex != null and clg_tex.get_height() >= 64 * 8
+		var frames: SpriteFrames = BaseCharacter.get_or_build_frames(CO_LONG_GIO_SHEET)
+		if frames != null:
+			var spr := AnimatedSprite2D.new()
+			spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			spr.sprite_frames = frames
+			spr.offset = Vector2(0.0, -28.0)
+			spr.scale = Vector2(1.4, 1.4)
+			if _co_long_gio_has_4dir and frames.has_animation("idle_down"):
+				spr.play("idle_down")
+			else:
+				spr.flip_h = true
+				spr.play("idle")
+			npc.add_child(spr)
+			_co_long_gio_sprite = spr
+			sprite_added = true
+	if not sprite_added:
+		var visual := ColorRect.new()
+		visual.size = Vector2(38, 54)
+		visual.position = Vector2(-19, -54)
+		visual.color = Color(0.62, 0.82, 0.92)
+		npc.add_child(visual)
 
 	var name_lbl := Label.new()
 	name_lbl.text = "Cô Lộng Gió"
-	name_lbl.position = Vector2(-78, -64)
+	name_lbl.position = Vector2(-78, -96)
 	name_lbl.size = Vector2(156, 28)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", 18)
 	name_lbl.add_theme_color_override("font_color", Color(0.80, 0.94, 1.0))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0.07, 0.05, 0.06, 1.0))
+	name_lbl.add_theme_constant_override("outline_size", 4)
 	npc.add_child(name_lbl)
 
 	var body_col := CollisionShape2D.new()
@@ -810,6 +961,31 @@ func _build_special_npcs() -> void:
 		npc.position,
 		Color(0.72, 0.92, 1.0)
 	)
+
+
+func _update_special_npc_facing() -> void:
+	if _player == null:
+		return
+	_orient_idle_npc(_co_long_gio_node, _co_long_gio_sprite, _co_long_gio_has_4dir)
+	_orient_idle_npc(_tuong_nai_node, _tuong_nai_sprite, _tuong_nai_has_4dir)
+
+
+func _orient_idle_npc(npc: Node2D, spr: AnimatedSprite2D, has_4dir: bool) -> void:
+	if npc == null or spr == null or spr.sprite_frames == null:
+		return
+	var delta := _player.position - npc.position
+	if delta.length() > 240.0:
+		return
+	if has_4dir:
+		spr.flip_h = false
+		var dir := "right" if delta.x >= 0.0 else "left"
+		if absf(delta.y) > absf(delta.x):
+			dir = "down" if delta.y >= 0.0 else "up"
+		var anim := "idle_%s" % dir
+		if spr.sprite_frames.has_animation(anim) and spr.animation != anim:
+			spr.play(anim)
+	elif absf(delta.x) > 8.0:
+		spr.flip_h = delta.x < 0.0
 
 
 func _should_spawn_co_long_gio() -> bool:
@@ -980,33 +1156,20 @@ func _build_bag_overlay() -> Control:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(dim)
 
-	var panel := PanelContainer.new()
+	var panel := HoaTamUI.make_panel_container(false, 28.0)
+	panel.add_theme_stylebox_override("panel", HoaTamUI.make_leather_chest_style(28.0))
 	panel.position = Vector2(360, 110)
 	panel.size = Vector2(560, 520)
 	overlay.add_child(panel)
 
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.09, 0.075, 0.055, 0.96)
-	style.border_color = Color(0.72, 0.56, 0.22)
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(12)
-	panel.add_theme_stylebox_override("panel", style)
-
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 28)
-	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_top", 24)
-	margin.add_theme_constant_override("margin_bottom", 24)
-	panel.add_child(margin)
-
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 14)
-	margin.add_child(root)
+	panel.add_child(root)
 
 	var title := Label.new()
 	title.text = "TÚI KHÁM PHÁ"
-	title.add_theme_font_size_override("font_size", 34)
-	title.add_theme_color_override("font_color", Color(0.95, 0.82, 0.50))
+	title.add_theme_font_size_override("font_size", 32)
+	title.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(title)
 
@@ -1016,8 +1179,9 @@ func _build_bag_overlay() -> Control:
 	root.add_child(_bag_items_box)
 
 	var close_btn := Button.new()
-	close_btn.text = "[ Đóng ]"
-	close_btn.add_theme_font_size_override("font_size", 24)
+	close_btn.text = "Đóng Túi"
+	close_btn.custom_minimum_size = Vector2(180, 50)
+	HoaTamUI.apply_secondary_button(close_btn, 22)
 	close_btn.pressed.connect(func() -> void:
 		_bag_overlay.visible = false
 	)
@@ -1445,9 +1609,7 @@ func _build_gather_nodes() -> void:
 	if pool.is_empty():
 		return
 	var occupied: Dictionary = {}
-	for i in _gather_nodes.size():
-		pass
-	for i in range(count):
+	for _i in range(count):
 		var tries := 0
 		var gx := 0
 		var gy := 0
@@ -1475,11 +1637,117 @@ func _build_gather_nodes() -> void:
 			occupied[gv] = true
 		if not ok:
 			continue
-		var is_collected: bool = i < collected.size() and bool(collected[i])
+		var node_idx := _gather_nodes.size()
+		var is_collected: bool = node_idx < collected.size() and bool(collected[node_idx])
 		var item: ItemData = pool[rng.randi() % pool.size()]
 		var world_pos := Vector2(gx * TILE + TILE * 0.5, gy * TILE + TILE * 0.5)
-		var node := _spawn_gather_node(i, item, world_pos, is_collected)
+		var node := _spawn_gather_node(node_idx, item, world_pos, is_collected)
 		_gather_nodes.append(node)
+
+
+func _spawn_tuong_nai_landmark_npc() -> void:
+	var npc := CharacterBody2D.new()
+	npc.name = "TuongNaiBongRung"
+	npc.position = Vector2(TILE * (COLS / 2 + 5), TILE * (ROWS / 2 - 2))
+	npc.collision_layer = 2
+	npc.collision_mask = 0
+	add_child(npc)
+	_tuong_nai_node = npc
+
+	var shadow := Polygon2D.new()
+	shadow.color = Color(0.06, 0.03, 0.04, 0.42)
+	shadow.z_index = -1
+	var spts := PackedVector2Array()
+	for si in range(14):
+		var ang := (float(si) / 14.0) * TAU
+		spts.append(Vector2(cos(ang) * 16.0, sin(ang) * 5.5))
+	shadow.polygon = spts
+	npc.add_child(shadow)
+
+	if ResourceLoader.exists(TUONG_NAI_SHEET):
+		var nai_tex := load(TUONG_NAI_SHEET) as Texture2D
+		_tuong_nai_has_4dir = nai_tex != null and nai_tex.get_height() >= 64 * 8
+		var frames: SpriteFrames = BaseCharacter.get_or_build_frames(TUONG_NAI_SHEET)
+		if frames != null:
+			var spr := AnimatedSprite2D.new()
+			spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			spr.sprite_frames = frames
+			spr.offset = Vector2(0.0, -28.0)
+			spr.scale = Vector2(1.75, 1.75)
+			if _tuong_nai_has_4dir and frames.has_animation("idle_down"):
+				spr.play("idle_down")
+			else:
+				spr.flip_h = true
+				spr.play("idle")
+			npc.add_child(spr)
+			_tuong_nai_sprite = spr
+
+	var name_lbl := Label.new()
+	name_lbl.text = "Tướng Nai Bóng Rừng"
+	name_lbl.position = Vector2(-110, -118)
+	name_lbl.size = Vector2(220, 28)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 18)
+	name_lbl.add_theme_color_override("font_color", Color(0.96, 0.86, 0.50))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0.07, 0.05, 0.06, 1.0))
+	name_lbl.add_theme_constant_override("outline_size", 4)
+	npc.add_child(name_lbl)
+
+	# Bệ thờ Mảnh Cổ Khí (ô 3 trong v2_props_sheet.png) đặt cạnh Tướng Nai
+	var props_path: String = String(EXPLORE_PROPS_PATHS.get("RungTramHon", ""))
+	if ResourceLoader.exists(props_path):
+		var sheet := load(props_path) as Texture2D
+		if sheet != null:
+			var shrine := Sprite2D.new()
+			shrine.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			var atlas := AtlasTexture.new()
+			atlas.atlas = sheet
+			atlas.region = Rect2(192, 0, 64, 64)
+			shrine.texture = atlas
+			shrine.position = npc.position + Vector2(92.0, -10.0)
+			shrine.scale = Vector2(1.5, 1.5)
+			add_child(shrine)
+
+	var shrine_area := Area2D.new()
+	shrine_area.collision_layer = 0
+	shrine_area.collision_mask = 1
+	shrine_area.monitoring = true
+	npc.add_child(shrine_area)
+
+	var shrine_col := CollisionShape2D.new()
+	var shrine_shape := CircleShape2D.new()
+	shrine_shape.radius = 128.0
+	shrine_col.shape = shrine_shape
+	shrine_area.add_child(shrine_col)
+
+	shrine_area.body_entered.connect(func(body: Node2D) -> void:
+		if body != _player:
+			return
+		_near_tuong_nai = true
+		if GameManager.is_region_cleared(_region_id):
+			_hint_lbl.text = "Tướng Nai Bóng Rừng: \"Lò thiêng đã thức, hãy mang mảnh cổ khí về.\""
+		else:
+			_hint_lbl.text = "[E]  Khấn Tổ Nghề — Nhận Mảnh Cổ Khí"
+		_hint_lbl.visible = true
+	)
+	shrine_area.body_exited.connect(func(body: Node2D) -> void:
+		if body != _player:
+			return
+		_near_tuong_nai = false
+		_hint_lbl.visible = false
+	)
+
+
+func _interact_tuong_nai_shrine() -> void:
+	if GameManager.is_region_cleared(_region_id):
+		_hint_lbl.text = "Bạn đã thu hồi Mảnh Cổ Khí tại Rừng Trăm Hồn."
+		_hint_lbl.visible = true
+		return
+	GameManager.mark_region_cleared(_region_id)
+	GameManager.collect_artifact(1)
+	_hint_lbl.text = "Đã khấn Tổ Nghề — thu hồi Mảnh Cổ Khí đầu tiên!"
+	_hint_lbl.visible = true
+	_refresh_hud()
 
 
 func _spawn_gather_node(
@@ -1495,14 +1763,32 @@ func _spawn_gather_node(
 	area.set_meta("collected", is_collected)
 	add_child(area)
 
-	var visual := ColorRect.new()
-	visual.size = Vector2(56, 56)
-	visual.position = Vector2(-28, -28)
-	visual.color = (
-		Color(0.25, 0.25, 0.20, 0.5) if is_collected
-		else Color(0.35, 0.58, 0.20, 0.85)
-	)
-	area.add_child(visual)
+	var props_path: String = String(EXPLORE_PROPS_PATHS.get(_region_id, ""))
+	var sprite_added := false
+	if not props_path.is_empty() and ResourceLoader.exists(props_path):
+		var sheet := load(props_path) as Texture2D
+		if sheet != null:
+			var spr := Sprite2D.new()
+			spr.name = "PropVisual"
+			spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			var atlas := AtlasTexture.new()
+			atlas.atlas = sheet
+			atlas.region = Rect2((idx % 3) * 64, 0, 64, 64)
+			spr.texture = atlas
+			spr.scale = Vector2(1.25, 1.25)
+			spr.modulate = Color(0.45, 0.45, 0.45, 0.55) if is_collected else Color.WHITE
+			area.add_child(spr)
+			sprite_added = true
+	if not sprite_added:
+		var visual := ColorRect.new()
+		visual.name = "PropVisual"
+		visual.size = Vector2(56, 56)
+		visual.position = Vector2(-28, -28)
+		visual.color = (
+			Color(0.25, 0.25, 0.20, 0.5) if is_collected
+			else Color(0.35, 0.58, 0.20, 0.85)
+		)
+		area.add_child(visual)
 
 	var col := CollisionShape2D.new()
 	var shape := CircleShape2D.new()
@@ -1533,10 +1819,22 @@ func _collect_gather(idx: int) -> void:
 	var node := _gather_nodes[idx]
 	if node.get_meta("collected", false):
 		return
+	var item_id: String = node.get_meta("item_id", "")
+	var item: ItemData = ItemDatabase.get_item(item_id)
+	if item == null:
+		return
+	var hand_item := _item_to_hand_entry(item)
+	if not GameManager.add_to_hand(hand_item):
+		_hint_lbl.text = "Túi đầy!"
+		_hint_lbl.visible = true
+		return
+
 	node.set_meta("collected", true)
-	var visual := node.get_child(0) as ColorRect
-	if visual != null:
-		visual.color = Color(0.25, 0.25, 0.20, 0.5)
+	var prop_node := node.get_node_or_null("PropVisual")
+	if prop_node is Sprite2D:
+		(prop_node as Sprite2D).modulate = Color(0.45, 0.45, 0.45, 0.55)
+	elif prop_node is ColorRect:
+		(prop_node as ColorRect).color = Color(0.25, 0.25, 0.20, 0.5)
 	var collected_key := "gather_collected_" + _scene_visited_key
 	var collected: Array = GameManager.exploration_state.get(collected_key, [])
 	while collected.size() <= idx:
@@ -1544,19 +1842,10 @@ func _collect_gather(idx: int) -> void:
 	collected[idx] = true
 	GameManager.exploration_state[collected_key] = collected
 	_near_gather_idx = -1
-	_hint_lbl.visible = false
-	var item_id: String = node.get_meta("item_id", "")
-	var item: ItemData = ItemDatabase.get_item(item_id)
-	if item == null:
-		return
-	var hand_item := _item_to_hand_entry(item)
-	if GameManager.add_to_hand(hand_item):
-		_hint_lbl.text = "[Nhặt: %s]" % item.item_name
-		_hint_lbl.visible = true
-		_refresh_hud()
-	else:
-		_hint_lbl.text = "Túi đầy!"
-		_hint_lbl.visible = true
+	EventBus.gathering_node_collected.emit(hand_item)
+	_hint_lbl.text = "[Nhặt: %s]" % item.item_name
+	_hint_lbl.visible = true
+	_refresh_hud()
 
 
 func _open_pause_menu() -> void:

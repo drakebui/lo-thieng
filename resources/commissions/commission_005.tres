@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CommissionData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/CommissionData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+commission_id = "commission_005"
+giver_npc_id = "dao_si"
+reason_text = "Đạo Sĩ Hạc tìm một cây Gậy Phép Bậc II+ khắc hệ Băng để trấn tĩnh linh khí Rừng Trăm Hồn."
+hint_region = "Dùng Bạc Mảnh, Gỗ Cổ Thụ hoặc Pha Lê Rừng (Bậc II) để mở khóa ấn Băng tại Bể Tôi."
+req_blank = "gay_phep"
+req_element = "bang"
+req_min_rarity = 2
+reward_gold = 1100
+reward_reputation = 2
+reward_affinity = 4
+flavor_accept = "Rừng sâu đang nhiễu loạn — ta cần trượng phép dẫn hàn khí thuần khiết để định tâm."
+flavor_fulfilled = "Hàn khí thanh tao mà sắc lạnh. Tay nghề Lò Thiêng quả không hổ danh tổ nghề."

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CommissionData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/CommissionData.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+commission_id = "commission_004"
+giver_npc_id = "thu_ve"
+reason_text = "Thủ Vệ Lợn Rừng đặt một tấm Khiên Đồng hệ Thổ vững chãi để trấn giữ cửa rừng."
+hint_region = "Phôi Khiên Đồng là Phôi Nặng (lửa Đỏ Rực 80–92%), rèn Cương/Dung hòa rồi khắc ấn Thổ."
+req_blank = "khien_dong"
+req_element = "tho"
+req_min_rarity = 1
+reward_gold = 700
+reward_reputation = 1
+reward_affinity = 3
+flavor_accept = "Đúc cho ta mặt khiên dày như vách đá — thú dữ húc vào cũng không lay nổi nửa bước."
+flavor_fulfilled = "Chắc nịch! Gõ vào nghe tiếng đồng ngân vang như chuông cổ. Đáng đồng tiền!"

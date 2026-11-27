@@ -9,6 +9,7 @@ var _metadata: Dictionary = {}
 func _ready() -> void:
 	title = "Thông Tin Lưu"
 	ok_button_text = "Tiếp tục"
+	add_theme_stylebox_override("panel", HoaTamUI.make_system_slate_style(24.0))
 	dialog_text = _build_message()
 	confirmed.connect(_on_confirmed)
 	add_cancel_button("Hủy")

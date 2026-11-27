@@ -46,7 +46,8 @@ func take_damage(raw: int, ignore_def_pct: float = 0.0) -> int:
 		shield_active = false
 		return 0
 	var eff_def: int     = max(0, def_stat + def_bonus)
-	var reduced_def: int = int(eff_def * (1.0 - ignore_def_pct))
+	var eff_ignore: float = clampf(ignore_def_pct, 0.0, 1.0)
+	var reduced_def: int = int(eff_def * (1.0 - eff_ignore))
 	var actual: int      = max(1, raw - reduced_def)
 	hp = max(0, hp - actual)
 	return actual
@@ -84,6 +85,8 @@ func tick_status() -> Array:
 		burn_turns -= 1
 		if burn_turns == 0:
 			msgs.append("Bỏng trên %s đã tắt." % combatant_name)
+		if hp <= 0:
+			return msgs
 
 	if poison_turns > 0:
 		var dmg: int = max(1, int(max_hp * 0.05))
@@ -114,10 +117,10 @@ func tick_buffs() -> void:
 
 func status_summary() -> String:
 	var parts: Array = []
-	if burn_turns > 0:   parts.append("🔥Bỏng(%d)" % burn_turns)
-	if freeze_turns > 0: parts.append("❄Đóng Băng(%d)" % freeze_turns)
-	if poison_turns > 0: parts.append("☠Độc(%d)" % poison_turns)
-	if shield_active:    parts.append("🛡Khiên")
+	if burn_turns > 0:   parts.append("[Bỏng %d]" % burn_turns)
+	if freeze_turns > 0: parts.append("[Băng %d]" % freeze_turns)
+	if poison_turns > 0: parts.append("[Độc %d]" % poison_turns)
+	if shield_active:    parts.append("[Khiên]")
 	if def_bonus > 0:    parts.append("+%dDEF(%d)" % [def_bonus, def_bonus_turns])
 	if atk_penalty > 0:  parts.append("-%dATK_địch(%d)" % [atk_penalty, atk_penalty_turns])
 	return "  ".join(parts)

@@ -10,11 +10,9 @@ const DIALOGUE_CONTENT_SEPARATION := 8
 const SCENE_CARD_DURATION := 3.0
 const FORGE_CARD_DURATION := 2.0
 const NARRATION_FADE_DURATION := 0.8
-const OPENING_BACKGROUND_PATH := "res://assets/sprites/forge/backgrounds/Forge Scene BG.PNG"
-const DIALOGUE_TEXT_TEXTURE_PATH := "res://assets/UI/dialogue/Dialogue Text.png"
-const DIALOGUE_NAME_TEXTURE_PATH := "res://assets/UI/dialogue/Dialogue Name.png"
-const PLAYER_PORTRAIT_PATH := "res://assets/sprites/characters/nam_full_size_transparent.png"
-const NPC_PORTRAIT_PATH := "res://assets/sprites/characters/Bà Hắc Nguyệt 1.png"
+const OPENING_BACKGROUND_PATH := "res://assets/pixel/backgrounds/workshop_hub_bg_640x360.png"
+const PLAYER_PORTRAIT_PATH := "res://assets/pixel/ui/portraits/portrait_nam_256.png"
+const NPC_PORTRAIT_PATH := "res://assets/pixel/ui/portraits/portrait_ba_hac_nguyet_256.png"
 const ACTIVE_PORTRAIT_MODULATE := Color(1.0, 1.0, 1.0, 1.0)
 const INACTIVE_PORTRAIT_MODULATE := Color(0.46, 0.46, 0.46, 0.46)
 const PLAYER_SPEAKERS: Array[String] = ["Người Giữ Lò", "Nấm", "Thợ Rèn"]
@@ -156,6 +154,7 @@ func _build_ui() -> void:
 
 	_panel = PanelContainer.new()
 	_panel.z_index = 5
+	_panel.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_panel.custom_minimum_size = PANEL_SIZE
 	_panel.add_theme_stylebox_override("panel", _make_panel_style())
 	_center_container.add_child(_panel)
@@ -168,6 +167,7 @@ func _build_ui() -> void:
 	_dialogue_name_panel = PanelContainer.new()
 	_dialogue_name_panel.z_index = 6
 	_dialogue_name_panel.visible = false
+	_dialogue_name_panel.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_dialogue_name_panel.custom_minimum_size = DIALOGUE_NAME_PANEL_SIZE
 	_dialogue_name_panel.add_theme_stylebox_override(
 		"panel",
@@ -181,7 +181,7 @@ func _build_ui() -> void:
 	_dialogue_name_lbl.add_theme_font_size_override("font_size", 22)
 	_dialogue_name_lbl.add_theme_color_override(
 		"font_color",
-		Color(0.42, 0.13, 0.04, 1.0)
+		HoaTamUI.COL_GOLD
 	)
 	_dialogue_name_panel.add_child(_dialogue_name_lbl)
 
@@ -222,54 +222,22 @@ func _build_ui() -> void:
 	_content_box.add_child(button_row)
 
 	_next_btn = Button.new()
-	_next_btn.custom_minimum_size = Vector2(160, 48)
+	_next_btn.custom_minimum_size = Vector2(180, 52)
+	HoaTamUI.apply_primary_button(_next_btn, 20)
 	_next_btn.pressed.connect(_on_next_pressed)
 	button_row.add_child(_next_btn)
 
 
-func _make_panel_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.0, 0.0, 0.0, 0.62)
-	style.border_color = Color(1.0, 1.0, 1.0, 0.18)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(8)
-	return style
+func _make_panel_style() -> StyleBoxTexture:
+	return HoaTamUI.make_wood_panel_style(28.0)
 
 
 func _make_dialogue_style() -> StyleBox:
-	var texture := load(DIALOGUE_TEXT_TEXTURE_PATH) as Texture2D
-	if texture == null:
-		return _make_panel_style()
-	var style := StyleBoxTexture.new()
-	style.texture = texture
-	# 9-slice: bảo tồn phần cuộn trang sức 2 đầu khi panel thay đổi kích thước
-	style.texture_margin_left = 97.0
-	style.texture_margin_right = 102.0
-	style.texture_margin_top = 89.0
-	style.texture_margin_bottom = 64.0
-	style.content_margin_left = 110.0
-	style.content_margin_top = 82.0
-	style.content_margin_right = 110.0
-	style.content_margin_bottom = 72.0
-	return style
+	return HoaTamUI.make_dialogue_panel_style(36.0)
 
 
 func _make_dialogue_name_style() -> StyleBox:
-	var texture := load(DIALOGUE_NAME_TEXTURE_PATH) as Texture2D
-	if texture == null:
-		return _make_panel_style()
-	var style := StyleBoxTexture.new()
-	style.texture = texture
-	# 9-slice tính từ edge thực của scroll (bỏ qua vùng transparent bên ngoài)
-	style.texture_margin_left = 297.0
-	style.texture_margin_right = 346.0
-	style.texture_margin_top = 127.0
-	style.texture_margin_bottom = 166.0
-	style.content_margin_left = 44.0
-	style.content_margin_top = 18.0
-	style.content_margin_right = 44.0
-	style.content_margin_bottom = 18.0
-	return style
+	return HoaTamUI.make_nameplate_style()
 
 
 func _make_portrait_side(texture_path: String, display_name: String) -> VBoxContainer:
@@ -279,6 +247,7 @@ func _make_portrait_side(texture_path: String, display_name: String) -> VBoxCont
 	box.add_theme_constant_override("separation", 8)
 
 	var portrait := TextureRect.new()
+	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	portrait.texture = load(texture_path) as Texture2D
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -314,28 +283,27 @@ func _move_panel_to_dialogue_bottom() -> void:
 
 func _layout_dialogue_elements() -> void:
 	var viewport_size := get_viewport().get_visible_rect().size
-	var portrait_height := maxf(420.0, viewport_size.y - 84.0)
-	var portrait_width := minf(
-		portrait_height,
-		maxf(viewport_size.x * 0.40, portrait_height * 0.78)
-	)
-	var side_size := Vector2(portrait_width, portrait_height)
-	var bottom_margin := 10.0
+	# Khóa đúng bội số nguyên 2x cho ảnh chân dung Hi-Bit 256x256 trên 1920x1080 (512x512 -> 0% mixel, không phóng bể)
+	var portrait_size := 512.0
+	if viewport_size.x < 1600.0 or viewport_size.y < 900.0:
+		portrait_size = clampf(minf(viewport_size.x * 0.28, viewport_size.y * 0.54), 256.0, 384.0)
+	var side_size := Vector2(portrait_size, portrait_size)
+	var bottom_margin := 24.0
 
-	_player_portrait.custom_minimum_size = Vector2(portrait_width, portrait_height)
-	_player_portrait.size = Vector2(portrait_width, portrait_height)
-	_npc_portrait.custom_minimum_size = Vector2(portrait_width, portrait_height)
-	_npc_portrait.size = Vector2(portrait_width, portrait_height)
+	_player_portrait.custom_minimum_size = side_size
+	_player_portrait.size = side_size
+	_npc_portrait.custom_minimum_size = side_size
+	_npc_portrait.size = side_size
 	_player_name_lbl.custom_minimum_size = Vector2.ZERO
 	_npc_name_lbl.custom_minimum_size = Vector2.ZERO
 
 	_player_side.custom_minimum_size = side_size
 	_player_side.size = side_size
-	_player_side.position = Vector2(24.0, viewport_size.y - side_size.y - bottom_margin)
+	_player_side.position = Vector2(16.0, viewport_size.y - side_size.y - bottom_margin)
 	_npc_side.custom_minimum_size = side_size
 	_npc_side.size = side_size
 	_npc_side.position = Vector2(
-		viewport_size.x - portrait_width - 24.0,
+		viewport_size.x - portrait_size - 16.0,
 		viewport_size.y - side_size.y - bottom_margin
 	)
 
@@ -404,8 +372,8 @@ func _configure_scene_card() -> void:
 	_title_lbl.visible = true
 	_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_lbl.add_theme_font_size_override("font_size", 46)
-	_title_lbl.add_theme_color_override("font_color", Color.WHITE)
-	_body_lbl.add_theme_color_override("default_color", Color.WHITE)
+	_title_lbl.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
+	_body_lbl.add_theme_color_override("default_color", HoaTamUI.COL_PARCHMENT)
 	_body_lbl.modulate.a = 1.0
 	_body_lbl.custom_minimum_size = Vector2(0, 146)
 	_body_lbl.add_theme_font_size_override("font_size", 24)
@@ -445,9 +413,9 @@ func _configure_dialogue_card(entry: Dictionary) -> void:
 	_placeholder_bg.visible = false
 	_title_lbl.visible = false
 	_title_lbl.add_theme_font_size_override("font_size", 30)
-	_title_lbl.add_theme_color_override("font_color", Color(0.42, 0.13, 0.04, 1.0))
+	_title_lbl.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
 	_body_lbl.add_theme_font_size_override("font_size", 24)
-	_body_lbl.add_theme_color_override("default_color", Color(0.18, 0.08, 0.03, 1.0))
+	_body_lbl.add_theme_color_override("default_color", HoaTamUI.COL_PARCHMENT)
 	_body_lbl.custom_minimum_size = Vector2(0, 112)
 	_body_lbl.modulate.a = 1.0
 	_next_btn.custom_minimum_size = Vector2(120, 36)
@@ -463,7 +431,7 @@ func _start_auto_advance(delay: float) -> void:
 	_timer_token += 1
 	var token := _timer_token
 	await get_tree().create_timer(delay).timeout
-	if token != _timer_token:
+	if not is_inside_tree() or token != _timer_token:
 		return
 	_on_next_pressed()
 

@@ -3,12 +3,8 @@ extends Control
 const PATH_WORKSHOP := "res://scenes/main/WorkshopHub.tscn"
 const PATH_OPENING_SEQUENCE := "res://scenes/intro/OpeningSequence.tscn"
 const PATH_OPENING_DEBT_SCRIPT := "res://scripts/intro/opening_debt_scene.gd"
-const _DIR := "res://assets/UI/" + "Main Menu/"
-const _BUTTON_SIZE := Vector2(300, 60)
-const _BUTTON_SOURCE_WIDTH := 300
-const _BG_MIN_VALUE := 0.86
-const _BG_MAX_DELTA := 0.08
-const _CROP_MIN_VISIBLE_PIXELS := 3
+const MAIN_MENU_BG_PATH := "res://assets/pixel/backgrounds/main_menu_bg_640x360.png"
+const _BUTTON_SIZE := Vector2(340, 62)
 const _SAVE_INFO_DIALOG_SCRIPT := "res://scripts/ui/save_info_dialog.gd"
 
 var _continue_btn: Button
@@ -25,39 +21,70 @@ func _ready() -> void:
 
 func _build_layout() -> void:
 	var bg := TextureRect.new()
-	bg.texture = load(_DIR + "BG.png")
-	bg.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	if ResourceLoader.exists(MAIN_MENU_BG_PATH):
+		bg.texture = load(MAIN_MENU_BG_PATH) as Texture2D
+	bg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
-	# Đặt container từ 14% → 100% chiều cao để nhóm button ra ~57% từ trên
+	var dimmer := ColorRect.new()
+	dimmer.color = Color(0.05, 0.025, 0.02, 0.22)
+	dimmer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dimmer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(dimmer)
+
 	var center := CenterContainer.new()
-	center.anchor_left = 0.0
-	center.anchor_right = 1.0
-	center.anchor_top = 0.14
-	center.anchor_bottom = 1.0
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 
 	var vbox := VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 6)
+	vbox.add_theme_constant_override("separation", 14)
 	center.add_child(vbox)
 
-	var start_btn := _make_tex_btn("Start.png")
-	start_btn.custom_minimum_size = Vector2(360, 80)
+	# Tiêu đề game tông Hoả Tâm 32-bit
+	var title_box := VBoxContainer.new()
+	title_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	title_box.add_theme_constant_override("separation", 4)
+	vbox.add_child(title_box)
+
+	var title := Label.new()
+	title.text = "LÒ THIÊNG"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 78)
+	title.add_theme_color_override("font_color", Color(1.0, 0.86, 0.36))
+	title.add_theme_color_override("font_outline_color", Color(0.10, 0.04, 0.02, 0.98))
+	title.add_theme_constant_override("outline_size", 10)
+	title_box.add_child(title)
+
+	var subtitle := Label.new()
+	subtitle.text = "— TIẾNG GỌI TỔ NGHỀ —"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 24)
+	subtitle.add_theme_color_override("font_color", Color(0.96, 0.84, 0.62))
+	subtitle.add_theme_color_override("font_outline_color", Color(0.08, 0.04, 0.02, 0.95))
+	subtitle.add_theme_constant_override("outline_size", 6)
+	title_box.add_child(subtitle)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 26)
+	vbox.add_child(spacer)
+
+	var start_btn := _make_menu_btn("BẮT ĐẦU MỚI", true)
 	start_btn.pressed.connect(_on_new_game_pressed)
 	vbox.add_child(start_btn)
 
-	_continue_btn = _make_tex_btn("Cont.png")
+	_continue_btn = _make_menu_btn("TIẾP TỤC HÀNH TRÌNH", false)
 	_continue_btn.pressed.connect(_on_continue_pressed)
 	vbox.add_child(_continue_btn)
 
-	var setting_btn := _make_tex_btn("Setting.png")
+	var setting_btn := _make_menu_btn("CÀI ĐẶT", false)
 	setting_btn.pressed.connect(_on_setting_pressed)
 	vbox.add_child(setting_btn)
 
-	var quit_btn := _make_tex_btn("Quit.png")
+	var quit_btn := _make_menu_btn("THOÁT GAME", false)
 	quit_btn.pressed.connect(_on_quit_pressed)
 	vbox.add_child(quit_btn)
 
@@ -68,134 +95,16 @@ func _build_layout() -> void:
 	add_child(_new_game_dialog)
 
 
-func _make_tex_btn(filename: String) -> Button:
+func _make_menu_btn(label_text: String, is_primary: bool) -> Button:
 	var btn := Button.new()
-	btn.flat = true
-	btn.icon = _load_button_icon(filename)
-	btn.expand_icon = true
+	btn.text = label_text
 	btn.custom_minimum_size = _BUTTON_SIZE
-	btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	if is_primary:
+		HoaTamUI.apply_primary_button(btn, 26)
+	else:
+		HoaTamUI.apply_secondary_button(btn, 22)
 	return btn
-
-
-func _load_button_icon(filename: String) -> Texture2D:
-	var source := load(_DIR + filename) as Texture2D
-	if source == null:
-		return null
-
-	var image := source.get_image()
-	if image == null or image.is_empty():
-		return source
-
-	image.convert(Image.FORMAT_RGBA8)
-	_resize_button_source(image)
-	_clear_baked_background(image)
-
-	var visible_rect := _get_visible_rect(image)
-	if visible_rect.size.x <= 0 or visible_rect.size.y <= 0:
-		return ImageTexture.create_from_image(image)
-
-	return ImageTexture.create_from_image(image.get_region(visible_rect))
-
-
-func _resize_button_source(image: Image) -> void:
-	var aspect := float(image.get_height()) / float(image.get_width())
-	var target_height := maxi(1, roundi(float(_BUTTON_SOURCE_WIDTH) * aspect))
-	image.resize(_BUTTON_SOURCE_WIDTH, target_height, Image.INTERPOLATE_LANCZOS)
-
-
-func _clear_baked_background(image: Image) -> void:
-	var image_size := image.get_size()
-	var visited := PackedByteArray()
-	visited.resize(image_size.x * image_size.y)
-
-	var queue: Array[int] = []
-	for x in range(image_size.x):
-		_queue_background_pixel(image, visited, queue, x, 0)
-		_queue_background_pixel(image, visited, queue, x, image_size.y - 1)
-	for y in range(image_size.y):
-		_queue_background_pixel(image, visited, queue, 0, y)
-		_queue_background_pixel(image, visited, queue, image_size.x - 1, y)
-
-	var read_index := 0
-	while read_index < queue.size():
-		var pixel_id := queue[read_index]
-		read_index += 1
-
-		var x := pixel_id % image_size.x
-		var y := int(pixel_id / image_size.x)
-		var color := image.get_pixel(x, y)
-		color.a = 0.0
-		image.set_pixel(x, y, color)
-
-		_queue_background_pixel(image, visited, queue, x - 1, y)
-		_queue_background_pixel(image, visited, queue, x + 1, y)
-		_queue_background_pixel(image, visited, queue, x, y - 1)
-		_queue_background_pixel(image, visited, queue, x, y + 1)
-
-
-func _queue_background_pixel(
-	image: Image,
-	visited: PackedByteArray,
-	queue: Array[int],
-	x: int,
-	y: int
-) -> void:
-	var image_size := image.get_size()
-	if x < 0 or y < 0 or x >= image_size.x or y >= image_size.y:
-		return
-
-	var pixel_id := y * image_size.x + x
-	if visited[pixel_id] == 1:
-		return
-
-	visited[pixel_id] = 1
-	if _is_baked_background_color(image.get_pixel(x, y)):
-		queue.append(pixel_id)
-
-
-func _is_baked_background_color(color: Color) -> bool:
-	var min_value := minf(color.r, minf(color.g, color.b))
-	var max_value := maxf(color.r, maxf(color.g, color.b))
-	return min_value >= _BG_MIN_VALUE and max_value - min_value <= _BG_MAX_DELTA
-
-
-func _get_visible_rect(image: Image) -> Rect2i:
-	var image_size := image.get_size()
-	var min_x := image_size.x
-	var min_y := image_size.y
-	var max_x := -1
-	var max_y := -1
-
-	for x in range(image_size.x):
-		if _count_visible_column_pixels(image, x) >= _CROP_MIN_VISIBLE_PIXELS:
-			min_x = mini(min_x, x)
-			max_x = maxi(max_x, x)
-	for y in range(image_size.y):
-		if _count_visible_row_pixels(image, y) >= _CROP_MIN_VISIBLE_PIXELS:
-			min_y = mini(min_y, y)
-			max_y = maxi(max_y, y)
-
-	if max_x < min_x or max_y < min_y:
-		return Rect2i()
-
-	return Rect2i(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
-
-
-func _count_visible_column_pixels(image: Image, x: int) -> int:
-	var count := 0
-	for y in range(image.get_height()):
-		if image.get_pixel(x, y).a > 0.01:
-			count += 1
-	return count
-
-
-func _count_visible_row_pixels(image: Image, y: int) -> int:
-	var count := 0
-	for x in range(image.get_width()):
-		if image.get_pixel(x, y).a > 0.01:
-			count += 1
-	return count
 
 
 func _refresh_buttons() -> void:

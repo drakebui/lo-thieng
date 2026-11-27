@@ -63,17 +63,29 @@ KNOWN_DEBT_CHECKPOINTS = {
 }
 KNOWN_MATERIAL_IDS = [
     "sat_tho",
-    "dong_vun",
     "da_thu",
-    "bac_vun",
-    "go_linh",
-    "pha_le",
+    "bac_manh",
+    "dong_co_kho",
+    "go_co_thu",
+    "pha_le_rung",
+    "nhua_linh",
+    "la_hon",
     "quang_than",
-    "mithril",
-    "vas_rong",
-    "cat_than",
-    "tro_thieng",
-    "tinh_the_lo",
+    "mithril_tho",
+    "da_hoa_son",
+    "thep_hoa_son",
+    "cat_thieng",
+    "ho_phach",
+    "xuong_ca",
+    "da_vang",
+    "thep_trang",
+    "ngoc_tho",
+    "soi_vang",
+    "da_ngoc",
+    "di_thach",
+    "manh_thieng",
+    "tro_lo_to",
+    "go_to_nghe",
 ]
 VALID_BLANK_IDS = {
     "kiem_don",
@@ -335,17 +347,17 @@ def check_debt_checkpoints(root: Path) -> tuple[int, list[Finding]]:
 
 
 def check_material_allowed_elements(root: Path) -> tuple[int, list[Finding]]:
-    target = root / "scripts" / "forge" / "forge_book_ui.gd"
+    target = root / "data" / "ItemDatabase.gd"
     if not target.exists():
-        return 0, [Finding(Path("scripts/forge/forge_book_ui.gd"), 0, "forge_book_ui.gd not found")]
+        return 0, [Finding(Path("data/ItemDatabase.gd"), 0, "ItemDatabase.gd not found")]
 
     failures: list[Finding] = []
     lines = _read_lines(target)
     text = "\n".join(lines)
     source = _relative(target)
 
-    if "var material_data" not in text:
-        return len(KNOWN_MATERIAL_IDS), [Finding(source, 1, "material_data not found")]
+    if "static func _build_materials" not in text:
+        return len(KNOWN_MATERIAL_IDS), [Finding(source, 1, "_build_materials not found")]
 
     for mat_id in KNOWN_MATERIAL_IDS:
         mat_line = 1
@@ -354,7 +366,7 @@ def check_material_allowed_elements(root: Path) -> tuple[int, list[Finding]]:
                 mat_line = line_number
                 break
 
-        match = re.search(rf'"{re.escape(mat_id)}".{{0,300}}?allowed_elements', text, re.DOTALL)
+        match = re.search(rf'"{re.escape(mat_id)}".{{0,350}}?allowed_elements', text, re.DOTALL)
         if match is None:
             failures.append(
                 Finding(
@@ -419,6 +431,28 @@ def _print_findings(kind: str, findings: list[Finding]) -> None:
         print(f"  {kind}: {finding.format()}")
 
 
+def check_zero_legacy_assets(gd_files: list[Path]) -> tuple[int, list[Finding]]:
+    legacy_pattern = re.compile(r'res://assets/(?!pixel/|audio/|fonts/)[^\s"\']+')
+    checked = 0
+    failures: list[Finding] = []
+    for path in gd_files:
+        source = _relative(path)
+        for line_number, line in enumerate(_read_lines(path), start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            for match in legacy_pattern.finditer(line):
+                checked += 1
+                failures.append(
+                    Finding(
+                        source,
+                        line_number,
+                        f'Legacy asset forbidden (must use res://assets/pixel/): {match.group(0)}',
+                    )
+                )
+    return checked, failures
+
+
 def main() -> int:
     gd_files = _iter_files((".gd",))
     tscn_files = _iter_files((".tscn",))
@@ -465,7 +499,7 @@ def main() -> int:
     _print_findings("FAIL", debt_failures)
     print()
 
-    print("[CHECK 7] forge_book_ui material allowed_elements")
+    print("[CHECK 7] ItemDatabase material allowed_elements")
     mat_count, mat_failures = check_material_allowed_elements(ROOT)
     print(f"  PASS: {mat_count} materials checked")
     _print_findings("FAIL", mat_failures)
@@ -477,7 +511,25 @@ def main() -> int:
     _print_findings("FAIL", comm_failures)
     print()
 
-    fail_count = len(path_failures) + len(signal_failures) + len(scene_script_failures) + len(skill_failures) + len(debt_failures) + len(mat_failures) + len(comm_failures)
+    print("[CHECK 9] Zero legacy asset reuse (res://assets/pixel/ only)")
+    _, legacy_failures = check_zero_legacy_assets(gd_files)
+    if legacy_failures:
+        print(f"  FAIL: {len(legacy_failures)} legacy asset references found")
+    else:
+        print(f"  PASS: 0 legacy asset references across {len(gd_files)} scripts")
+    _print_findings("FAIL", legacy_failures)
+    print()
+
+    fail_count = (
+        len(path_failures)
+        + len(signal_failures)
+        + len(scene_script_failures)
+        + len(skill_failures)
+        + len(debt_failures)
+        + len(mat_failures)
+        + len(comm_failures)
+        + len(legacy_failures)
+    )
     warn_count = len(autoload_warnings)
     print(f"=== KẾT QUẢ: {fail_count} FAIL, {warn_count} WARN ===")
 

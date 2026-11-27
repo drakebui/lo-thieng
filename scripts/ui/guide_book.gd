@@ -123,7 +123,7 @@ static func get_ntn_day1_dialogue() -> Array[Dictionary]:
 			"type": "dialogue",
 			"speaker": "Người Thu Nợ",
 			"title": "Người Thu Nợ — Chợ Ngoài",
-			"body": "Một người đàn ông trung niên khoanh tay đứng chắn cửa tiệm.\n"
+			"body": "Tay thu nợ Gà Trống Đen bước vào từ cửa xưởng, ôm cuộn sổ khế ước trong tay.\n"
 				+ "\"Thợ mới à. Đúng giờ đấy — bà Trùm nói ngươi ổn.\"",
 		},
 		{
@@ -172,7 +172,7 @@ static func get_ntn_day1_dialogue() -> Array[Dictionary]:
 			"type": "dialogue",
 			"speaker": "Người Thu Nợ",
 			"title": "Ra về",
-			"body": "Người đàn ông gật đầu ngắn, bước khỏi cửa.\n"
+			"body": "Tay thu nợ gật đầu ngắn, xoay người bước ra khỏi cửa.\n"
 				+ "\"3,000G. Ngày 4. Đừng quên.\"\n"
 				+ "Popup thông tin khoản nợ sẽ hiện tiếp theo.",
 		},

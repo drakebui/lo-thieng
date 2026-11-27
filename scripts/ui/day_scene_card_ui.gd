@@ -31,9 +31,8 @@ func _build_ui(day: int) -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(center)
 
-	var panel := PanelContainer.new()
+	var panel := HoaTamUI.make_panel_container(false, 42.0)
 	panel.custom_minimum_size = CARD_SIZE
-	panel.add_theme_stylebox_override("panel", _make_card_style())
 	center.add_child(panel)
 
 	var margin := MarginContainer.new()
@@ -64,8 +63,9 @@ func _build_ui(day: int) -> void:
 	vbox.add_child(body)
 
 	_continue_btn = Button.new()
-	_continue_btn.custom_minimum_size = Vector2(150, 50)
-	_continue_btn.text = "Bắt đầu →"
+	_continue_btn.custom_minimum_size = Vector2(200, 56)
+	_continue_btn.text = "Bắt Đầu"
+	HoaTamUI.apply_primary_button(_continue_btn, 22)
 	_continue_btn.visible = false
 	_continue_btn.disabled = true
 	_continue_btn.pressed.connect(_close)
@@ -74,14 +74,6 @@ func _build_ui(day: int) -> void:
 	var tween := create_tween()
 	tween.tween_property(vbox, "modulate:a", 1.0, FADE_DURATION)
 	tween.tween_callback(_enable_continue)
-
-
-func _make_card_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
-	style.border_color = Color(0.0, 0.0, 0.0, 0.0)
-	style.set_border_width_all(0)
-	return style
 
 
 func _enable_continue() -> void:

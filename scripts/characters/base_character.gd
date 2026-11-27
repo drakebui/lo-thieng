@@ -29,8 +29,9 @@ const DIAGONAL_BIAS := 0.12
 # Màu bóng tiếp đất bán trong suốt chuẩn Lò Thiêng
 const SHADOW_COLOR := Color(0.06, 0.03, 0.04, 0.42)
 
-# Cache tĩnh SpriteFrames dùng chung giữa các instance để chuyển scene 0ms
+# Cache tĩnh SpriteFrames & Shader bóng đổ dùng chung giữa các instance để chuyển scene 0ms
 static var _frames_cache: Dictionary = {}
+static var _cast_shadow_material: ShaderMaterial = null
 
 # ══════════════════════════════════════════════════════════════════════════════
 # EXPORT / CONFIGURABLE PROPERTIES
@@ -79,10 +80,16 @@ var is_movement_locked: bool = false
 var move_direction: Vector2 = Vector2.ZERO
 
 var _sprite: AnimatedSprite2D
+var _cast_shadow: AnimatedSprite2D
 var _shadow: Polygon2D
 var _collision_shape: CollisionShape2D
 var _emote_anchor: Marker2D
 
+var _shadow_lights: Array[Dictionary] = []
+var _shadow_time: float = 0.0
+var _shadow_smooth_vec: Vector2 = Vector2.ZERO
+var _shadow_smooth_alpha: float = 0.0
+var _shadow_initialized: bool = false
 var _was_moving: bool = false
 var _last_footstep_frame: int = -1
 var _footstep_alternate: bool = false
@@ -94,15 +101,18 @@ var _footstep_alternate: bool = false
 
 func _ready() -> void:
 	# Bật nội suy vật lý mượt mà trên màn hình tần số quét cao nếu engine hỗ trợ
-	if "physics_interpolation_mode" in self and "PHYSICS_INTERPOLATION_MODE_INHERIT" in Node:
+	if "physics_interpolation_mode" in self:
 		physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_INHERIT
 
 	# 1. Bóng tiếp đất (Polygon2D) cố định tại điểm chạm chân (0, 0)
 	_shadow = _build_contact_shadow()
 	add_child(_shadow)
 
-	# 2. AnimatedSprite2D căn chỉnh điểm chân (32, 60) tại (0, 0)
+	# 2. AnimatedSprite2D căn chỉnh điểm chân (32, 60) tại (0, 0) + bóng đổ silhouette theo nguồn sáng
 	_sprite = _build_animated_sprite()
+	_cast_shadow = _build_cast_shadow_sprite()
+	if _cast_shadow != null:
+		add_child(_cast_shadow)
 	add_child(_sprite)
 
 	# 3. Va chạm bàn chân (CollisionShape2D)
@@ -121,6 +131,7 @@ func _ready() -> void:
 
 	_apply_render_scale()
 	_play_directional_anim("idle")
+	_update_directional_shadow(0.0)
 
 
 func _physics_process(delta: float) -> void:
@@ -134,6 +145,131 @@ func _physics_process(delta: float) -> void:
 
 	_update_movement_signals()
 	_update_animation(move_direction)
+	_update_directional_shadow(delta)
+
+
+static func get_cast_shadow_material() -> ShaderMaterial:
+	if _cast_shadow_material != null:
+		return _cast_shadow_material
+	var shd := Shader.new()
+	shd.code = """shader_type canvas_item;
+
+uniform vec3 shadow_color : source_color = vec3(0.03, 0.015, 0.025);
+varying float v_height_t;
+
+void vertex() {
+	// Ban chan nam quanh VERTEX.y = 0.0, dinh dau/tai quanh VERTEX.y = -52.0
+	v_height_t = clamp(-VERTEX.y / 52.0, 0.0, 1.0);
+}
+
+void fragment() {
+	// Mo dan muot tu ban chan (1.0) ra phia dau bong (0.0) de tranh mep cat cung gia tao
+	float fade = 1.0 - smoothstep(0.02, 0.96, v_height_t);
+	float grad = pow(clamp(fade, 0.0, 1.0), 1.15);
+	COLOR = vec4(shadow_color, COLOR.a * grad);
+}
+"""
+	_cast_shadow_material = ShaderMaterial.new()
+	_cast_shadow_material.shader = shd
+	return _cast_shadow_material
+
+
+func set_shadow_lights(lights: Array[Dictionary]) -> void:
+	_shadow_lights = lights.duplicate(true)
+	_shadow_initialized = false
+	_update_directional_shadow(0.0)
+
+
+func _build_cast_shadow_sprite() -> AnimatedSprite2D:
+	if _sprite == null or _sprite.sprite_frames == null:
+		return null
+	var sh := AnimatedSprite2D.new()
+	sh.name = "DirectionalCastShadow"
+	sh.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sh.sprite_frames = _sprite.sprite_frames
+	sh.offset = Vector2(0.0, float(FRAME_H / 2 - FEET_Y))
+	sh.z_index = -1
+	sh.material = get_cast_shadow_material()
+	sh.visible = false
+	return sh
+
+
+func _update_directional_shadow(delta: float) -> void:
+	if _cast_shadow == null or _sprite == null:
+		return
+	if _shadow_lights.is_empty():
+		_shadow_smooth_alpha = 0.0
+		_shadow_initialized = false
+		_cast_shadow.visible = false
+		return
+
+	_shadow_time += delta
+	var total_vec := Vector2.ZERO
+	var total_weight := 0.0
+	var target_alpha := 0.0
+
+	for light: Dictionary in _shadow_lights:
+		var lpos: Vector2 = light.get("pos", Vector2.ZERO) as Vector2
+		var radius: float = maxf(1.0, float(light.get("radius", 500.0)))
+		var strength: float = float(light.get("strength", 1.0))
+		if strength <= 0.001:
+			continue
+		var away := global_position - lpos
+		var dist := away.length()
+		if dist >= radius:
+			continue
+		# Suy giảm bậc 3 (smoothstep) về 0 tại biên bán kính để bóng mờ dần tự nhiên, không mất ngang
+		var t := clampf(1.0 - dist / radius, 0.0, 1.0)
+		var falloff := t * t * (3.0 - 2.0 * t)
+		var flicker_amp := float(light.get("flicker", 0.0))
+		var flick := 1.0 + (sin(_shadow_time * 9.5) * 0.5 + sin(_shadow_time * 15.2) * 0.5) * flicker_amp
+		var w := strength * falloff * flick
+		if w <= 0.001:
+			continue
+
+		var dir := away.normalized() if dist > 1.0 else Vector2(0.0, 1.0)
+		var bias: Vector2 = light.get("bias_dir", Vector2.ZERO) as Vector2
+		if bias.length_squared() > 0.001:
+			dir = (dir * 0.55 + bias.normalized() * 0.45).normalized()
+
+		var max_len := float(light.get("max_length", 0.88))
+		var seg_len := lerpf(max_len * 0.60, max_len, falloff) * flick
+		total_vec += dir * seg_len * w
+		total_weight += w
+		var max_a := float(light.get("max_alpha", 0.50))
+		target_alpha = maxf(target_alpha, max_a * falloff)
+
+	var target_vec := total_vec / total_weight if total_weight > 0.002 else _shadow_smooth_vec
+	if delta <= 0.0 or not _shadow_initialized:
+		_shadow_smooth_vec = target_vec
+		_shadow_smooth_alpha = target_alpha
+		_shadow_initialized = true
+	else:
+		# Chuyển mượt hướng và độ mờ theo thời gian, không giật hoặc mất bóng đột ngột
+		var blend := 1.0 - exp(-9.0 * delta)
+		if total_weight > 0.002:
+			_shadow_smooth_vec = _shadow_smooth_vec.lerp(target_vec, blend)
+		_shadow_smooth_alpha = lerpf(_shadow_smooth_alpha, target_alpha, blend)
+
+	if _shadow_smooth_alpha < 0.006:
+		_cast_shadow.visible = false
+		return
+
+	# Chiếu 3/4 liên tục trên trục Y, tránh bước nhảy dấu đột ngột khi băng qua nguồn sáng
+	var sx := clampf(_shadow_smooth_vec.x, -0.98, 0.98)
+	var sy := clampf(_shadow_smooth_vec.y * 0.72 + 0.20, -0.65, 0.80)
+
+	if _cast_shadow.animation != _sprite.animation and _cast_shadow.sprite_frames.has_animation(_sprite.animation):
+		_cast_shadow.play(_sprite.animation)
+	_cast_shadow.frame = _sprite.frame
+	_cast_shadow.flip_h = _sprite.flip_h
+	_cast_shadow.visible = true
+
+	# Chân (0,0) bám chặt chân Nấm; đỉnh đầu (0,-56) đổ dọc theo (sx, sy) và mờ dần ra xa qua shader
+	var x_axis := Vector2(render_scale, 0.0)
+	var y_axis := Vector2(-sx * render_scale, -sy * render_scale)
+	_cast_shadow.transform = Transform2D(x_axis, y_axis, Vector2(0.0, 2.0))
+	_cast_shadow.modulate = Color(1.0, 1.0, 1.0, clampf(_shadow_smooth_alpha, 0.0, 0.62))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -182,15 +318,20 @@ func _update_animation(input_vec: Vector2) -> void:
 			facing_dir = new_facing
 			facing_changed.emit(facing_dir)
 
-	var speed_ratio := clampf(speed / 240.0, 0.75, 1.35)
+	var speed_ratio := clampf(speed / 260.0, 0.80, 1.22)
 	_sprite.speed_scale = speed_ratio
 	var prefix := "run" if move_speed >= 420.0 else "walk"
 	_play_directional_anim(prefix)
 
-	# Hiệu ứng nén bóng nhẹ theo nhịp nhấc chân
-	if _shadow != null:
-		var f := _sprite.frame % 8
-		var shadow_s := 0.88 if (f >= 4 and f <= 6) else 1.0
+	# Hiệu ứng nén bóng nhẹ theo nhịp nhấc chân (frame 4 & 12 là điểm tiếp đất ở sheet 16 cột)
+	if _shadow != null and _sprite.sprite_frames != null:
+		var total_f := _sprite.sprite_frames.get_frame_count(_sprite.animation)
+		var is_lifted := (
+			(_sprite.frame == 1 or _sprite.frame == 3)
+			if total_f <= 4
+			else ((_sprite.frame % 8) <= 3)
+		)
+		var shadow_s := 0.88 if is_lifted else 1.0
 		_shadow.scale = Vector2(shadow_s, shadow_s) * render_scale
 
 
@@ -381,6 +522,36 @@ static func get_or_build_frames(sheet_path: String) -> SpriteFrames:
 	var hurt_fps := 12.0 if cols <= 4 else 16.0
 	var special_fps := 12.0 if cols <= 4 else 18.0
 
+	# Chuẩn NPC / Customer / Enemy 4 hàng (4x4 256x256 hoặc 16x4 1024x256): Row 0=idle, 1=walk, 2=attack, 3=hurt
+	if rows == 4:
+		var defs_4row: Array[Dictionary] = [
+			{"name": "idle",   "row": 0, "fps": idle_fps,    "loop": true,  "max_f": cols},
+			{"name": "walk",   "row": 1, "fps": walk_fps,    "loop": true,  "max_f": cols},
+			{"name": "attack", "row": 2, "fps": special_fps, "loop": false, "max_f": mini(cols, 8)},
+			{"name": "hurt",   "row": 3, "fps": hurt_fps,    "loop": false, "max_f": mini(cols, 8)},
+		]
+		for d4: Dictionary in defs_4row:
+			var aname: String = d4["name"]
+			if frames.has_animation(aname):
+				frames.clear(aname)
+			else:
+				frames.add_animation(aname)
+			frames.set_animation_speed(aname, d4["fps"])
+			frames.set_animation_loop(aname, d4["loop"])
+			for c in range(int(d4["max_f"])):
+				var atlas := AtlasTexture.new()
+				atlas.atlas = texture
+				atlas.region = Rect2(c * FRAME_W, int(d4["row"]) * FRAME_H, FRAME_W, FRAME_H)
+				frames.add_frame(aname, atlas)
+		for dir_s: String in ["down", "up", "right", "left"]:
+			_alias_anim(frames, "idle_" + dir_s, "idle")
+			_alias_anim(frames, "walk_" + dir_s, "walk")
+			_alias_anim(frames, "run_" + dir_s, "walk")
+		_alias_anim(frames, "run", "walk")
+		_alias_anim(frames, "special", "attack")
+		_frames_cache[sheet_path] = frames
+		return frames
+
 	var defs: Array[Dictionary] = [
 		{"name": "idle_down",  "row": 0,  "fps": idle_fps,    "loop": true,  "max_f": cols},
 		{"name": "idle_up",    "row": 1,  "fps": idle_fps,    "loop": true,  "max_f": cols},
@@ -420,6 +591,7 @@ static func get_or_build_frames(sheet_path: String) -> SpriteFrames:
 	_alias_anim(frames, "idle", "idle_right" if rows > 2 else "idle_down")
 	_alias_anim(frames, "walk", "walk_right" if rows > 6 else "walk_down")
 	_alias_anim(frames, "run",  "run_right" if rows > 10 else "run_down")
+	_alias_anim(frames, "attack", "special")
 
 	_frames_cache[sheet_path] = frames
 	return frames

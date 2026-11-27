@@ -1,6 +1,6 @@
 # scripts/ui/inventory_panel.gd
 # Overlay panel dùng chung cho 2 pha:
-#   SHOP  — chọn vũ khí đặt lên kệ (2 hàng × 3 kệ)
+#   SHOP  — bày vũ khí lên Bàn Trưng Bày 2x2 (4 ô chuẩn 32-bit)
 #   FORGE — chọn vũ khí để rèn tiếp
 class_name InventoryPanel
 extends CanvasLayer
@@ -18,52 +18,53 @@ signal weapon_chosen_for_forge(weapon: Dictionary)
 
 enum Mode { SHOP, FORGE }
 
-const PW := 820; const PH := 600
-const C_FRAME := Color(0.72, 0.54, 0.24)
-const C_PANEL := Color(0.13, 0.08, 0.05)
-const C_HDR   := Color(0.20, 0.13, 0.07)
-const C_SEP   := Color(0.42, 0.28, 0.12, 0.6)
-const C_TEXT  := Color(0.96, 0.88, 0.72)
-const C_MUTE  := Color(0.64, 0.52, 0.36)
-const C_GOLD  := Color(1.00, 0.84, 0.26)
-const C_SLOT_EMPTY := Color(0.22, 0.14, 0.07)
-const C_SLOT_FILLED := Color(0.16, 0.28, 0.14)
+const PW := 860
+const PH := 620
+const C_SEP := Color(0.56, 0.40, 0.20, 0.65)
+const C_TEXT := Color(0.96, 0.88, 0.72)
+const C_MUTE := Color(0.70, 0.58, 0.42)
+const C_GOLD := Color(0.96, 0.78, 0.35)
+const C_SLOT_EMPTY := Color(0.16, 0.10, 0.08, 0.86)
+const C_SLOT_FILLED := Color(0.14, 0.24, 0.14, 0.90)
+const WEAPON_SPRITE_DIR := "res://assets/pixel/sprites/weapons/"
 
-# Màu rarity
 const RARITY_COLORS: Array[Color] = [
-	Color(0.55, 0.55, 0.55),   # 0 — thường
-	Color(0.28, 0.64, 0.28),   # 1 — tốt
-	Color(0.22, 0.48, 0.82),   # 2 — hiếm
-	Color(0.64, 0.22, 0.82),   # 3 — sử thi
-	Color(0.90, 0.72, 0.18),   # 4 — kiệt tác
+	Color(0.62, 0.62, 0.62),   # 0 — thường
+	Color(0.32, 0.72, 0.36),   # 1 — tốt
+	Color(0.28, 0.58, 0.90),   # 2 — hiếm
+	Color(0.72, 0.32, 0.88),   # 3 — sử thi
+	Color(0.96, 0.78, 0.24),   # 4 — kiệt tác
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STATE
 # ══════════════════════════════════════════════════════════════════════════════
 
-var _mode:       Mode = Mode.SHOP
-var _weapons:    Array = []           # toàn bộ kho
-var _shelf_slots: Array = []          # ref tới _shelf_slots của shop_scene (SHOP mode)
-var _shelf_idx:  int = -1             # kệ đang chọn (SHOP mode)
-var _shelf_groups: Array = []         # cấu hình nhóm slot từ ShopScene
+var _mode: Mode = Mode.SHOP
+var _weapons: Array = []
+var _shelf_slots: Array = []
+var _shelf_idx: int = -1
+var _shelf_groups: Array = []
 
 # Nodes
-var _root:         Control
-var _lbl_title:    Label
-var _content_root: Control            # vùng nội dung thay đổi theo mode
-
-# Dynamic children (xóa/tạo lại mỗi lần open)
+var _root: Control
+var _panel_holder: Control
+var _lbl_title: Label
+var _content_root: Control
 var _dynamic_nodes: Array = []
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LIFECYCLE
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _ready() -> void:
-	layer   = 18
+	layer = 18
 	visible = false
 	_build_skeleton()
+	var vp := get_viewport()
+	if vp != null and not vp.size_changed.is_connected(_recenter_panel):
+		vp.size_changed.connect(_recenter_panel)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -76,20 +77,22 @@ func open_shop(
 	shelf_slots: Array,
 	shelf_groups: Array = []
 ) -> void:
-	_mode       = Mode.SHOP
-	_weapons    = weapons
-	_shelf_idx  = shelf_idx
+	_mode = Mode.SHOP
+	_weapons = weapons
+	_shelf_idx = shelf_idx
 	_shelf_slots = shelf_slots
 	_shelf_groups = shelf_groups
 	_lbl_title.text = "%s  —  Bày Hàng" % _get_shelf_name(shelf_idx)
+	_recenter_panel()
 	_rebuild_content()
 	visible = true
 
 
 func open_forge(weapons: Array) -> void:
-	_mode    = Mode.FORGE
+	_mode = Mode.FORGE
 	_weapons = weapons
 	_lbl_title.text = "Kho Vũ Khí  —  Chọn để Rèn Tiếp"
+	_recenter_panel()
 	_rebuild_content()
 	visible = true
 
@@ -118,75 +121,72 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BUILD — skeleton cố định
+# BUILD — skeleton cố định, tự căn giữa theo mọi kích thước cửa sổ
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _build_skeleton() -> void:
-	var vp_size := get_viewport().get_visible_rect().size
-	var bx := int((vp_size.x - PW) * 0.5)
-	var by := int((vp_size.y - PH) * 0.5)
-
 	_root = Control.new()
 	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_root)
 
-	# Overlay
-	var ov := ColorRect.new()
-	ov.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ov.color = Color(0, 0, 0, 0.60)
-	_root.add_child(ov)
+	_root.add_child(HoaTamUI.make_dim_backdrop())
 
-	# Border + panel
-	var border := ColorRect.new()
-	border.position = Vector2(bx - 2, by - 2)
-	border.size     = Vector2(PW + 4, PH + 4)
-	border.color    = C_FRAME
-	_root.add_child(border)
+	_panel_holder = Control.new()
+	_panel_holder.size = Vector2(PW, PH)
+	_panel_holder.mouse_filter = Control.MOUSE_FILTER_STOP
+	_root.add_child(_panel_holder)
 
-	var panel := ColorRect.new()
-	panel.position = Vector2(bx, by)
-	panel.size     = Vector2(PW, PH)
-	panel.color    = C_PANEL
-	_root.add_child(panel)
+	var panel := HoaTamUI.make_panel_container(false, 0.0)
+	panel.add_theme_stylebox_override("panel", HoaTamUI.make_leather_chest_style(0.0))
+	panel.position = Vector2.ZERO
+	panel.size = Vector2(PW, PH)
+	_panel_holder.add_child(panel)
 
-	# Header
-	var hdr := ColorRect.new()
-	hdr.position = Vector2(bx, by)
-	hdr.size     = Vector2(PW, 48)
-	hdr.color    = C_HDR
-	_root.add_child(hdr)
+	var font_px := load(HoaTamUI.FONT_PIXEL) as Font
 
 	_lbl_title = Label.new()
-	_lbl_title.position = Vector2(bx, by + 8)
-	_lbl_title.size     = Vector2(PW - 48, 32)
+	_lbl_title.position = Vector2(20, 14)
+	_lbl_title.size = Vector2(PW - 76, 34)
 	_lbl_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_lbl_title.add_theme_font_size_override("font_size", 23)
-	_lbl_title.add_theme_color_override("font_color", C_TEXT)
-	_root.add_child(_lbl_title)
+	_lbl_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	if font_px != null:
+		_lbl_title.add_theme_font_override("font", font_px)
+	_lbl_title.add_theme_font_size_override("font_size", 22)
+	_lbl_title.add_theme_color_override("font_color", HoaTamUI.COL_GOLD)
+	_panel_holder.add_child(_lbl_title)
 
-	# Nút đóng [X]
 	var close_btn := Button.new()
-	close_btn.position = Vector2(bx + PW - 42, by + 6)
-	close_btn.size     = Vector2(36, 36)
-	close_btn.text     = "✕"
-	close_btn.add_theme_font_size_override("font_size", 20)
+	close_btn.position = Vector2(PW - 54, 12)
+	close_btn.size = Vector2(38, 36)
+	close_btn.text = "X"
+	HoaTamUI.apply_secondary_button(close_btn, 18)
 	close_btn.pressed.connect(close)
-	_root.add_child(close_btn)
+	_panel_holder.add_child(close_btn)
 
-	# Separator header
 	var sep := ColorRect.new()
-	sep.position = Vector2(bx + 8, by + 48)
-	sep.size     = Vector2(PW - 16, 1)
-	sep.color    = C_SEP
-	_root.add_child(sep)
+	sep.position = Vector2(20, 54)
+	sep.size = Vector2(PW - 40, 2)
+	sep.color = C_SEP
+	_panel_holder.add_child(sep)
 
-	# Vùng nội dung — bên dưới header
 	_content_root = Control.new()
-	_content_root.position = Vector2(bx, by + 52)
-	_content_root.size     = Vector2(PW, PH - 52)
+	_content_root.position = Vector2(20, 62)
+	_content_root.size = Vector2(PW - 40, PH - 82)
 	_content_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(_content_root)
+	_panel_holder.add_child(_content_root)
+
+	_recenter_panel()
+
+
+func _recenter_panel() -> void:
+	if _panel_holder == null:
+		return
+	var vp_size := get_viewport().get_visible_rect().size
+	_panel_holder.position = Vector2(
+		roundf((vp_size.x - float(PW)) * 0.5),
+		roundf((vp_size.y - float(PH)) * 0.5)
+	)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -211,254 +211,335 @@ func _clear_dynamic() -> void:
 # ── SHOP mode ─────────────────────────────────────────────────────────────────
 
 func _build_shop_content() -> void:
+	var cw: float = _content_root.size.x
+	var ch: float = _content_root.size.y
 	var slot_indices := _get_current_group_slot_indices()
-	_add_section_label("Ô trưng bày", 4)
-	var next_y := 28
-	for slot_idx: int in slot_indices:
-		_build_slot_row(slot_idx, next_y)
-		next_y += 52
 
-	# Separator
+	_add_section_label("4 Ô Bàn Giữa (bố cục 2×2 khớp mặt bàn)", 0)
+
+	# Hiển thị các ô trưng bày dạng lưới 2 cột (khớp trực tiếp 2x2 trên bàn tiệm)
+	var cols: int = 2 if slot_indices.size() >= 2 else 1
+	var gap_x: float = 12.0
+	var gap_y: float = 8.0
+	var cell_w: float = floorf((cw - gap_x * float(cols - 1)) / float(cols))
+	var cell_h: float = 56.0
+	var start_y: float = 26.0
+
+	for i: int in slot_indices.size():
+		var col_i: int = i % cols
+		var row_i: int = floori(float(i) / float(cols))
+		var rx: float = float(col_i) * (cell_w + gap_x)
+		var ry: float = start_y + float(row_i) * (cell_h + gap_y)
+		_build_slot_cell(slot_indices[i], Rect2(rx, ry, cell_w, cell_h))
+
+	var rows_used: int = ceili(float(maxi(1, slot_indices.size())) / float(cols))
+	var next_y: float = start_y + float(rows_used) * (cell_h + gap_y) + 4.0
+
 	var sep := ColorRect.new()
-	sep.position = Vector2(8, next_y)
-	sep.size     = Vector2(PW - 16, 1)
-	sep.color    = C_SEP
+	sep.position = Vector2(0, next_y)
+	sep.size = Vector2(cw, 2)
+	sep.color = C_SEP
 	_content_root.add_child(sep)
 	_dynamic_nodes.append(sep)
 
-	# Phần 2: danh sách vũ khí
 	var inv_lbl := Label.new()
-	inv_lbl.text     = "Kho vũ khí"
-	inv_lbl.position = Vector2(12, next_y + 4)
-	inv_lbl.size     = Vector2(200, 22)
-	inv_lbl.add_theme_font_size_override("font_size", 18)
+	inv_lbl.text = "Kho vũ khí (%d món)" % _weapons.size()
+	inv_lbl.position = Vector2(2, next_y + 8)
+	inv_lbl.size = Vector2(360, 24)
+	inv_lbl.add_theme_font_size_override("font_size", 17)
 	inv_lbl.add_theme_color_override("font_color", C_MUTE)
 	_content_root.add_child(inv_lbl)
 	_dynamic_nodes.append(inv_lbl)
 
-	var list_y := next_y + 30
+	var scroll_y: float = next_y + 36.0
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(0, scroll_y)
+	scroll.size = Vector2(cw, maxf(120.0, ch - scroll_y))
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_content_root.add_child(scroll)
+	_dynamic_nodes.append(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
+	if _weapons.is_empty():
+		var empty_lbl := Label.new()
+		empty_lbl.text = "Kho đang trống — hãy quay về Xưởng Rèn để tạo vũ khí mới."
+		empty_lbl.custom_minimum_size = Vector2(cw - 20.0, 60.0)
+		empty_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		empty_lbl.add_theme_font_size_override("font_size", 17)
+		empty_lbl.add_theme_color_override("font_color", C_MUTE)
+		vbox.add_child(empty_lbl)
+		return
+
 	for w: Dictionary in _weapons:
-		_build_shop_weapon_card(w, list_y)
-		list_y += 84
+		vbox.add_child(_build_shop_weapon_card(w, cw - 16.0))
 
 
 func _add_section_label(text: String, y: int) -> void:
 	var lbl := Label.new()
-	lbl.text     = text
-	lbl.position = Vector2(12, y)
-	lbl.size     = Vector2(200, 20)
+	lbl.text = text
+	lbl.position = Vector2(2, y)
+	lbl.size = Vector2(_content_root.size.x, 22)
 	lbl.add_theme_font_size_override("font_size", 16)
 	lbl.add_theme_color_override("font_color", C_MUTE)
 	_content_root.add_child(lbl)
 	_dynamic_nodes.append(lbl)
 
 
-func _build_slot_row(slot_idx: int, y: int) -> void:
+func _build_slot_cell(slot_idx: int, rect: Rect2) -> void:
 	var slot: Dictionary = _shelf_slots[slot_idx] if slot_idx < _shelf_slots.size() else {}
 	var weapon: Dictionary = slot.get("weapon", {})
 	var has_wpn := not weapon.is_empty()
 
-	# Ô kệ
-	var slot_bg := ColorRect.new()
-	slot_bg.position = Vector2(8, y)
-	slot_bg.size     = Vector2(PW - 16, 44)
-	slot_bg.color    = C_SLOT_FILLED if has_wpn else C_SLOT_EMPTY
-	_content_root.add_child(slot_bg)
-	_dynamic_nodes.append(slot_bg)
+	var holder := Panel.new()
+	holder.position = rect.position
+	holder.size = rect.size
+	var style := StyleBoxFlat.new()
+	style.bg_color = C_SLOT_FILLED if has_wpn else C_SLOT_EMPTY
+	style.border_color = HoaTamUI.COL_GOLD if has_wpn else Color(0.45, 0.32, 0.19, 0.72)
+	style.set_border_width_all(2)
+	holder.add_theme_stylebox_override("panel", style)
+	_content_root.add_child(holder)
+	_dynamic_nodes.append(holder)
 
-	# Accent rarity
 	if has_wpn:
-		var tier: int = weapon.get("rarity_tier", 0)
+		var tier: int = int(weapon.get("rarity_tier", 1))
 		var acc := ColorRect.new()
-		acc.position = Vector2(8, y)
-		acc.size     = Vector2(4, 44)
-		acc.color    = RARITY_COLORS[mini(tier, RARITY_COLORS.size() - 1)]
-		_content_root.add_child(acc)
-		_dynamic_nodes.append(acc)
+		acc.position = Vector2(2, 2)
+		acc.size = Vector2(4, rect.size.y - 4)
+		acc.color = RARITY_COLORS[clampi(tier - 1, 0, RARITY_COLORS.size() - 1)]
+		holder.add_child(acc)
 
-	# Tên vũ khí hoặc "(Trống)"
-	var wpn_name: String = weapon.get("weapon_name", "( Trống )") if has_wpn else "( Trống )"
+		var icon := _make_weapon_icon_rect(weapon, Vector2(40, 40))
+		icon.position = Vector2(10, 8)
+		holder.add_child(icon)
+
+	var text_x: float = 56.0 if has_wpn else 12.0
+	var text_w: float = rect.size.x - text_x - (90.0 if has_wpn else 12.0)
+
+	var wpn_name: String = String(weapon.get("weapon_name", "( Trống )")) if has_wpn else "( Trống )"
 	var name_lbl := Label.new()
-	name_lbl.text     = "%s · %s" % [_get_slot_name(slot_idx), wpn_name]
-	name_lbl.position = Vector2(18, y + 4)
-	name_lbl.size     = Vector2(PW - 220, 20)
-	name_lbl.add_theme_font_size_override("font_size", 18)
+	name_lbl.text = "%s · %s" % [_get_slot_name(slot_idx), wpn_name]
+	name_lbl.position = Vector2(text_x, 6)
+	name_lbl.size = Vector2(text_w, 22)
+	name_lbl.clip_text = true
+	name_lbl.add_theme_font_size_override("font_size", 16)
 	name_lbl.add_theme_color_override("font_color", C_TEXT if has_wpn else C_MUTE)
-	_content_root.add_child(name_lbl)
-	_dynamic_nodes.append(name_lbl)
+	holder.add_child(name_lbl)
 
 	if has_wpn:
 		var stats_lbl := Label.new()
-		stats_lbl.text = "ATK %d  DEF %d  MAG %d  SPD %d" % [
-			weapon.get("atk", 0), weapon.get("def_stat", 0),
-			weapon.get("magic", 0), weapon.get("speed", 0)
+		stats_lbl.text = "ATK %d · MAG %d · SPD %d" % [
+			int(weapon.get("atk", 0)),
+			int(weapon.get("magic", 0)),
+			int(weapon.get("speed", 0)),
 		]
-		stats_lbl.position = Vector2(18, y + 24)
-		stats_lbl.size     = Vector2(PW - 220, 16)
-		stats_lbl.add_theme_font_size_override("font_size", 14)
+		stats_lbl.position = Vector2(text_x, 30)
+		stats_lbl.size = Vector2(text_w, 18)
+		stats_lbl.clip_text = true
+		stats_lbl.add_theme_font_size_override("font_size", 13)
 		stats_lbl.add_theme_color_override("font_color", C_MUTE)
-		_content_root.add_child(stats_lbl)
-		_dynamic_nodes.append(stats_lbl)
+		holder.add_child(stats_lbl)
 
-	# Nút Bỏ trống
-	if has_wpn:
 		var clr_btn := Button.new()
-		clr_btn.text     = "Bỏ trống"
-		clr_btn.position = Vector2(PW - 202, y + 7)
-		clr_btn.size     = Vector2(96, 30)
-		clr_btn.add_theme_font_size_override("font_size", 16)
+		clr_btn.text = "Cất đi"
+		clr_btn.position = Vector2(rect.size.x - 84, 11)
+		clr_btn.size = Vector2(76, 34)
+		HoaTamUI.apply_secondary_button(clr_btn, 14)
 		clr_btn.pressed.connect(_on_clear_slot.bind(slot_idx))
-		_content_root.add_child(clr_btn)
-		_dynamic_nodes.append(clr_btn)
+		holder.add_child(clr_btn)
+	else:
+		var hint_lbl := Label.new()
+		hint_lbl.text = "Chọn nút %s ở kho dưới" % _get_slot_name(slot_idx)
+		hint_lbl.position = Vector2(text_x, 30)
+		hint_lbl.size = Vector2(text_w, 18)
+		hint_lbl.add_theme_font_size_override("font_size", 13)
+		hint_lbl.add_theme_color_override("font_color", Color(0.54, 0.44, 0.32))
+		holder.add_child(hint_lbl)
 
 
-func _build_shop_weapon_card(w: Dictionary, y: int) -> void:
-	var tier: int = w.get("rarity_tier", 0)
-	var rarity_col := RARITY_COLORS[mini(tier, RARITY_COLORS.size() - 1)]
+func _build_shop_weapon_card(w: Dictionary, card_w: float) -> Control:
+	var tier: int = int(w.get("rarity_tier", 1))
+	var rarity_col := RARITY_COLORS[clampi(tier - 1, 0, RARITY_COLORS.size() - 1)]
 
-	# Card nền
-	var bg := ColorRect.new()
-	bg.position = Vector2(8, y)
-	bg.size     = Vector2(PW - 16, 78)
-	bg.color    = Color(0.10, 0.07, 0.04)
-	_content_root.add_child(bg)
-	_dynamic_nodes.append(bg)
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(card_w, 84.0)
+	var style := HoaTamUI.make_inset_surface_style(0.76, 0.0, Color(0.45, 0.32, 0.19, 0.7))
+	card.add_theme_stylebox_override("panel", style)
 
-	# Accent rarity
 	var acc := ColorRect.new()
-	acc.position = Vector2(8, y)
-	acc.size     = Vector2(5, 78)
-	acc.color    = rarity_col
-	_content_root.add_child(acc)
-	_dynamic_nodes.append(acc)
+	acc.position = Vector2(1, 1)
+	acc.size = Vector2(5, 82)
+	acc.color = rarity_col
+	card.add_child(acc)
 
-	# Tên
+	var icon_box := ColorRect.new()
+	icon_box.position = Vector2(14, 12)
+	icon_box.size = Vector2(60, 60)
+	icon_box.color = Color(0.14, 0.09, 0.07, 0.92)
+	card.add_child(icon_box)
+
+	var icon := _make_weapon_icon_rect(w, Vector2(52, 52))
+	icon.position = Vector2(18, 16)
+	card.add_child(icon)
+
+	var slot_indices := _get_current_group_slot_indices()
+	var btn_cols: int = mini(2, maxi(1, slot_indices.size()))
+	var btn_area_w: float = float(btn_cols) * 108.0 + 16.0
+	var info_w: float = maxf(200.0, card_w - 90.0 - btn_area_w)
+
 	var name_lbl := Label.new()
-	name_lbl.text     = w.get("weapon_name", "?")
-	name_lbl.position = Vector2(20, y + 6)
-	name_lbl.size     = Vector2(PW - 250, 24)
-	name_lbl.add_theme_font_size_override("font_size", 20)
+	name_lbl.text = String(w.get("weapon_name", "?"))
+	name_lbl.position = Vector2(86, 8)
+	name_lbl.size = Vector2(info_w, 24)
+	name_lbl.clip_text = true
+	name_lbl.add_theme_font_size_override("font_size", 19)
 	name_lbl.add_theme_color_override("font_color", C_TEXT)
-	_content_root.add_child(name_lbl)
-	_dynamic_nodes.append(name_lbl)
+	card.add_child(name_lbl)
 
-	# Stats
 	var stat_lbl := Label.new()
 	stat_lbl.text = "ATK %d  ·  DEF %d  ·  MAG %d  ·  SPD %d" % [
-		w.get("atk", 0), w.get("def_stat", 0), w.get("magic", 0), w.get("speed", 0)
+		int(w.get("atk", 0)),
+		int(w.get("def_stat", 0)),
+		int(w.get("magic", 0)),
+		int(w.get("speed", 0)),
 	]
-	stat_lbl.position = Vector2(20, y + 32)
-	stat_lbl.size     = Vector2(PW - 250, 20)
-	stat_lbl.add_theme_font_size_override("font_size", 16)
+	stat_lbl.position = Vector2(86, 35)
+	stat_lbl.size = Vector2(info_w, 20)
+	stat_lbl.clip_text = true
+	stat_lbl.add_theme_font_size_override("font_size", 15)
 	stat_lbl.add_theme_color_override("font_color", C_MUTE)
-	_content_root.add_child(stat_lbl)
-	_dynamic_nodes.append(stat_lbl)
+	card.add_child(stat_lbl)
 
-	# Vị trí trên kệ
 	var location := _get_weapon_location_text(w)
 	var loc_lbl := Label.new()
-	loc_lbl.text     = location
-	loc_lbl.position = Vector2(20, y + 52)
-	loc_lbl.size     = Vector2(PW - 250, 18)
+	loc_lbl.text = location
+	loc_lbl.position = Vector2(86, 58)
+	loc_lbl.size = Vector2(info_w, 18)
 	loc_lbl.add_theme_font_size_override("font_size", 14)
 	loc_lbl.add_theme_color_override("font_color", C_GOLD if location != "Trong kho" else C_MUTE)
-	_content_root.add_child(loc_lbl)
-	_dynamic_nodes.append(loc_lbl)
+	card.add_child(loc_lbl)
 
-	# Nút đặt vũ khí vào từng ô của nhóm hiện tại
-	var slot_indices := _get_current_group_slot_indices()
 	var placed_slot := _get_placed_slot(w)
 	for i: int in slot_indices.size():
 		var slot_idx: int = slot_indices[i]
 		var on_slot := (placed_slot == slot_idx)
 		var is_placed_elsewhere := (placed_slot != -1 and not on_slot)
 		var btn := Button.new()
-		btn.text = _get_slot_name(slot_idx)
+		btn.text = ("✓ %s" % _get_slot_name(slot_idx)) if on_slot else _get_slot_name(slot_idx)
+		var col_i: int = i % 2
+		var row_i: int = floori(float(i) / 2.0)
+		var bx: float = card_w - btn_area_w + 6.0 + float(col_i) * 108.0
+		var by: float = (24.0 if slot_indices.size() <= 2 else 8.0) + float(row_i) * 36.0
+		btn.position = Vector2(bx, by)
+		btn.size = Vector2(102, 32)
 		if on_slot:
-			btn.text = "✓ %s" % _get_slot_name(slot_idx)
-		btn.position = Vector2(PW - 222 + (i % 2) * 108, y + 6 + floori(i / 2.0) * 34)
-		btn.size = Vector2(104, 30)
-		btn.add_theme_font_size_override("font_size", 15)
+			HoaTamUI.apply_primary_button(btn, 14)
+		else:
+			HoaTamUI.apply_secondary_button(btn, 14)
 		btn.disabled = on_slot or is_placed_elsewhere
 		if not btn.disabled:
 			btn.pressed.connect(_on_place_weapon.bind(slot_idx, w))
-		_content_root.add_child(btn)
-		_dynamic_nodes.append(btn)
+		card.add_child(btn)
+
+	return card
 
 
 # ── FORGE mode ────────────────────────────────────────────────────────────────
 
 func _build_forge_content() -> void:
+	var cw: float = _content_root.size.x
+	var ch: float = _content_root.size.y
+
 	var inv_lbl := Label.new()
-	inv_lbl.text     = "Chọn vũ khí để tiếp tục rèn:"
-	inv_lbl.position = Vector2(12, 8)
-	inv_lbl.size     = Vector2(400, 24)
+	inv_lbl.text = "Chọn vũ khí để tiếp tục rèn:"
+	inv_lbl.position = Vector2(2, 4)
+	inv_lbl.size = Vector2(400, 24)
 	inv_lbl.add_theme_font_size_override("font_size", 18)
 	inv_lbl.add_theme_color_override("font_color", C_MUTE)
 	_content_root.add_child(inv_lbl)
 	_dynamic_nodes.append(inv_lbl)
 
-	var list_y := 38
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(0, 34)
+	scroll.size = Vector2(cw, ch - 34)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_content_root.add_child(scroll)
+	_dynamic_nodes.append(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
 	for w: Dictionary in _weapons:
-		_build_forge_weapon_card(w, list_y)
-		list_y += 84
+		vbox.add_child(_build_forge_weapon_card(w, cw - 16.0))
 
 
-func _build_forge_weapon_card(w: Dictionary, y: int) -> void:
-	var tier: int = w.get("rarity_tier", 0)
-	var rarity_col := RARITY_COLORS[mini(tier, RARITY_COLORS.size() - 1)]
+func _build_forge_weapon_card(w: Dictionary, card_w: float) -> Control:
+	var tier: int = int(w.get("rarity_tier", 1))
+	var rarity_col := RARITY_COLORS[clampi(tier - 1, 0, RARITY_COLORS.size() - 1)]
 
-	var bg := ColorRect.new()
-	bg.position = Vector2(8, y)
-	bg.size     = Vector2(PW - 16, 78)
-	bg.color    = Color(0.10, 0.07, 0.04)
-	_content_root.add_child(bg)
-	_dynamic_nodes.append(bg)
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(card_w, 84.0)
+	card.add_theme_stylebox_override(
+		"panel",
+		HoaTamUI.make_inset_surface_style(0.76, 0.0, Color(0.45, 0.32, 0.19, 0.7))
+	)
 
 	var acc := ColorRect.new()
-	acc.position = Vector2(8, y)
-	acc.size     = Vector2(5, 78)
-	acc.color    = rarity_col
-	_content_root.add_child(acc)
-	_dynamic_nodes.append(acc)
+	acc.position = Vector2(1, 1)
+	acc.size = Vector2(5, 82)
+	acc.color = rarity_col
+	card.add_child(acc)
+
+	var icon := _make_weapon_icon_rect(w, Vector2(52, 52))
+	icon.position = Vector2(18, 16)
+	card.add_child(icon)
 
 	var name_lbl := Label.new()
-	name_lbl.text     = w.get("weapon_name", "?")
-	name_lbl.position = Vector2(20, y + 6)
-	name_lbl.size     = Vector2(PW - 170, 24)
-	name_lbl.add_theme_font_size_override("font_size", 20)
+	name_lbl.text = String(w.get("weapon_name", "?"))
+	name_lbl.position = Vector2(86, 8)
+	name_lbl.size = Vector2(card_w - 246.0, 24)
+	name_lbl.clip_text = true
+	name_lbl.add_theme_font_size_override("font_size", 19)
 	name_lbl.add_theme_color_override("font_color", C_TEXT)
-	_content_root.add_child(name_lbl)
-	_dynamic_nodes.append(name_lbl)
+	card.add_child(name_lbl)
 
 	var stat_lbl := Label.new()
 	stat_lbl.text = "ATK %d  ·  DEF %d  ·  MAG %d  ·  SPD %d" % [
-		w.get("atk", 0), w.get("def_stat", 0), w.get("magic", 0), w.get("speed", 0)
+		int(w.get("atk", 0)),
+		int(w.get("def_stat", 0)),
+		int(w.get("magic", 0)),
+		int(w.get("speed", 0)),
 	]
-	stat_lbl.position = Vector2(20, y + 32)
-	stat_lbl.size     = Vector2(PW - 170, 20)
-	stat_lbl.add_theme_font_size_override("font_size", 16)
+	stat_lbl.position = Vector2(86, 35)
+	stat_lbl.size = Vector2(card_w - 246.0, 20)
+	stat_lbl.add_theme_font_size_override("font_size", 15)
 	stat_lbl.add_theme_color_override("font_color", C_MUTE)
-	_content_root.add_child(stat_lbl)
-	_dynamic_nodes.append(stat_lbl)
+	card.add_child(stat_lbl)
 
 	var tier_lbl := Label.new()
 	tier_lbl.text = _rarity_name(tier)
-	tier_lbl.position = Vector2(20, y + 54)
-	tier_lbl.size     = Vector2(PW - 170, 18)
+	tier_lbl.position = Vector2(86, 58)
+	tier_lbl.size = Vector2(card_w - 246.0, 18)
 	tier_lbl.add_theme_font_size_override("font_size", 14)
 	tier_lbl.add_theme_color_override("font_color", rarity_col)
-	_content_root.add_child(tier_lbl)
-	_dynamic_nodes.append(tier_lbl)
+	card.add_child(tier_lbl)
 
 	var forge_btn := Button.new()
-	forge_btn.text     = "Rèn Tiếp"
-	forge_btn.position = Vector2(PW - 150, y + 22)
-	forge_btn.size     = Vector2(134, 34)
-	forge_btn.add_theme_font_size_override("font_size", 18)
+	forge_btn.text = "Rèn Tiếp"
+	forge_btn.position = Vector2(card_w - 146.0, 23)
+	forge_btn.size = Vector2(134, 38)
+	HoaTamUI.apply_primary_button(forge_btn, 16)
 	forge_btn.pressed.connect(_on_choose_for_forge.bind(w))
-	_content_root.add_child(forge_btn)
-	_dynamic_nodes.append(forge_btn)
+	card.add_child(forge_btn)
+
+	return card
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -470,7 +551,7 @@ func _on_place_weapon(slot_idx: int, weapon: Dictionary) -> void:
 	if old_slot != -1 and old_slot != slot_idx:
 		slot_weapon_changed.emit(old_slot, {})
 	slot_weapon_changed.emit(slot_idx, weapon)
-	_rebuild_content()   # refresh để cập nhật trạng thái nút
+	_rebuild_content()
 
 
 func _on_clear_slot(slot_idx: int) -> void:
@@ -486,6 +567,31 @@ func _on_choose_for_forge(weapon: Dictionary) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
+
+func _make_weapon_icon_rect(w: Dictionary, icon_size: Vector2) -> TextureRect:
+	var tr := TextureRect.new()
+	tr.size = icon_size
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var tex := _resolve_weapon_texture(w)
+	if tex != null:
+		tr.texture = tex
+	return tr
+
+
+func _resolve_weapon_texture(w: Dictionary) -> Texture2D:
+	var sprite_path := String(w.get("sprite_path", ""))
+	if sprite_path.begins_with("res://assets/pixel/") and ResourceLoader.exists(sprite_path):
+		return load(sprite_path) as Texture2D
+	var blank_id := String(w.get("blank_id", ""))
+	if not blank_id.is_empty():
+		var by_blank := "%s%s.png" % [WEAPON_SPRITE_DIR, blank_id]
+		if ResourceLoader.exists(by_blank):
+			return load(by_blank) as Texture2D
+	var fallback := "%skiem_don.png" % WEAPON_SPRITE_DIR
+	return load(fallback) as Texture2D if ResourceLoader.exists(fallback) else null
+
 
 func _get_placed_slot(w: Dictionary) -> int:
 	if w.is_empty():
@@ -503,7 +609,6 @@ func _slot_has_weapon(slot_idx: int, w: Dictionary) -> bool:
 
 
 func _is_on_other_shelf(w: Dictionary) -> bool:
-	# Vũ khí đang ở kệ khác (không phải _shelf_idx hiện tại)
 	for i: int in _shelf_slots.size():
 		if _shelf_slots[i].get("weapon", {}) == w:
 			var this_shelf := _get_group_idx_for_slot(i)
@@ -533,12 +638,12 @@ func _get_group_idx_for_slot(slot_idx: int) -> int:
 		var slots: Array = _shelf_groups[group_idx].get("slots", [])
 		if slot_idx in slots:
 			return group_idx
-	return floori(slot_idx / 2.0)
+	return floori(float(slot_idx) / 2.0)
 
 
 func _get_shelf_name(shelf_idx: int) -> String:
 	if shelf_idx >= 0 and shelf_idx < _shelf_groups.size():
-		return _shelf_groups[shelf_idx].get("name", "Kệ")
+		return String(_shelf_groups[shelf_idx].get("name", "Kệ"))
 	return "Kệ %d" % (shelf_idx + 1)
 
 
@@ -546,11 +651,14 @@ func _get_slot_name(slot_idx: int) -> String:
 	var group_idx := _get_group_idx_for_slot(slot_idx)
 	if group_idx >= 0 and group_idx < _shelf_groups.size():
 		var group: Dictionary = _shelf_groups[group_idx]
-		var configured_name: String = group.get("slot_name", "")
-		if not configured_name.is_empty():
-			return configured_name
+		var slot_names: Array = group.get("slot_names", [])
 		var slots: Array = group.get("slots", [])
 		var local_idx := slots.find(slot_idx)
+		if local_idx >= 0 and local_idx < slot_names.size():
+			return String(slot_names[local_idx])
+		var configured_name: String = String(group.get("slot_name", ""))
+		if not configured_name.is_empty():
+			return configured_name
 		if local_idx >= 0:
 			return "Ô %d" % (local_idx + 1)
 	return "Ô %d" % (slot_idx + 1)
@@ -558,9 +666,9 @@ func _get_slot_name(slot_idx: int) -> String:
 
 func _rarity_name(tier: int) -> String:
 	match tier:
-		0: return "Thường"
-		1: return "Tốt"
-		2: return "Hiếm"
-		3: return "Sử Thi"
-		4: return "Kiệt Tác"
+		1: return "Thường"
+		2: return "Tốt"
+		3: return "Hiếm"
+		4: return "Sử Thi"
+		5: return "Kiệt Tác"
 		_: return ""

@@ -3,8 +3,7 @@ extends CanvasLayer
 
 signal notice_closed
 
-const PANEL_SIZE := Vector2(680, 420)
-const PANEL_PADDING := 42
+const PANEL_SIZE := Vector2(720, 460)
 
 var _title_lbl: Label
 var _agent_name_lbl: Label
@@ -30,79 +29,82 @@ func show_checkpoint(checkpoint: DebtCheckpoint) -> void:
 		_agent_desc_lbl.text = checkpoint.agent_description
 		_agent_desc_lbl.visible = true
 	_quote_lbl.text = "\"%s\"" % checkpoint.agent_quote
-	_amount_lbl.text = "Số tiền: %dG" % checkpoint.amount_gold
-	_deadline_lbl.text = "Hạn: Ngày %d" % checkpoint.deadline_day
+	_amount_lbl.text = "Số tiền: %d G" % checkpoint.amount_gold
+	_deadline_lbl.text = "Hạn chót: Tối Ngày %d" % checkpoint.deadline_day
 	visible = true
 
 
 func _build_ui() -> void:
-	var viewport_size := get_viewport().get_visible_rect().size
+	add_child(HoaTamUI.make_dim_backdrop())
 
-	var backdrop := ColorRect.new()
-	backdrop.position = Vector2.ZERO
-	backdrop.size = viewport_size
-	backdrop.color = Color(0.02, 0.01, 0.0, 0.58)
-	add_child(backdrop)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(center)
 
-	var panel := ColorRect.new()
-	panel.position = (viewport_size - PANEL_SIZE) * 0.5
-	panel.size = PANEL_SIZE
-	panel.color = Color(0.10, 0.07, 0.04, 0.94)
-	add_child(panel)
+	var panel := HoaTamUI.make_panel_container(true, 40.0)
+	panel.custom_minimum_size = PANEL_SIZE
+	center.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	panel.add_child(vbox)
+
+	var header := HBoxContainer.new()
+	header.alignment = BoxContainer.ALIGNMENT_CENTER
+	header.add_theme_constant_override("separation", 12)
+	vbox.add_child(header)
+	header.add_child(HoaTamUI.make_icon_rect(HoaTamUI.get_hud_icon(HoaTamUI.HudIcon.DEBT), 38))
 
 	_title_lbl = Label.new()
-	_title_lbl.text = "Thông Báo Khoản Nợ"
-	_title_lbl.position = Vector2(PANEL_PADDING, 24)
-	_title_lbl.size = Vector2(PANEL_SIZE.x - PANEL_PADDING * 2.0, 38)
-	_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title_lbl.add_theme_font_size_override("font_size", 28)
-	_title_lbl.add_theme_color_override("font_color", Color(1.0, 0.82, 0.32))
-	panel.add_child(_title_lbl)
+	_title_lbl.text = "KHẾ ƯỚC BÁO NỢ"
+	_title_lbl.add_theme_font_size_override("font_size", 32)
+	_title_lbl.add_theme_color_override("font_color", HoaTamUI.COL_CRIMSON_INK)
+	header.add_child(_title_lbl)
 
 	_agent_name_lbl = Label.new()
-	_agent_name_lbl.position = Vector2(PANEL_PADDING, 72)
-	_agent_name_lbl.size = Vector2(PANEL_SIZE.x - PANEL_PADDING * 2.0, 28)
-	_agent_name_lbl.add_theme_font_size_override("font_size", 20)
-	_agent_name_lbl.add_theme_color_override("font_color", Color(0.72, 0.54, 0.38))
+	_agent_name_lbl.add_theme_font_size_override("font_size", 22)
+	_agent_name_lbl.add_theme_color_override("font_color", HoaTamUI.COL_INK)
 	_agent_name_lbl.visible = false
-	panel.add_child(_agent_name_lbl)
+	vbox.add_child(_agent_name_lbl)
 
 	_agent_desc_lbl = Label.new()
-	_agent_desc_lbl.position = Vector2(PANEL_PADDING, 100)
-	_agent_desc_lbl.size = Vector2(PANEL_SIZE.x - PANEL_PADDING * 2.0, 44)
-	_agent_desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_agent_desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_agent_desc_lbl.add_theme_font_size_override("font_size", 18)
-	_agent_desc_lbl.add_theme_color_override("font_color", Color(0.80, 0.70, 0.55))
+	_agent_desc_lbl.add_theme_color_override("font_color", HoaTamUI.COL_INK_MUTE)
 	_agent_desc_lbl.visible = false
-	panel.add_child(_agent_desc_lbl)
+	vbox.add_child(_agent_desc_lbl)
 
 	_quote_lbl = Label.new()
-	_quote_lbl.position = Vector2(PANEL_PADDING, 156)
-	_quote_lbl.size = Vector2(PANEL_SIZE.x - PANEL_PADDING * 2.0, 90)
-	_quote_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_quote_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_quote_lbl.add_theme_font_size_override("font_size", 22)
-	_quote_lbl.add_theme_color_override("font_color", Color(0.96, 0.86, 0.66))
-	panel.add_child(_quote_lbl)
+	_quote_lbl.add_theme_color_override("font_color", HoaTamUI.COL_INK)
+	vbox.add_child(_quote_lbl)
 
-	_amount_lbl = _make_line(panel, Vector2(PANEL_PADDING, 260))
-	_deadline_lbl = _make_line(panel, Vector2(PANEL_PADDING, 296))
+	var stats_row := HBoxContainer.new()
+	stats_row.add_theme_constant_override("separation", 24)
+	vbox.add_child(stats_row)
+	stats_row.add_child(HoaTamUI.make_icon_rect(HoaTamUI.get_hud_icon(HoaTamUI.HudIcon.GOLD), 28))
+	_amount_lbl = _make_line(HoaTamUI.COL_CRIMSON_INK)
+	stats_row.add_child(_amount_lbl)
+	_deadline_lbl = _make_line(HoaTamUI.COL_INK)
+	stats_row.add_child(_deadline_lbl)
+
+	var footer := HBoxContainer.new()
+	footer.alignment = BoxContainer.ALIGNMENT_END
+	vbox.add_child(footer)
 
 	var close_btn := Button.new()
-	close_btn.text = "Đã hiểu"
-	close_btn.position = Vector2(PANEL_SIZE.x - 220, 352)
-	close_btn.size = Vector2(178, 46)
-	close_btn.add_theme_font_size_override("font_size", 22)
+	close_btn.text = "Đã Hiểu"
+	close_btn.custom_minimum_size = Vector2(200, 56)
+	HoaTamUI.apply_primary_button(close_btn, 22)
 	close_btn.pressed.connect(_on_close_pressed)
-	panel.add_child(close_btn)
+	footer.add_child(close_btn)
 
 
-func _make_line(parent: Node, position: Vector2) -> Label:
+func _make_line(color: Color) -> Label:
 	var label := Label.new()
-	label.position = position
-	label.size = Vector2(PANEL_SIZE.x - PANEL_PADDING * 2.0, 32)
 	label.add_theme_font_size_override("font_size", 24)
-	label.add_theme_color_override("font_color", Color(0.90, 0.78, 0.55))
-	parent.add_child(label)
+	label.add_theme_color_override("font_color", color)
 	return label
 
 

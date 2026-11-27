@@ -5,10 +5,10 @@ signal weapon_added(weapon: Dictionary)
 signal material_added(mat: Dictionary)
 signal shelf_updated()
 
-const MAX_SHELF_SLOTS := 3
+const MAX_SHELF_SLOTS := 4
 
 var weapons: Array[Dictionary] = []
-var shelf_weapons: Array[Dictionary] = []  # Max 3 slot — dùng cho tiệm
+var shelf_weapons: Array[Dictionary] = []  # Max 4 slot — dùng cho bàn trưng bày tiệm
 # TODO: Persist materials qua SaveSystem khi có yêu cầu save/load kho vật liệu.
 var materials: Array[Dictionary] = []
 
@@ -81,21 +81,37 @@ func move_to_shelf(weapon: Dictionary) -> bool:
 		return false
 	if weapon not in weapons:
 		return false
+	_unequip_weapon_ref(weapon)
 	weapons.erase(weapon)
 	shelf_weapons.append(weapon)
 	shelf_updated.emit()
 	return true
 
 func remove_from_shelf(weapon: Dictionary) -> void:
+	if weapon not in shelf_weapons:
+		return
 	shelf_weapons.erase(weapon)
 	weapons.append(weapon)
 	shelf_updated.emit()
 
 func sell_weapon(weapon: Dictionary) -> void:
+	_unequip_weapon_ref(weapon)
 	shelf_weapons.erase(weapon)
 	weapons.erase(weapon)
 	GameManager.remove_weapon(weapon)
 	shelf_updated.emit()
+
+
+func _unequip_weapon_ref(weapon: Dictionary) -> void:
+	var uid := String(weapon.get("uid", ""))
+	for slot_idx in GameManager.equipped_weapons.size():
+		var eq: Dictionary = GameManager.equipped_weapons[slot_idx]
+		if eq.is_empty():
+			continue
+		var matched := (not uid.is_empty() and String(eq.get("uid", "")) == uid) or eq == weapon
+		if matched:
+			GameManager.equipped_weapons[slot_idx] = {}
+			break
 
 func get_shelf_weapons() -> Array[Dictionary]:
 	return shelf_weapons

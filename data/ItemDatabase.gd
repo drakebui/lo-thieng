@@ -228,52 +228,52 @@ static func _build_materials() -> void:
 static func _build_elements() -> void:
 
 	# ── Hỏa ───────────────────────────────────────────────
-	_elem("linh_luc_hoa_1",   "Linh Lực Hỏa Sơ",      "Hoa", 1, 100,
+	_elem("linh_luc_hoa_1",   "Linh Lực Hỏa Sơ",      "hoa", 1, 100,
 		"Linh lực lửa cơ bản. Gắn kỹ năng Burn vào vũ khí.")
-	_elem("linh_luc_hoa_2",   "Linh Lực Hỏa Trung",   "Hoa", 2, 250,
+	_elem("linh_luc_hoa_2",   "Linh Lực Hỏa Trung",   "hoa", 2, 250,
 		"Linh lực lửa cấp trung. Burn gây thêm 2 sát thương/lượt.")
-	_elem("linh_luc_hoa_3",   "Linh Lực Hỏa Thần",    "Hoa", 3, 600,
+	_elem("linh_luc_hoa_3",   "Linh Lực Hỏa Thần",    "hoa", 3, 600,
 		"Linh lực lửa tối thượng. Burn lan sang lượt kế tiếp.")
 
 	# ── Băng ───────────────────────────────────────────────
-	_elem("linh_luc_bang_1",  "Linh Lực Băng Sơ",     "Bang", 1, 100,
+	_elem("linh_luc_bang_1",  "Linh Lực Băng Sơ",     "bang", 1, 100,
 		"Linh lực băng cơ bản. Gắn kỹ năng Freeze vào vũ khí.")
-	_elem("linh_luc_bang_2",  "Linh Lực Băng Trung",  "Bang", 2, 250,
+	_elem("linh_luc_bang_2",  "Linh Lực Băng Trung",  "bang", 2, 250,
 		"Linh lực băng cấp trung. Xác suất Freeze tăng lên 70%.")
-	_elem("linh_luc_bang_3",  "Linh Lực Băng Nguyên", "Bang", 3, 600,
+	_elem("linh_luc_bang_3",  "Linh Lực Băng Nguyên", "bang", 3, 600,
 		"Linh lực băng nguyên thủy. Freeze kéo dài 2 lượt.")
 
 	# ── Sét ────────────────────────────────────────────────
-	_elem("linh_luc_set_1",   "Linh Lực Sét Sơ",      "Set", 1, 100,
+	_elem("linh_luc_set_1",   "Linh Lực Sét Sơ",      "set", 1, 100,
 		"Linh lực sét cơ bản. Gắn Chain Lightning, xuyên 50% DEF.")
-	_elem("linh_luc_set_2",   "Linh Lực Sét Trung",   "Set", 2, 250,
+	_elem("linh_luc_set_2",   "Linh Lực Sét Trung",   "set", 2, 250,
 		"Linh lực sét cấp trung. Xuyên thêm 15% DEF so với cơ bản.")
-	_elem("linh_luc_set_3",   "Linh Lực Thiên Sét",   "Set", 3, 600,
+	_elem("linh_luc_set_3",   "Linh Lực Thiên Sét",   "set", 3, 600,
 		"Linh lực sét hủy diệt. Xuyên 80% DEF, có 20% stunned 1 lượt.")
 
-	# ── Độc ────────────────────────────────────────────────
-	_elem("linh_luc_doc_1",   "Linh Lực Độc Sơ",      "Doc", 1, 80,
-		"Linh lực độc cơ bản. Gắn Poison Cloud, 5% HP/lượt.")
-	_elem("linh_luc_doc_2",   "Linh Lực Độc Trung",   "Doc", 2, 200,
-		"Linh lực độc cấp trung. Stack Poison nhanh gấp đôi.")
-	_elem("linh_luc_hac_doc", "Linh Lực Hắc Độc",     "Doc", 3, 500,
-		"Độc tối thượng. 8% HP/lượt, không thể cleanse bình thường.")
+	# ── Thổ (Độc/Địa) ──────────────────────────────────────
+	_elem("linh_luc_doc_1",   "Linh Lực Thổ Sơ",      "tho", 1, 80,
+		"Linh lực thổ cơ bản. Gắn Độc Vân, 5% HP/lượt.")
+	_elem("linh_luc_doc_2",   "Linh Lực Thổ Trung",   "tho", 2, 200,
+		"Linh lực thổ cấp trung. Stack độc nhanh gấp đôi.")
+	_elem("linh_luc_hac_doc", "Linh Lực Hắc Thổ",     "tho", 3, 500,
+		"Thổ độc tối thượng. 8% HP/lượt, xuyên giáp.")
 
-	# ── Thánh ─────────────────────────────────────────────
-	_elem("linh_luc_thanh_1", "Linh Lực Thánh Sơ",    "Thanh", 1, 120,
-		"Linh lực thánh cơ bản. Gắn Heal Pulse, hồi 30% HP.")
-	_elem("linh_luc_thanh_2", "Linh Lực Thánh Trung", "Thanh", 2, 300,
-		"Linh lực thánh cấp trung. Hồi 40% HP, cleanse 2 debuff.")
-	_elem("linh_luc_thanh_3", "Linh Lực Thánh Khiết", "Thanh", 3, 700,
-		"Linh lực thánh thuần khiết. Hồi 50% HP, miễn dịch 1 debuff tiếp theo.")
+	# ── Phong ──────────────────────────────────────────────
+	_elem("linh_luc_thanh_1", "Linh Lực Phong Sơ",    "phong", 1, 120,
+		"Linh lực phong cơ bản. Gắn Cuồng Phong tăng tốc.")
+	_elem("linh_luc_thanh_2", "Linh Lực Phong Trung", "phong", 2, 300,
+		"Linh lực phong cấp trung. Tăng mạnh sát thương gió.")
+	_elem("linh_luc_thanh_3", "Linh Lực Phong Khiết", "phong", 3, 700,
+		"Linh lực phong thuần khiết. Bão tố liên hoàn.")
 
-	# ── Bóng Tối ──────────────────────────────────────────
-	_elem("linh_luc_bong_1",  "Linh Lực Bóng Sơ",     "BongToi", 1, 100,
-		"Linh lực bóng tối cơ bản. Gắn Shadow Strike, xuyên DEF vs non-Holy.")
-	_elem("linh_luc_bong_2",  "Linh Lực Bóng Trung",  "BongToi", 2, 250,
-		"Linh lực bóng tối cấp trung. Thêm 20% damage khi tấn công từ bóng.")
-	_elem("linh_luc_bong_3",  "Linh Lực Vong Hồn",    "BongToi", 3, 650,
-		"Linh lực bóng tối tối thượng. Tức thì 30% HP nếu kẻ thù không có Holy.")
+	# ── Hư Không ───────────────────────────────────────────
+	_elem("linh_luc_bong_1",  "Linh Lực Hư Không Sơ",     "hu_khong", 1, 100,
+		"Linh lực hư không cơ bản. Gắn Shadow Strike, xuyên DEF.")
+	_elem("linh_luc_bong_2",  "Linh Lực Hư Không Trung",  "hu_khong", 2, 250,
+		"Linh lực hư không cấp trung. Thêm 20% damage xuyên bóng.")
+	_elem("linh_luc_bong_3",  "Linh Lực Vong Hồn",        "hu_khong", 3, 650,
+		"Linh lực hư không tối thượng. Xuyên 100% DEF.")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -285,40 +285,40 @@ static func _build_blanks() -> void:
 
 	# id, name, base_atk, base_def, base_magic, preferred_customers[], base_price, desc
 	_blank(
-		"phoi_kiem_don", "Kiếm Đơn", 8, 0, 0, ["HiepKhach"], 200,
+		"phoi_kiem_don", "Kiếm Đơn", 8, 0, 0, ["hiep_khach"], 200,
 		"Kiếm một tay cân bằng. Phù hợp Hiệp Khách. Skill cơ bản: Slash.")
 	_blank(
-		"phoi_song_dao", "Song Đao", 7, 0, 1, ["ThichKhach"], 220,
+		"phoi_song_dao", "Song Đao", 7, 0, 1, ["thich_khach"], 220,
 		"Đôi dao nhẹ. Phù hợp Thích Khách. Skill cơ bản: Twin Strike.")
 	_blank(
-		"phoi_giao_dai", "Giáo Dài", 6, 2, 0, ["ThuVe", "HiepKhach"], 240,
+		"phoi_giao_dai", "Giáo Dài", 6, 2, 0, ["thu_ve", "hiep_khach"], 240,
 		"Giáo dài lợi thế tầm xa. Skill cơ bản: Reach.")
 	_blank(
-		"phoi_bua_chien", "Búa Chiến", 10, 3, 0, ["VoTang", "ThuVe"], 280,
+		"phoi_bua_chien", "Búa Chiến", 10, 3, 0, ["vo_tang", "thu_ve"], 280,
 		"Búa chiến nặng nề, ATK cao nhất. Skill cơ bản: Crush.")
 	_blank(
-		"phoi_cung_truong", "Cung Trường", 6, 0, 2, ["ThoSan"], 260,
+		"phoi_cung_truong", "Cung Trường", 6, 0, 2, ["tho_san"], 260,
 		"Cung dài, tầm xa. Phù hợp Thợ Săn. Skill cơ bản: Aim.")
 	_blank(
-		"phoi_khien_dong", "Khiên Đồng", 2, 8, 0, ["ThuVe"], 220,
+		"phoi_khien_dong", "Khiên Đồng", 2, 8, 0, ["thu_ve"], 220,
 		"Khiên phòng thủ cao nhất. Phù hợp Thủ Vệ. Skill cơ bản: Block.")
 	_blank(
-		"phoi_quyen_cu", "Quyền Cụ", 7, 0, 0, ["VoTang"], 190,
+		"phoi_quyen_cu", "Quyền Cụ", 7, 0, 0, ["vo_tang"], 190,
 		"Vũ khí tay trần tăng cường. Skill cơ bản: Combo (3 hit nhỏ).")
 	_blank(
-		"phoi_con_hai_khuc", "Côn Nhị Khúc", 6, 1, 0, ["VoTang", "ThichKhach"], 210,
+		"phoi_con_nhi_khuc", "Côn Nhị Khúc", 6, 1, 0, ["vo_tang", "thich_khach"], 210,
 		"Côn nhị khúc linh hoạt. Skill cơ bản: Whirl.")
 	_blank(
-		"phoi_dao_phat", "Đao Phạt", 9, 2, 0, ["ThuVe"], 300,
+		"phoi_dao_phat", "Đao Phạt", 9, 2, 0, ["thu_ve"], 300,
 		"Đao phạt chuyên cho Thủ Vệ đặc biệt. Skill cơ bản: Heavy Cleave.")
 	_blank(
-		"phoi_gay_phep", "Gậy Phép", 2, 0, 10, ["DaoSi"], 350,
+		"phoi_gay_phep", "Gậy Phép", 2, 0, 10, ["dao_si"], 350,
 		"Gậy pháp thuật, Magic cao nhất. Phù hợp Đạo Sĩ. Skill cơ bản: Cast.")
 	_blank(
-		"phoi_liem_song", "Liềm Song", 8, 0, 2, ["ThichKhach"], 270,
+		"phoi_liem_song", "Liềm Song", 8, 0, 2, ["thich_khach"], 270,
 		"Đôi liềm kỳ bí. Phù hợp Thích Khách. Skill cơ bản: Reap.")
 	_blank(
-		"phoi_no_ban", "Nỏ Bắn", 10, 0, 0, ["ThoSan", "ThichKhach"], 310,
+		"phoi_no_ban", "Nỏ Bắn", 10, 0, 0, ["tho_san", "thich_khach"], 310,
 		"Nỏ cơ khí xuyên giáp. Phù hợp Thợ Săn và Thích Khách. Skill cơ bản: Pierce.",
 		"pierce")
 

@@ -58,7 +58,7 @@ var _sfx_loop_player: AudioStreamPlayer = null
 
 func _ready() -> void:
 	_music_player = AudioStreamPlayer.new()
-	_music_player.bus = "Music"
+	_music_player.bus = "Music" if AudioServer.get_bus_index("Music") != -1 else "Master"
 	add_child(_music_player)
 
 	for i in SFX_POOL_SIZE:
@@ -134,6 +134,8 @@ func play_sfx_loop(key: String, volume_scale: float = 1.0) -> void:
 	if not _sfx_cache.has(key):
 		_sfx_cache[key] = load(SFX_PATHS[key])
 	var target_stream: AudioStream = _sfx_cache[key]
+	if target_stream == null:
+		return
 	var vol := clampf(sfx_volume * volume_scale, 0.001, 2.0)
 	_sfx_loop_player.volume_db = linear_to_db(vol)
 	if _sfx_loop_player.is_playing() and _sfx_loop_player.stream == target_stream:

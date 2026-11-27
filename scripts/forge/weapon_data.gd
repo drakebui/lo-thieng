@@ -4,10 +4,11 @@ class_name ForgeConverter
 # Không có state — tất cả hàm đều static.
 
 const P1_MULTIPLIERS: Dictionary = {
-	"lanh":   0.7,   # −30%
-	"cam":    1.2,   # +20%
-	"do_ruc": 1.4,   # +40%
-	"chay":   0.5,   # −50%
+	"lanh":     0.7,   # −30%
+	"cam":      1.2,   # +20%
+	"do_ruc":   1.4,   # +40%
+	"vang_kim": 1.4,   # +40% (tương thích vật liệu núi lửa)
+	"chay":     0.5,   # −50%
 }
 
 const PREFIX_NAMES: Dictionary = {
@@ -99,14 +100,18 @@ static func forge_to_combat(fd: Dictionary) -> Dictionary:
 	var def_s:      int   = maxi(0, int(fd.get("base_def",    0) * p1_mult))
 	var magic:      int   = maxi(0, int(fd.get("base_magic",  0) * p1_mult) + p2_bonus)
 	var speed:      int   = fd.get("base_speed", 5)
-	var price_mult: float = fd.get("price_mult", 1.0)
+	var price_mult: float = float(
+		fd.get("price_mult", 1.10 if bool(fd.get("perfect_quench", false)) else 1.0)
+	)
 	var rar_tier:   int   = PREFIX_RARITY.get(p2_prefix, 2)
 
-	var dur_bonus:  int   = int(fd.get("durability_bonus", 0))
+	var dur_bonus:  int   = int(fd.get("durability_bonus", 10 if bool(fd.get("perfect_quench", false)) else 0))
 	var base_dur:   int   = int(fd.get("durability", 50))
 	var max_dur:    int   = base_dur + dur_bonus
+	var uid:        String = String(fd.get("uid", "%d_%d" % [Time.get_ticks_usec(), randi()]))
 
 	return {
+		"uid":            uid,
 		"weapon_name":    _build_name(fd),
 		"blank_id":       blank_id,
 		"blank_name":     fd.get("weapon_type", "Vũ Khí"),
